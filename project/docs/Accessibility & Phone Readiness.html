@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Paper &amp; Petals — Accessibility &amp; Phone Readiness</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  :root { --doc-w: 820px; --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg-2); }
+  body { font-family: var(--font-ui); color: var(--fg-1); line-height: var(--lh-body); -webkit-font-smoothing: antialiased; }
+  .page { max-width: var(--doc-w); margin: 0 auto; padding: 64px 72px 96px; background: var(--bg-1);
+    box-shadow: 0 1px 2px rgba(75,64,56,0.08), 0 24px 60px -30px rgba(75,64,56,0.35); }
+
+  .cover { border-bottom: 2px solid var(--pp-hairline); padding-bottom: 34px; margin-bottom: 36px; }
+  .cover .wordmark { font-family: var(--font-flourish); font-size: 38px; color: var(--pp-forest); line-height: 1; }
+  .cover .kicker { font-family: var(--font-paper); font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--fg-3); margin-top: 18px; }
+  .cover h1 { font-family: var(--font-display); font-weight: 400; font-size: 40px; line-height: 1.1; letter-spacing: -0.01em; margin: 8px 0 0; }
+  .cover .lede { font-family: var(--font-script); font-style: italic; font-size: 19px; color: var(--fg-2); margin: 14px 0 0; max-width: 60ch; }
+
+  h2 { font-family: var(--font-display); font-weight: 400; font-size: 25px; letter-spacing: -0.005em; margin: 48px 0 4px; }
+  h2 .num { color: var(--pp-terracotta); font-size: 18px; margin-right: 12px; font-family: var(--font-ui); font-weight: 700; }
+  h3 { font-family: var(--font-ui); font-weight: 700; font-size: 15px; margin: 26px 0 8px; }
+  p { font-size: 15px; color: var(--fg-2); margin: 10px 0; text-wrap: pretty; }
+  .sub { color: var(--fg-3); font-size: 14px; }
+  strong { color: var(--fg-1); font-weight: 600; }
+  ul { margin: 10px 0; padding-left: 22px; } li { font-size: 15px; color: var(--fg-2); margin: 6px 0; }
+  code { font-family: var(--font-mono); font-size: 13px; background: var(--pp-vintage-paper); color: var(--pp-espresso); padding: 1px 6px; border-radius: 5px; }
+
+  /* Score hero */
+  .scorewrap { display: grid; grid-template-columns: 200px 1fr; gap: 28px; align-items: center;
+    background: var(--surface-card); border: 1px solid var(--pp-hairline); border-radius: 18px; padding: 26px 28px; margin: 8px 0 6px; }
+  .scoredial { position: relative; width: 180px; height: 180px; }
+  .scoredial .val { position: absolute; inset: 0; display: grid; place-items: center; flex-direction: column; text-align: center; }
+  .scoredial .num { font-family: var(--font-display); font-size: 52px; line-height: 1; color: var(--fg-1); }
+  .scoredial .den { font-size: 13px; color: var(--fg-3); margin-top: 2px; }
+  .scoredial .grade { font-family: var(--font-paper); font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--pp-antique-gold); margin-top: 6px; font-weight: 700; }
+  .scoremeta .tag { font-family: var(--font-paper); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--fg-3); }
+  .scoremeta h3 { margin: 6px 0 8px; font-size: 19px; font-family: var(--font-display); font-weight: 400; }
+  .scoremeta p { margin: 0; font-size: 14px; }
+
+  /* Category bars */
+  .bars { margin: 22px 0 6px; }
+  .bar { display: grid; grid-template-columns: 190px 1fr 52px; align-items: center; gap: 14px; margin: 11px 0; }
+  .bar .lab { font-size: 13.5px; font-weight: 600; color: var(--fg-1); }
+  .bar .track { height: 9px; border-radius: 999px; background: var(--bg-2); overflow: hidden; border: 1px solid var(--pp-hairline-soft); }
+  .bar .fill { height: 100%; border-radius: 999px; }
+  .bar .pct { font-size: 13px; color: var(--fg-3); text-align: right; font-variant-numeric: tabular-nums; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--pp-hairline-soft); vertical-align: top; }
+  th { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--fg-3); border-bottom: 1.5px solid var(--pp-hairline); }
+  td { color: var(--fg-2); } td b { color: var(--fg-1); }
+
+  .sev { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 9px; border-radius: 999px; letter-spacing: 0.04em; white-space: nowrap; }
+  .sev.hi { background: rgba(178,106,90,0.16); color: #9C4F3D; }
+  .sev.md { background: rgba(168,137,63,0.18); color: #7E6322; }
+  .sev.lo { background: rgba(78,102,82,0.14); color: #3F5443; }
+
+  .callout { display: flex; gap: 14px; background: var(--surface-card); border: 1px solid var(--pp-hairline); border-left: 3px solid var(--pp-forest); border-radius: 10px; padding: 14px 16px; margin: 18px 0; }
+  .callout.gold { border-left-color: var(--pp-antique-gold); }
+  .callout .ico { font-size: 18px; } .callout p { margin: 0; font-size: 13.5px; } .callout .t { font-weight: 700; color: var(--fg-1); font-size: 13px; }
+
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+  .chip { display: inline-block; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--pp-hairline); color: var(--fg-2); margin: 0 4px 4px 0; }
+
+  /* phone reflow mini-diagram */
+  .reflow { display: flex; gap: 18px; align-items: center; margin: 18px 0; flex-wrap: wrap; }
+  .dev { border: 1.5px solid var(--pp-hairline); border-radius: 14px; background: var(--surface-card); padding: 8px; }
+  .dev .scr { background: var(--bg-2); border-radius: 7px; display: grid; gap: 4px; padding: 7px; }
+  .dev .blk { background: var(--pp-sage); opacity: 0.5; border-radius: 3px; height: 9px; }
+  .dev.tab .scr { width: 210px; height: 150px; grid-template-columns: 1fr 1fr 1fr; grid-auto-rows: min-content; }
+  .dev.tab .blk:first-child { grid-column: 1 / -1; height: 14px; }
+  .dev.phone .scr { width: 86px; height: 168px; }
+  .dev .cap { text-align: center; font-size: 11px; color: var(--fg-3); margin-top: 7px; font-family: var(--font-paper); letter-spacing: 0.1em; text-transform: uppercase; }
+  .arrowbig { font-size: 26px; color: var(--pp-stone); }
+
+  .foot { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--pp-hairline); font-size: 12px; color: var(--fg-4); display: flex; justify-content: space-between; }
+  @media print { html, body { background: #fff; } .page { box-shadow: none; max-width: none; padding: 0; } h2 { page-break-after: avoid; } .scorewrap, table, .callout, .reflow, .bars { page-break-inside: avoid; } @page { margin: 18mm 16mm; } }
+</style>
+</head>
+<body>
+<main class="page">
+  <header class="cover">
+    <div class="wordmark">Paper &amp; Petals</div>
+    <div class="kicker">Product Review</div>
+    <h1>Accessibility &amp; Phone Readiness</h1>
+    <p class="lede">An honest audit of who can comfortably use the app today — and what it takes to reach a phone in every pocket.</p>
+  </header>
+
+  <p>This report answers two questions raised in review: <strong>how accessible is the design as it stands</strong>, and <strong>what is required to ship it on phones</strong>. The score below reflects the prototype as built (tablet, landscape). It is a design-stage estimate against <strong>WCAG 2.1 AA</strong> — not a substitute for an audit with assistive tech on real devices, but enough to prioritise.</p>
+
+  <!-- ── Accessibility score ─────────────────────────────── -->
+  <h2><span class="num">01</span>Accessibility rating</h2>
+  <div class="scorewrap">
+    <div class="scoredial">
+      <svg viewBox="0 0 180 180" width="180" height="180">
+        <circle cx="90" cy="90" r="78" fill="none" stroke="rgba(75,64,56,0.10)" stroke-width="16"/>
+        <circle cx="90" cy="90" r="78" fill="none" stroke="#C8A96B" stroke-width="16" stroke-linecap="round"
+          stroke-dasharray="490" stroke-dashoffset="186" transform="rotate(-90 90 90)"/>
+      </svg>
+      <div class="val">
+        <div>
+          <div class="num">62</div>
+          <div class="den">/ 100</div>
+          <div class="grade">Grade C · Fair</div>
+        </div>
+      </div>
+    </div>
+    <div class="scoremeta">
+      <span class="tag">Verdict</span>
+      <h3>Calm and legible-ish, but not yet inclusive</h3>
+      <p>The aesthetic that makes Paper&nbsp;&amp;&nbsp;Petals lovely — soft tones, fine tracked capitals, textured paper, a decorative script — is exactly what works against accessibility. Structure and touch targets are largely sound; <strong>contrast, text size, motion and the editor's screen-reader story are the gaps.</strong> Most are fixable without disturbing the brand.</p>
+    </div>
+  </div>
+
+  <div class="bars">
+    <div class="bar"><span class="lab">Colour &amp; contrast</span><span class="track"><span class="fill" style="width:48%;background:#C47B63"></span></span><span class="pct">48</span></div>
+    <div class="bar"><span class="lab">Text size &amp; scaling</span><span class="track"><span class="fill" style="width:55%;background:#C8A96B"></span></span><span class="pct">55</span></div>
+    <div class="bar"><span class="lab">Touch targets</span><span class="track"><span class="fill" style="width:82%;background:#4E6652"></span></span><span class="pct">82</span></div>
+    <div class="bar"><span class="lab">Structure &amp; labels</span><span class="track"><span class="fill" style="width:70%;background:#87937C"></span></span><span class="pct">70</span></div>
+    <div class="bar"><span class="lab">Keyboard / focus</span><span class="track"><span class="fill" style="width:58%;background:#C8A96B"></span></span><span class="pct">58</span></div>
+    <div class="bar"><span class="lab">Motion &amp; animation</span><span class="track"><span class="fill" style="width:60%;background:#C8A96B"></span></span><span class="pct">60</span></div>
+    <div class="bar"><span class="lab">Editor (canvas) a11y</span><span class="track"><span class="fill" style="width:40%;background:#C47B63"></span></span><span class="pct">40</span></div>
+    <div class="bar"><span class="lab">Screen-reader support</span><span class="track"><span class="fill" style="width:52%;background:#C8A96B"></span></span><span class="pct">52</span></div>
+  </div>
+
+  <!-- ── Findings ─────────────────────────────── -->
+  <h2><span class="num">02</span>What's holding the score down</h2>
+  <table>
+    <thead><tr><th>Issue</th><th>Severity</th><th>Where</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td><b>Low text contrast</b><br><span class="sub">stone / tertiary text on cream, tracked capitals, text over paper textures often fall below 4.5:1</span></td><td><span class="sev hi">High</span></td><td>Eyebrows, captions, placeholders, Home label plate</td><td>Darken <code>--fg-3</code>/<code>--fg-4</code> a step; add a scrim behind text on textures; reserve script for non-essential text</td></tr>
+      <tr><td><b>Small &amp; uppercase type</b><br><span class="sub">11–13px letter-spaced capitals are hard for low-vision users; no Dynamic Type support</span></td><td><span class="sev hi">High</span></td><td>Throughout</td><td>Honour OS text-size; floor body at 15–16px; avoid all-caps for anything long</td></tr>
+      <tr><td><b>Editor not screen-reader operable</b><br><span class="sub">drag-to-place canvas has no non-pointer path</span></td><td><span class="sev hi">High</span></td><td>SCR-07 Journal Editor</td><td>Add a list-based "place item" + arrow-key nudge/rotate; expose each placed item with a label (Layers panel already a foothold)</td></tr>
+      <tr><td><b>Focus states</b><br><span class="sub">custom buttons/toggles lack a visible keyboard focus ring</span></td><td><span class="sev md">Med</span></td><td>All custom controls</td><td>Global <code>:focus-visible</code> ring in brand forest</td></tr>
+      <tr><td><b>Motion</b><br><span class="sub">page-flip, parcel-opening, carousel spin — no reduced-motion path</span></td><td><span class="sev md">Med</span></td><td>SCR-03, 05, 07</td><td>Gate animations behind <code>prefers-reduced-motion</code></td></tr>
+      <tr><td><b>Icon-only controls</b><br><span class="sub">some rely on shape alone</span></td><td><span class="sev lo">Low</span></td><td>Editor toolbar</td><td>Most have <code>aria-label</code>; finish the set + tooltips</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ── Accessible view ─────────────────────────────── -->
+  <h2><span class="num">03</span>Recommendation: an “Accessible view”</h2>
+  <p>Rather than compromise the signature look for everyone, add an opt-in <strong>Accessible view</strong> in Settings → Preferences (or auto-enable when the OS signals high-contrast / large-text / reduced-motion). It re-skins via a single <code>data-a11y</code> attribute on the root, so the brand stays intact while the mode is active.</p>
+  <div class="two">
+    <div>
+      <h3>What it changes</h3>
+      <ul>
+        <li><strong>Contrast:</strong> darker ink, solid surfaces instead of textures, AA-compliant tokens</li>
+        <li><strong>Type:</strong> larger base size, normal-case labels, system/dyslexia-friendly font option, no decorative script for UI text</li>
+        <li><strong>Motion:</strong> cross-fades replace flips &amp; spins</li>
+        <li><strong>Editor:</strong> the list-based placement path becomes primary; bigger handles</li>
+        <li><strong>Focus:</strong> always-visible focus rings</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Why this shape</h3>
+      <ul>
+        <li>One token layer to maintain — no parallel UI</li>
+        <li>Respects user OS settings automatically</li>
+        <li>Keeps the default experience on-brand</li>
+        <li>Demonstrates good-faith WCAG effort for App Store review &amp; procurement</li>
+      </ul>
+    </div>
+  </div>
+  <div class="callout gold">
+    <div class="ico">◐</div>
+    <div><div class="t">Quick wins first (≈ a day each)</div><p>Three changes lift the score most: bump the two faint text tokens to AA, add a global <code>:focus-visible</code> ring, and wrap animations in <code>prefers-reduced-motion</code>. None touch layout. The Accessible view and editor keyboard path are the larger follow-ups.</p></div>
+  </div>
+
+  <!-- ── Phone readiness ─────────────────────────────── -->
+  <h2><span class="num">04</span>Phone readiness</h2>
+  <p>The app is designed as a <strong>1024×768 landscape tablet</strong> surface and most screens use absolute positioning tuned to that canvas. Phones are the majority of devices, so this matters — but the screens fall into three honest buckets:</p>
+
+  <div class="reflow">
+    <div class="dev tab"><div class="scr"><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div></div><div class="cap">Tablet · landscape</div></div>
+    <div class="arrowbig">→</div>
+    <div class="dev phone"><div class="scr"><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div><div class="blk"></div></div><div class="cap">Phone · portrait</div></div>
+  </div>
+
+  <table>
+    <thead><tr><th>Effort</th><th>Screens</th><th>What's needed</th></tr></thead>
+    <tbody>
+      <tr><td><span class="sev lo">Reflows easily</span></td><td>Loading, Welcome, Settings, Subscription, Feedback, legal modals</td><td>Already single-column / centred. Swap fixed widths for fluid + safe-area insets; they mostly "just work" in portrait.</td></tr>
+      <tr><td><span class="sev md">Needs a portrait layout</span></td><td>Home shelf, Shop, Package opening</td><td>Re-rack the carousel/grid vertically; move toolbars to a bottom bar within thumb reach; larger tap zones.</td></tr>
+      <tr><td><span class="sev hi">Needs rethinking</span></td><td>Journal Editor (canvas)</td><td>A landscape spread can't shrink to a phone and stay usable. Options: edit one page at a time, pan/zoom a full spread, collapse the page-strip into a sheet, and float the tool drawer as a bottom sheet.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>How to build it in now (so phone is possible later)</h3>
+  <ul>
+    <li><strong>Replace the fixed frame with a responsive root.</strong> The <code>.pp-frame</code> 1024×768 box becomes <code>min(100vw, …)</code> with breakpoints; screens read a <code>layout</code> context (<code>tablet</code> | <code>phone</code>) instead of assuming width.</li>
+    <li><strong>Adopt fluid units &amp; safe areas.</strong> Move from absolute pixel offsets to flex/grid + <code>env(safe-area-inset-*)</code>; this is the bulk of the work and pays off for every screen.</li>
+    <li><strong>Design the editor for both postures up front</strong> — it's the one screen where phone isn't a reflow but a separate interaction model. Decide single-page vs. pan-the-spread before building.</li>
+    <li><strong>One codebase.</strong> React Native / Expo (recommended in the Backend Guide) gives responsive primitives and real safe-area handling; the layout context maps cleanly to its dimension hooks.</li>
+  </ul>
+
+  <div class="callout">
+    <div class="ico">▱</div>
+    <div><div class="t">Suggested next step</div><p>I can add a <strong>phone preview</strong> to the prototype and reflow the "easy" bucket (Settings, Welcome, Subscription) as a working proof, then mock the editor's phone interaction model separately. That validates the responsive direction without a risky big-bang rewrite of the tablet design. Say the word and I'll start.</p></div>
+  </div>
+
+  <h2><span class="num">05</span>Priority order</h2>
+  <table>
+    <thead><tr><th>#</th><th>Do</th><th>Why</th><th>Size</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Contrast + focus-ring + reduced-motion quick wins</td><td>Biggest score lift, no layout risk</td><td><span class="chip">~2–3 days</span></td></tr>
+      <tr><td>2</td><td>Responsive root + reflow the easy screens</td><td>Unblocks phone; low risk</td><td><span class="chip">~1 week</span></td></tr>
+      <tr><td>3</td><td>Accessible view (token layer + editor keyboard path)</td><td>Reaches WCAG AA broadly</td><td><span class="chip">~1–2 weeks</span></td></tr>
+      <tr><td>4</td><td>Editor phone interaction model</td><td>Hardest; design-led</td><td><span class="chip">~2–3 weeks</span></td></tr>
+    </tbody>
+  </table>
+
+  <div class="foot">
+    <span>Paper &amp; Petals — Accessibility &amp; Phone Readiness · June 2026</span>
+    <span>Design-stage estimate · WCAG 2.1 AA</span>
+  </div>
+</main>
+</body>
+</html>

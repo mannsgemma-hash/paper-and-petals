@@ -1,0 +1,33 @@
+<!doctype html>
+<!-- @dsCard group="Components" name="Components · Rarity & chips" subtitle="Common/Uncommon/Rare/Heirloom + filter chips" viewport="700x170" -->
+<html><head><meta charset="utf-8"><title>Rarity badges & chips</title>
+<link rel="stylesheet" href="../colors_and_type.css">
+<style>
+  body { margin: 0; padding: 30px; background: var(--bg-1); font-family: var(--font-ui); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  .row + .row { margin-top: 16px; }
+  .lbl { width: 92px; flex: 0 0 92px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--fg-3); font-weight: 600; }
+  .badge { font-size: 10px; font-weight: 600; letter-spacing: .22em; text-transform: uppercase; padding: 6px 12px; border-radius: 999px; border: 2px solid; background: var(--surface-card); }
+  .common    { color: #7A6B52; border-color: #C8BC9E; }
+  .uncommon  { color: #4E6652; border-color: #87937C; }
+  .rare      { color: #B26A5A; border-color: #D7B7B0; }
+  .heirloom  { color: var(--surface-card); border-color: #3B4E3F; background: #4E6652; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 999px; background: var(--surface-card); border: 1.2px solid var(--pp-hairline); font-size: 13px; color: var(--fg-2); }
+  .chip.active { background: var(--accent); color: var(--surface-card); border-color: var(--accent); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+</style></head>
+<body>
+  <div class="row"><div class="lbl">Rarity</div>
+    <span class="badge common">Common</span>
+    <span class="badge uncommon">Uncommon</span>
+    <span class="badge rare">Rare</span>
+    <span class="badge heirloom">Heirloom</span>
+  </div>
+  <div class="row"><div class="lbl">Filter chips</div>
+    <span class="chip active"><span class="dot"></span>All</span>
+    <span class="chip">Postcards</span>
+    <span class="chip">Pressed flowers</span>
+    <span class="chip">Wax seals</span>
+    <span class="chip">Washi</span>
+  </div>
+</body></html>

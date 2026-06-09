@@ -1,0 +1,217 @@
+/* Kit-local additions. Foundations come from ../../colors_and_type.css */
+
+/* ── Stage / frame ─────────────────────────────────────────────────── */
+.pp-stage {
+  width: 1024px;
+  height: 768px;
+  background: var(--bg-1);
+  position: relative;
+  overflow: hidden;
+  font-family: var(--font-ui);
+  color: var(--fg-1);
+}
+
+/* ── Persistent left sidebar (SCR-05+) ─────────────────────────────── */
+.pp-sidebar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: var(--sidebar-w);
+  background: var(--surface-card);
+  border-right: 1px solid var(--pp-hairline-soft);
+  padding: 20px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.pp-sidebar-brand {
+  font-family: var(--font-display);
+  font-size: 17px;
+  color: var(--fg-1);
+  padding: 6px 8px 16px;
+  border-bottom: 1px solid var(--pp-hairline-soft);
+  margin-bottom: 10px;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+}
+.pp-sidebar-brand em {
+  font-family: var(--font-script);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--pp-terracotta);
+  padding: 0 1px;
+}
+.pp-nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 10px;
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: all 180ms var(--ease-paper);
+  min-height: 48px;
+  box-sizing: border-box;
+}
+.pp-nav-item:hover { background: var(--bg-2); color: var(--fg-2); }
+.pp-nav-item.active { background: var(--accent); color: var(--surface-card); }
+.pp-nav-item.active svg { stroke: var(--surface-card); }
+.pp-sidebar-user {
+  margin-top: auto;
+  padding: 10px 8px;
+  border-top: 1px solid var(--pp-hairline-soft);
+  font-size: 12px;
+  color: var(--fg-3);
+  display: flex; align-items: center; gap: 10px;
+}
+.pp-avatar {
+  width: 28px; height: 28px; border-radius: 50%;
+  background: linear-gradient(135deg, var(--pp-soft-rose), var(--pp-mauve));
+  border: 1.5px solid var(--surface-card);
+  box-shadow: 0 0 0 1px var(--pp-hairline);
+}
+
+/* ── Topbar ────────────────────────────────────────────────────────── */
+.pp-topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  height: 60px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--pp-hairline-soft);
+}
+.pp-topbar-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  line-height: 1.1;
+  letter-spacing: var(--ls-display);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.pp-topbar-title em {
+  font-family: var(--font-script);
+  font-style: italic;
+  color: var(--pp-terracotta);
+}
+.pp-icon-btn {
+  width: 44px; height: 44px; min-width: 44px;
+  border-radius: 8px;
+  display: grid; place-items: center;
+  background: transparent;
+  border: 1px solid var(--pp-hairline-soft);
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: all 180ms var(--ease-paper);
+}
+.pp-icon-btn:hover { background: var(--bg-2); border-color: var(--pp-hairline); }
+.pp-icon-btn.circle { border-radius: 50%; border: 1.5px solid var(--pp-hairline); }
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.pp-btn {
+  font-family: var(--font-ui);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: var(--ls-ui);
+  border: none;
+  padding: 13px 24px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  min-height: 48px;
+  transition: all 180ms var(--ease-paper);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.pp-btn-primary { background: var(--accent); color: var(--surface-card); box-shadow: var(--sh-paper); }
+.pp-btn-primary:hover { background: var(--accent-hover); transform: translateY(-1px); box-shadow: var(--sh-card); }
+.pp-btn-primary:active { transform: translateY(0) scale(0.98); box-shadow: var(--sh-pressed); }
+.pp-btn-secondary { background: var(--surface-card); color: var(--fg-1); border: 1.5px solid var(--pp-hairline); box-shadow: var(--sh-paper); }
+.pp-btn-secondary:hover { background: var(--pp-cream); transform: translateY(-1px); }
+.pp-btn-ghost { background: transparent; color: var(--fg-2); }
+.pp-btn-ghost:hover { background: var(--bg-2); }
+.pp-btn-pill { border-radius: 999px; padding: 14px 32px; }
+
+/* ── Cards ─────────────────────────────────────────────────────────── */
+.pp-card {
+  background: var(--surface-card);
+  border: 1.5px solid var(--pp-hairline);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-card);
+  padding: 24px;
+}
+.pp-card-stitched {
+  background: var(--pp-cream);
+  border: none;
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-paper);
+  padding: 24px;
+  position: relative;
+}
+.pp-card-stitched::before {
+  content: "";
+  position: absolute;
+  inset: 8px;
+  border: 1.2px dashed var(--pp-stitch);
+  border-radius: 10px;
+  pointer-events: none;
+}
+
+/* ── Eyebrow / label / micro ───────────────────────────────────────── */
+.eyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+/* ── Tab bar (matches figma mock chrome) ───────────────────────────── */
+.pp-tabbar {
+  position: fixed; top: 16px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  background: var(--surface-card);
+  border: 1px solid var(--pp-hairline);
+  border-radius: var(--r-md);
+  box-shadow: var(--sh-card);
+  padding: 4px;
+  display: flex;
+  gap: 2px;
+}
+.pp-tab {
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 14px;
+  border-radius: var(--r-sm);
+  background: transparent;
+  border: none;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: all 160ms var(--ease-paper);
+  min-height: 36px;
+  white-space: nowrap;
+}
+.pp-tab:hover { color: var(--fg-1); background: var(--bg-2); }
+.pp-tab.active { background: var(--accent); color: var(--surface-card); }
+
+/* Page container with subtle parchment fade behind it */
+.pp-frame {
+  margin: 80px auto 32px;
+  width: 1024px;
+  height: 768px;
+  position: relative;
+  box-shadow: 0 30px 60px -30px rgba(75,64,56,.30), 0 6px 12px rgba(75,64,56,.10);
+  border-radius: 18px;
+  overflow: hidden;
+  border: 1px solid var(--pp-hairline);
+  background: var(--bg-1);
+}
+
+body.pp-host {
+  background:
+    radial-gradient(1200px 800px at 50% 20%, rgba(135,147,124,0.10), transparent 70%),
+    var(--bg-2);
+  min-height: 100vh;
+  padding: 0;
+  margin: 0;
+}

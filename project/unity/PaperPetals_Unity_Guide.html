@@ -1,0 +1,336 @@
+<!doctype html>
+<!-- @dsCard group="Brand" name="Unity Build Guide" subtitle="Tokens, fonts, sprites, components & motion for Unity 6 uGUI" -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paper &amp; Petals — Unity Component Build Guide</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Nunito+Sans:ital,opsz,wght@0,6..12,400;0,6..12,500;0,6..12,600;0,6..12,700;1,6..12,400&family=EB+Garamond:ital@1&family=Pinyon+Script&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --warm-white:#F8F7F4; --soft-linen:#EFE9E1; --vintage:#E5D8C8; --cream:#FFFDF6;
+    --terracotta:#C47B63; --sage:#87937C; --dusty-blue:#8FA3B8; --mauve:#A98C98;
+    --forest:#4E6652; --forest-deep:#3B4E3F; --charcoal:#2B2A28; --espresso:#4B4038;
+    --stone:#9A8A72; --stone-warm:#7A6B52; --gold:#C8A96B; --soft-rose:#D7B7B0;
+    --hairline:#C8BC9E; --hairline-soft:rgba(123,107,82,.18); --stitch:rgba(75,64,56,.35);
+    --danger:#B26A5A;
+    --serif:"Spectral",Georgia,serif; --ui:"Nunito Sans",system-ui,sans-serif;
+    --italic:"EB Garamond",Georgia,serif; --flourish:"Pinyon Script",cursive;
+    --sh-card:0 1px 0 rgba(255,255,255,.6) inset,0 2px 6px rgba(75,64,56,.07),0 14px 28px -16px rgba(75,64,56,.22);
+    --sh-paper:0 1px 0 rgba(255,255,255,.5) inset,0 1px 2px rgba(75,64,56,.06),0 6px 14px -8px rgba(75,64,56,.18);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--warm-white);color:var(--charcoal);font-family:var(--ui);
+    font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(circle at 20% -10%,rgba(135,147,124,.06),transparent 45%),radial-gradient(circle at 100% 0%,rgba(196,123,99,.05),transparent 40%);}
+  .wrap{max-width:960px;margin:0 auto;padding:0 28px 120px;}
+
+  /* ── Masthead ── */
+  header.mast{padding:80px 0 44px;border-bottom:1.5px dashed var(--stitch);margin-bottom:8px;}
+  .eyebrow{font-family:var(--ui);font-weight:700;font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--stone-warm);}
+  h1{font-family:var(--serif);font-weight:600;font-size:54px;line-height:1.08;letter-spacing:-.01em;margin:14px 0 10px;color:var(--charcoal);}
+  h1 em{font-family:var(--flourish);font-style:normal;font-weight:400;color:var(--terracotta);font-size:64px;line-height:0;}
+  .lede{font-family:var(--italic);font-style:italic;font-size:23px;line-height:1.5;color:var(--espresso);max-width:60ch;margin:6px 0 0;}
+
+  /* ── Sections ── */
+  section{margin-top:64px;}
+  h2{font-family:var(--serif);font-weight:600;font-size:30px;letter-spacing:-.01em;margin:0 0 6px;color:var(--charcoal);
+     display:flex;align-items:baseline;gap:14px;}
+  h2 .num{font-family:var(--ui);font-weight:700;font-size:13px;letter-spacing:.1em;color:var(--forest);
+     border:1.5px solid var(--sage);border-radius:999px;width:30px;height:30px;display:inline-grid;place-items:center;flex:0 0 30px;}
+  h3{font-family:var(--serif);font-weight:600;font-size:21px;margin:34px 0 4px;color:var(--charcoal);}
+  .sub{color:var(--espresso);max-width:70ch;margin:4px 0 0;}
+  p{max-width:72ch;}
+  a{color:var(--forest);text-decoration-color:var(--sage);text-underline-offset:3px;}
+
+  /* ── Cards / panels ── */
+  .panel{background:var(--cream);border:1.5px solid var(--hairline);border-radius:16px;padding:26px 28px;box-shadow:var(--sh-card);margin-top:20px;}
+  .panel.tint{background:var(--soft-linen);}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px;}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+
+  /* ── Steps ── */
+  ol.steps{counter-reset:s;list-style:none;padding:0;margin:18px 0 0;}
+  ol.steps>li{position:relative;padding:0 0 18px 52px;border-left:1.5px solid var(--hairline-soft);margin-left:15px;}
+  ol.steps>li:last-child{border-left-color:transparent;padding-bottom:0;}
+  ol.steps>li::before{counter-increment:s;content:counter(s);position:absolute;left:-15px;top:-2px;
+    width:30px;height:30px;border-radius:999px;background:var(--forest);color:var(--cream);
+    font-family:var(--ui);font-weight:700;font-size:13px;display:grid;place-items:center;box-shadow:var(--sh-paper);}
+  ol.steps>li strong{font-weight:700;}
+  ol.steps b.t{display:block;font-family:var(--serif);font-weight:600;font-size:17px;margin-bottom:2px;color:var(--charcoal);}
+
+  /* ── Tables ── */
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:14.5px;}
+  th,td{text-align:left;padding:11px 14px;border-bottom:1px solid var(--hairline-soft);vertical-align:top;}
+  th{font-family:var(--ui);font-weight:700;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--stone-warm);}
+  td code,code.inline{font-family:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:var(--soft-linen);
+    padding:2px 7px;border-radius:5px;color:var(--espresso);border:1px solid var(--hairline-soft);}
+  tr:last-child td{border-bottom:none;}
+
+  /* ── Code blocks ── */
+  pre{background:#2B2A28;color:#E7E1D4;border-radius:12px;padding:18px 20px;overflow:auto;font-size:13px;line-height:1.65;
+    font-family:"SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;box-shadow:var(--sh-card);}
+  pre .c{color:#9A8A72;} pre .k{color:#C8A96B;} pre .s{color:#A9B89A;}
+
+  /* ── Swatches ── */
+  .swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px;}
+  .sw{width:96px;border-radius:10px;overflow:hidden;border:1px solid var(--hairline-soft);background:var(--cream);}
+  .sw .chip{height:54px;}
+  .sw .meta{padding:7px 9px;font-size:10.5px;line-height:1.35;}
+  .sw .meta b{display:block;font-weight:700;font-size:11px;color:var(--charcoal);}
+  .sw .meta span{color:var(--stone);font-family:ui-monospace,monospace;font-size:10px;}
+
+  /* ── Font specimens ── */
+  .spec{border:1px solid var(--hairline-soft);border-radius:12px;padding:18px 20px;background:var(--cream);margin-top:14px;}
+  .spec .lbl{font-family:var(--ui);font-weight:700;font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--stone-warm);}
+  .spec .name{font-size:13px;color:var(--espresso);margin:2px 0 10px;}
+  .spec .name b{color:var(--charcoal);} .spec .name code{font-size:12px;}
+  .spec .big{line-height:1.1;color:var(--charcoal);}
+
+  /* ── Sprite gallery ── */
+  .sprites{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin-top:16px;}
+  .sprcell{border:1px solid var(--hairline-soft);border-radius:12px;background:
+    repeating-conic-gradient(#EFE9E1 0% 25%,#F8F7F4 0% 50%) 50%/16px 16px;padding:14px;text-align:center;}
+  .sprcell img{max-width:96px;max-height:64px;}
+  .sprcell .cap{margin-top:8px;font-family:ui-monospace,monospace;font-size:11px;color:var(--espresso);}
+  .sprcell .cap small{display:block;color:var(--stone);}
+
+  /* ── Anatomy tree ── */
+  .anat{font-family:ui-monospace,monospace;font-size:13px;line-height:1.7;color:var(--espresso);
+    background:var(--soft-linen);border:1px solid var(--hairline-soft);border-radius:10px;padding:16px 18px;margin-top:14px;white-space:pre;overflow:auto;}
+  .anat b{color:var(--forest);font-weight:700;}
+  .anat i{color:var(--terracotta);font-style:normal;}
+
+  .note{border-left:3px solid var(--gold);background:rgba(200,169,107,.09);padding:12px 16px;border-radius:0 10px 10px 0;margin-top:16px;font-size:14.5px;color:var(--espresso);}
+  .note b{color:var(--charcoal);}
+  .pill{display:inline-block;font-family:var(--ui);font-weight:700;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+    padding:5px 11px;border-radius:999px;border:1.5px solid var(--sage);color:var(--forest);background:var(--cream);}
+  hr{border:none;border-top:1.5px dashed var(--stitch);margin:0;}
+  .toc{display:flex;flex-wrap:wrap;gap:10px;margin-top:34px;}
+  .toc a{font-size:13px;padding:8px 14px;border:1px solid var(--hairline);border-radius:999px;background:var(--cream);
+     text-decoration:none;color:var(--espresso);box-shadow:var(--sh-paper);}
+  .toc a:hover{background:var(--soft-linen);}
+  footer{margin-top:80px;padding-top:30px;border-top:1.5px dashed var(--stitch);color:var(--stone);font-size:13px;}
+  footer em{font-family:var(--italic);font-style:italic;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Paper &amp; Petals · Design System</div>
+    <h1>Unity component<br>build guide <em>&amp;</em> kit</h1>
+    <p class="lede">Everything you need to recreate the Paper &amp; Petals look and feel in Unity 6 — drop-in C# components, a ScriptableObject theme, placeholder 9-slice sprites, and embeddable font picks that hold the cozy spell.</p>
+    <div class="toc">
+      <a href="#install">Install</a>
+      <a href="#fonts">Fonts</a>
+      <a href="#tokens">Tokens → Unity</a>
+      <a href="#sprites">9-slice sprites</a>
+      <a href="#components">Components</a>
+      <a href="#motion">Motion</a>
+    </div>
+  </header>
+
+  <!-- ───────────────────────── WHAT'S IN THE BOX ───────────────────────── -->
+  <section id="whats-inside">
+    <h2><span class="num">A</span> What's in the package</h2>
+    <p class="sub">Unzip into your project. Scripts go under <code class="inline">Assets/Scripts/UI</code>, sprites anywhere under <code class="inline">Assets/</code>.</p>
+    <div class="panel">
+      <table>
+        <tr><th>Folder / file</th><th>What it is</th></tr>
+        <tr><td><code>Scripts/UI/PaperPetalsTheme.cs</code></td><td>The ScriptableObject that holds every color, font, sprite, metric and motion curve. Single source of truth.</td></tr>
+        <tr><td><code>Scripts/UI/PPColor.cs</code></td><td>Brand palette as code constants + a hex helper.</td></tr>
+        <tr><td><code>Scripts/UI/PPEasing.cs</code></td><td>CSS-accurate <code>CubicBezier</code> (paper / petal / press) for matching motion.</td></tr>
+        <tr><td><code>Scripts/UI/PPMotion.cs</code> · <code>PPHoverPress.cs</code></td><td>The shared lift + press-scale tween, and a reusable interaction behaviour.</td></tr>
+        <tr><td><code>Scripts/UI/PPButton · PPBadge · PPChip · PPCard · PPInputField · PPNavItem · PPNavGroup</code></td><td>The components, one file each.</td></tr>
+        <tr><td><code>Scripts/UI/Editor/PaperPetalsMenu.cs</code></td><td>Menu to create the theme asset &amp; auto-apply sprite import settings.</td></tr>
+        <tr><td><code>Sprites/pp_*.png</code></td><td>Placeholder 9-slice fills, stroke rings, pill, circle and a soft paper shadow. Swap for real art later.</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── INSTALL ───────────────────────── -->
+  <section id="install">
+    <h2><span class="num">B</span> Install in four steps</h2>
+    <ol class="steps">
+      <li><b class="t">Copy the files in</b>Drag <code class="inline">Scripts/UI</code> into <code class="inline">Assets/Scripts/UI</code> and <code class="inline">Sprites</code> anywhere under <code class="inline">Assets/</code>. Unity compiles the scripts automatically. You need <strong>TextMeshPro</strong> installed (Window ▸ TextMeshPro ▸ Import TMP Essentials).</li>
+      <li><b class="t">Create the theme</b>Run <code class="inline">Tools ▸ Paper &amp; Petals ▸ Create Theme Asset</code>. This writes <code class="inline">Assets/Resources/PaperPetalsTheme.asset</code> with all brand colors pre-filled. Because it lives in <code class="inline">Resources</code> and is named exactly <code class="inline">PaperPetalsTheme</code>, every component auto-loads it — no manual wiring.</li>
+      <li><b class="t">Prep the sprites</b>Run <code class="inline">Tools ▸ Paper &amp; Petals ▸ Apply Sprite Import Settings</code>. It sets each <code class="inline">pp_*.png</code> to Sprite, 400 px-per-unit, and the correct 9-slice border. Then drag them onto the matching fields of the theme asset.</li>
+      <li><b class="t">Bake &amp; assign fonts</b>Create TMP Font Assets from the four recommended families (next section) and drop them on the theme's font slots. Done — drop any component onto a Canvas and it styles itself.</li>
+    </ol>
+    <div class="note"><b>Reference canvas.</b> The whole system is specced at <b>1024 × 768</b> (iPad landscape). Set your Canvas Scaler to <em>Scale With Screen Size</em>, reference resolution 1024 × 768, match 0.5. All px values below assume that.</div>
+  </section>
+
+  <!-- ───────────────────────── FONTS ───────────────────────── -->
+  <section id="fonts">
+    <h2><span class="num">C</span> Fonts that ship in a build</h2>
+    <p class="sub">The brand fonts (Henriette, Adorn Pomander, Chaparral Pro) are Adobe Fonts — they <strong>cannot be embedded</strong> in a shipped game. These four open-licence (SIL OFL) families carry the same warm, cottagecore character and are free to bake into a Unity build. Every specimen below is rendered in the actual recommended font.</p>
+
+    <div class="grid2">
+      <div class="spec">
+        <div class="lbl">Display · titles</div>
+        <div class="name"><b>Spectral</b> → theme <code>displayFont</code><br>replaces Henriette / DM Serif Display</div>
+        <div class="big" style="font-family:var(--serif);font-weight:600;font-size:34px;">Loading your craft room</div>
+        <div class="big" style="font-family:var(--serif);font-weight:600;font-size:20px;margin-top:8px;color:var(--espresso)">Antique Library pack · Autumn</div>
+      </div>
+      <div class="spec">
+        <div class="lbl">UI · body · labels</div>
+        <div class="name"><b>Nunito Sans</b> → theme <code>uiFont</code><br>the full UI stack (replaces Inter fallback)</div>
+        <div class="big" style="font-family:var(--ui);font-weight:700;font-size:22px;">Start subscription</div>
+        <div class="big" style="font-family:var(--ui);font-weight:400;font-size:15px;margin-top:10px;color:var(--espresso)">One pressed flower, one antique postcard. Open when you're ready — no rush.</div>
+      </div>
+      <div class="spec">
+        <div class="lbl">Editorial italic</div>
+        <div class="name"><b>EB Garamond Italic</b> → theme <code>scriptFont</code><br>seasonal names, volume titles, emphasis</div>
+        <div class="big" style="font-family:var(--italic);font-style:italic;font-size:30px;color:var(--espresso)">the Autumn Library, vol. two</div>
+      </div>
+      <div class="spec">
+        <div class="lbl">Flourish · hero quotes only</div>
+        <div class="name"><b>Pinyon Script</b> → theme <code>flourishFont</code><br>replaces Adorn Pomander</div>
+        <div class="big" style="font-family:var(--flourish);font-size:46px;color:var(--terracotta)">a quiet morning ritual</div>
+      </div>
+    </div>
+
+    <h3>Making a TMP Font Asset</h3>
+    <ol class="steps">
+      <li><b class="t">Download the .ttf</b>Grab the families from <a href="https://fonts.google.com">fonts.google.com</a> (all four are OFL). Import the <code class="inline">.ttf</code> files into <code class="inline">Assets/Fonts/…</code>.</li>
+      <li><b class="t">Generate SDF</b><code class="inline">Window ▸ TextMeshPro ▸ Font Asset Creator</code>. Source font = the imported .ttf, Render Mode = <strong>SDFAA</strong>, Atlas 1024², Character Set = <em>Extended ASCII</em> (or your locale). Generate, then <strong>Save</strong> the asset next to the font.</li>
+      <li><b class="t">Assign to the theme</b>Drop each Font Asset onto <code class="inline">displayFont / uiFont / scriptFont / flourishFont</code>. Components pull from these automatically.</li>
+    </ol>
+    <div class="note"><b>Letter-spacing.</b> CSS tracking is em-based; TMP's <code class="inline">characterSpacing</code> is roughly em × 100. The label tracking <code class="inline">.16em</code> → <code class="inline">16</code>, micro badges <code class="inline">.20–.22em</code> → <code class="inline">20–22</code>. These are stored on the theme (<code class="inline">lsLabel</code>, <code class="inline">lsMicro</code>).</div>
+  </section>
+
+  <!-- ───────────────────────── TOKENS ───────────────────────── -->
+  <section id="tokens">
+    <h2><span class="num">D</span> Tokens → Unity mapping</h2>
+    <p class="sub">Every CSS variable has a home on the theme asset. The palette is pre-filled by the menu command; here's the full map.</p>
+
+    <h3>Color</h3>
+    <div class="swatches">
+      <div class="sw"><div class="chip" style="background:#F8F7F4"></div><div class="meta"><b>bg1</b><span>#F8F7F4</span></div></div>
+      <div class="sw"><div class="chip" style="background:#EFE9E1"></div><div class="meta"><b>bg2</b><span>#EFE9E1</span></div></div>
+      <div class="sw"><div class="chip" style="background:#E5D8C8"></div><div class="meta"><b>bg3</b><span>#E5D8C8</span></div></div>
+      <div class="sw"><div class="chip" style="background:#FFFDF6"></div><div class="meta"><b>surfaceCard</b><span>#FFFDF6</span></div></div>
+      <div class="sw"><div class="chip" style="background:#4E6652"></div><div class="meta"><b>accent</b><span>#4E6652</span></div></div>
+      <div class="sw"><div class="chip" style="background:#3B4E3F"></div><div class="meta"><b>accentHover</b><span>#3B4E3F</span></div></div>
+      <div class="sw"><div class="chip" style="background:#87937C"></div><div class="meta"><b>accentSoft</b><span>#87937C</span></div></div>
+      <div class="sw"><div class="chip" style="background:#C8A96B"></div><div class="meta"><b>highlight</b><span>#C8A96B</span></div></div>
+      <div class="sw"><div class="chip" style="background:#C47B63"></div><div class="meta"><b>terracotta</b><span>#C47B63</span></div></div>
+      <div class="sw"><div class="chip" style="background:#A98C98"></div><div class="meta"><b>mauve</b><span>#A98C98</span></div></div>
+      <div class="sw"><div class="chip" style="background:#D7B7B0"></div><div class="meta"><b>softRose</b><span>#D7B7B0</span></div></div>
+      <div class="sw"><div class="chip" style="background:#B26A5A"></div><div class="meta"><b>danger</b><span>#B26A5A</span></div></div>
+      <div class="sw"><div class="chip" style="background:#2B2A28"></div><div class="meta"><b>fg1</b><span>#2B2A28</span></div></div>
+      <div class="sw"><div class="chip" style="background:#4B4038"></div><div class="meta"><b>fg2</b><span>#4B4038</span></div></div>
+      <div class="sw"><div class="chip" style="background:#7A6B52"></div><div class="meta"><b>fg3</b><span>#7A6B52</span></div></div>
+      <div class="sw"><div class="chip" style="background:#C8BC9E"></div><div class="meta"><b>hairline</b><span>#C8BC9E</span></div></div>
+    </div>
+
+    <h3>Type, metrics, motion</h3>
+    <div class="panel tint">
+      <table>
+        <tr><th>CSS token</th><th>Value</th><th>Theme field / Unity</th></tr>
+        <tr><td><code>--fs-h1 … --fs-micro</code></td><td>42 / 32 / 24 / 18 / 16 / 13 / 11</td><td><code>fsH1…fsMicro</code> → TMP <code>fontSize</code> (at 1024 ref)</td></tr>
+        <tr><td><code>--lh-body</code></td><td>1.55</td><td>TMP <em>Line Spacing</em> ≈ +18 (TMP units are %-of-em offsets)</td></tr>
+        <tr><td><code>--r-sm / md / lg / xl</code></td><td>6 / 10 / 16 / 24</td><td><code>rSm…rXl</code> → pick the matching <code>pp_fill_r*</code> sprite</td></tr>
+        <tr><td><code>--bw-card</code></td><td>1.5px</td><td>stroke sprite tint = <code>hairline</code></td></tr>
+        <tr><td><code>--sh-card</code></td><td>layered paper shadow</td><td><code>pp_shadow_r16</code> behind, tint <code>shadowInk</code> @ 22% α</td></tr>
+        <tr><td><code>--dur-fast / base / slow</code></td><td>150 / 240 / 480 ms</td><td><code>durFast / durBase / durSlow</code> (seconds)</td></tr>
+        <tr><td><code>--ease-paper / petal / press</code></td><td>cubic-bezier</td><td><code>CubicBezier.Paper / Petal / Press</code></td></tr>
+        <tr><td>tap target</td><td>48 × 48 min</td><td><code>tapMin</code> — never go smaller (accessibility floor)</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- ───────────────────────── SPRITES ───────────────────────── -->
+  <section id="sprites">
+    <h2><span class="num">E</span> The 9-slice sprites</h2>
+    <p class="sub">uGUI has no <code class="inline">border-radius</code> or <code class="inline">box-shadow</code> — rounded surfaces are sliced sprites. These are <strong>white &amp; tintable</strong>: one fill + one matching ring per radius, plus a soft shadow. Tint them from the theme; swap for hand-painted paper textures whenever you like (keep the same border).</p>
+    <div class="sprites">
+      <div class="sprcell"><img src="Sprites/pp_fill_r6.png" alt=""><div class="cap">pp_fill_r6<small>buttons · inputs · border 24</small></div></div>
+      <div class="sprcell"><img src="Sprites/pp_fill_r10.png" alt=""><div class="cap">pp_fill_r10<small>palette · trays · border 40</small></div></div>
+      <div class="sprcell"><img src="Sprites/pp_fill_r16.png" alt=""><div class="cap">pp_fill_r16<small>cards · panels · border 64</small></div></div>
+      <div class="sprcell"><img src="Sprites/pp_fill_pill.png" alt=""><div class="cap">pp_fill_pill<small>badges · chips · border 64</small></div></div>
+      <div class="sprcell"><img src="Sprites/pp_stroke_r16.png" alt="" style="filter:contrast(0) brightness(.55)"><div class="cap">pp_stroke_r16<small>ring · tint = hairline</small></div></div>
+      <div class="sprcell"><img src="Sprites/pp_shadow_r16.png" alt=""><div class="cap">pp_shadow_r16<small>soft paper shadow</small></div></div>
+    </div>
+    <div class="note"><b>Import settings</b> (the menu applies these): Texture Type <b>Sprite (2D &amp; UI)</b>, Mesh Type <b>Full Rect</b>, <b>Pixels Per Unit = 400</b> (baked at 4× so corners land at the css radius on a 100-PPU canvas), 9-slice <b>Border = the value above</b>, Filter <b>Bilinear</b>, Wrap <b>Clamp</b>, mipmaps off, Alpha Is Transparency on. On the Image component set <em>Image Type = Sliced</em>.</div>
+  </section>
+
+  <!-- ───────────────────────── COMPONENTS ───────────────────────── -->
+  <section id="components">
+    <h2><span class="num">F</span> Building each component</h2>
+    <p class="sub">Each script auto-styles from the theme in edit mode (<code class="inline">[ExecuteAlways]</code> / <code class="inline">OnValidate</code>), so you build the hierarchy once, wire the graphics, and it looks right immediately. <b style="color:var(--forest)">green</b> = the GameObject carrying the script; <b style="color:var(--terracotta)">orange</b> = the field you assign it to.</p>
+
+    <h3>Button — <code>PPButton</code></h3>
+    <p>Derives from uGUI <code class="inline">Button</code>, so you keep <code class="inline">onClick</code>, navigation and <code class="inline">interactable</code>. Set <code class="inline">variant</code> (Primary / Secondary / Ghost / Danger) and <code class="inline">pill</code>. Primary fills forest with cream text; secondary &amp; danger show the stroke ring.</p>
+    <div class="anat"><b>Button</b>  <i>Image = pp_fill_r6 (or pp_fill_pill)</i> · PPButton · ContentSizeFitter opt.
+├─ Stroke   <i>Image = pp_stroke_r6</i>   → field <i>stroke</i>   (secondary/danger)
+└─ Label    TextMeshProUGUI              → field <i>label</i></div>
+
+    <h3>Rarity badge — <code>PPBadge</code> &amp; filter chip — <code>PPChip</code></h3>
+    <p>Both are pills. <code class="inline">PPBadge</code> is static and maps <code class="inline">Common / Uncommon / Rare / Heirloom</code> to the rarity colors. <code class="inline">PPChip</code> toggles on click (with the hover-lift feel) and fires <code class="inline">onValueChanged</code>.</p>
+    <div class="anat"><b>Badge / Chip</b>  <i>Image = pp_fill_pill</i>   → field <i>fill</i>
+├─ Stroke <i>Image = pp_stroke_pill</i>   → field <i>stroke</i>
+├─ Dot    <i>Image = pp_fill_circle</i>   → field <i>dot</i>   (chip only, optional)
+└─ Label  TextMeshProUGUI                → field <i>label</i></div>
+
+    <h3>Card — <code>PPCard</code></h3>
+    <p>Cream surface, parchment hairline, layered paper shadow. Toggle <code class="inline">stitched</code> to hide the border and show the inset hand-stitch ring instead.</p>
+    <div class="anat"><b>Card</b>  PPCard
+├─ Shadow  <i>Image = pp_shadow_r16</i>  → field <i>shadow</i>  (slightly larger, behind)
+├─ Fill    <i>Image = pp_fill_r16</i>    → field <i>fill</i>
+├─ Border  <i>Image = pp_stroke_r16</i>  → field <i>border</i>
+├─ Stitch  <i>Image = pp_stroke_r16</i>  → field <i>stitch</i> (optional, inset ~6px)
+└─ (your content)</div>
+
+    <h3>Input field — <code>PPInputField</code></h3>
+    <p>Wraps a <code class="inline">TMP_InputField</code>. Cream surface + hairline; on focus the border turns sage and a soft sage ring appears — never blue.</p>
+    <div class="anat"><b>Field</b>  TMP_InputField · PPInputField
+├─ FocusRing  <i>Image = pp_stroke_r6</i>  → field <i>focusRing</i> (off until focus)
+├─ Border     <i>Image = pp_stroke_r6</i>  → field <i>border</i>
+├─ Background  <i>Image = pp_fill_r6</i>    → field <i>background</i>
+└─ Text Area ▸ Text / Placeholder          → fields <i>textComponent / placeholder</i></div>
+
+    <h3>Navigation rail — <code>PPNavItem</code> + <code>PPNavGroup</code></h3>
+    <p>Put <code class="inline">PPNavGroup</code> on the rail; it finds the child items and enforces single-selection. Active item fills forest with cream icon + label; inactive warms on hover. Icons are outline sprites (Tabler-style, 1.75px stroke) tinted by the script.</p>
+    <div class="anat"><b>Rail</b>  PPNavGroup  (VerticalLayoutGroup)
+├─ <b>NavItem</b>  <i>Image = pp_fill_r10</i> · PPNavItem
+│   ├─ Icon   <i>Image = outline sprite</i>  → field <i>icon</i>
+│   └─ Label  TextMeshProUGUI               → field <i>label</i>
+└─ … more NavItems</div>
+    <div class="note"><b>Icons.</b> The system uses <b>Tabler outline icons</b> (outline only, 1.75px stroke, rounded caps). Export the SVGs you need from <a href="https://tabler-icons.io">tabler-icons.io</a>, import as Sprites, and tint via the NavItem — don't fill them.</div>
+  </section>
+
+  <!-- ───────────────────────── MOTION ───────────────────────── -->
+  <section id="motion">
+    <h2><span class="num">G</span> The paper-physics feel</h2>
+    <p class="sub">Soft, slow, weighted — never bouncy. The motion is baked into the components; these are the values, stored on the theme so you can tune globally.</p>
+    <div class="panel">
+      <table>
+        <tr><th>Gesture</th><th>What happens</th><th>Duration · easing</th></tr>
+        <tr><td>Hover (mouse)</td><td>element lifts <code>hoverLift</code> = 2px, background warms one step</td><td>240 ms · <code>easePaper</code></td></tr>
+        <tr><td>Press (touch)</td><td>scales to <code>pressScale</code> = 0.96, sinks back to base Y</td><td>150 ms · <code>easePress</code></td></tr>
+        <tr><td>Card / modal entrance</td><td>fade + small rise</td><td>240 ms · <code>easePaper</code></td></tr>
+        <tr><td>Parcel / ephemera drift-in</td><td>drift up into place</td><td>480 ms · <code>easePetal</code></td></tr>
+      </table>
+    </div>
+    <pre><span class="c">// CubicBezier matches the CSS curve exactly (Newton-Raphson solve).</span>
+<span class="k">var</span> ease = CubicBezier.Paper;          <span class="c">// cubic-bezier(0.32,0.72,0.32,1)</span>
+<span class="k">float</span> k = ease.Evaluate(t01);            <span class="c">// eased 0..1 for your own tweens</span>
+
+<span class="c">// Reduced motion? Pass duration 0 and the tween snaps instantly.</span>
+StartCoroutine(PPMotion.LiftPress(rt, baseY, baseY + 2f, <span class="s">0.96f</span>, dur, ease));</pre>
+    <div class="note">No bounces, no overshoot, no elastic. The settle curve lands paper with weight by slowing in the last 20% instead of springing past the target.</div>
+  </section>
+
+  <footer>
+    <em>Paper &amp; Petals</em> — Unity component build guide · generated for the Cozy Craft Journal project.<br>
+    Brand fonts shown via open-licence stand-ins (Spectral, Nunito Sans, EB Garamond, Pinyon Script). Swap placeholder sprites for real paper art anytime; keep the 9-slice borders.
+  </footer>
+
+</div>
+</body>
+</html>

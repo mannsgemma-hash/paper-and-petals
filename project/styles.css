@@ -1,0 +1,7 @@
+/* ────────────────────────────────────────────────────────────────
+   Paper & Petals — global stylesheet entry point.
+   Link THIS file; it pulls in the foundations (design tokens, brand
+   @font-face faces, and semantic typography) from colors_and_type.css.
+   Kit-local additions live in ui_kits/app/tokens.css.
+   ──────────────────────────────────────────────────────────────── */
+@import url("colors_and_type.css");

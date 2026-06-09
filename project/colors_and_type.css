@@ -1,0 +1,253 @@
+/* ────────────────────────────────────────────────────────────────
+   Paper & Petals — Foundations
+   Colors, type, spacing, radii, shadows.
+   Import this file FIRST in any HTML artifact.
+   ──────────────────────────────────────────────────────────────── */
+
+/* Brand fonts — self-hosted from /fonts (the four uploaded faces).
+   The Google Fonts @import below now only supplies graceful CDN fallbacks
+   (DM Serif Display, Inter, Cormorant Garamond, Libre Baskerville) for any
+   environment where the self-hosted files have not loaded yet. */
+@import url("https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:ital,wght@1,400;1,500;1,600&family=Libre+Baskerville:ital@0;1&display=swap");
+
+/* Spectral — refined text serif → display, headings, editorial paper text */
+@font-face {
+  font-family: "Spectral";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/Spectral-Regular.ttf") format("truetype");
+}
+/* Nunito Sans — friendly humanist sans → body & functional UI */
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 200 900;
+  font-display: swap;
+  src: url("fonts/NunitoSans-VariableFont_YTLC_opsz_wdth_wght.ttf") format("truetype-variations");
+}
+/* EB Garamond Italic — romantic editorial italic → pull-quotes, script lines */
+@font-face {
+  font-family: "EB Garamond";
+  font-style: italic;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url("fonts/EBGaramond-Italic-VariableFont_wght.ttf") format("truetype-variations");
+}
+/* Pinyon Script — calligraphic flourish → ornamental hero moments only */
+@font-face {
+  font-family: "Pinyon Script";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("fonts/PinyonScript-Regular.ttf") format("truetype");
+}
+
+:root {
+  /* ── Brand palette ─────────────────────────────────────────── */
+
+  /* Surfaces — warm paper backgrounds, layered light→dark */
+  --pp-warm-white:        #F8F7F4;   /* canvas */
+  --pp-soft-linen:        #EFE9E1;   /* secondary surface */
+  --pp-vintage-paper:     #E5D8C8;   /* card, tinted panel */
+  --pp-cream:             #FFFDF6;   /* lifted card / paper sheet */
+
+  /* Primary accents — muted, dusty, never saturated */
+  --pp-terracotta:        #C47B63;
+  --pp-sage:              #87937C;
+  --pp-dusty-blue:        #8FA3B8;
+  --pp-mauve:             #A98C98;
+
+  /* Deep accents — used for journal-cover and forest-green CTAs */
+  --pp-forest:            #4E6652;   /* primary CTA, key actions */
+  --pp-forest-deep:       #3B4E3F;   /* pressed / focus */
+
+  /* Text */
+  --pp-charcoal:          #2B2A28;   /* headings, body on light */
+  --pp-espresso:          #4B4038;   /* secondary body */
+  --pp-stone:             #9A8A72;   /* muted body, captions */
+  --pp-stone-warm:        #7A6B52;   /* labels */
+
+  /* Highlights */
+  --pp-antique-gold:      #C8A96B;
+  --pp-soft-rose:         #D7B7B0;
+  --pp-muted-olive:       #7A7D5C;
+
+  /* Borders / hairlines — dusty parchment edges */
+  --pp-hairline:          #C8BC9E;   /* parchment border */
+  --pp-hairline-soft:     rgba(123, 107, 82, 0.18);
+  --pp-stitch:            rgba(75, 64, 56, 0.35);  /* hand-stitch line */
+
+  /* Semantic */
+  --pp-success:           #7A8F6E;
+  --pp-warning:           #C8A96B;
+  --pp-danger:            #B26A5A;
+
+  /* ── Foreground / Background tokens (use these in components) ── */
+  --bg-1: var(--pp-warm-white);
+  --bg-2: var(--pp-soft-linen);
+  --bg-3: var(--pp-vintage-paper);
+  --surface-card: var(--pp-cream);
+
+  --fg-1: var(--pp-charcoal);     /* primary text */
+  --fg-2: var(--pp-espresso);     /* secondary text */
+  --fg-3: var(--pp-stone-warm);   /* tertiary, labels */
+  --fg-4: var(--pp-stone);        /* muted / disabled */
+
+  --accent:        var(--pp-forest);
+  --accent-hover:  var(--pp-forest-deep);
+  --accent-soft:   var(--pp-sage);
+  --highlight:     var(--pp-antique-gold);
+
+  /* ── Type families ─────────────────────────────────────────── */
+  --font-display:    "Spectral", "DM Serif Display", "Libre Baskerville", Georgia, serif;
+  --font-flourish:   "Pinyon Script", "Adorn Pomander", "Cormorant Garamond", "DM Serif Display", serif;
+  --font-script:     "EB Garamond", "Cormorant Garamond", "Chaparral Pro", Georgia, serif;
+  --font-ui:         "Nunito Sans", "Inter", -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-paper:      "Spectral", "DM Serif Display", "Libre Baskerville", Georgia, serif;  /* small-caps labels */
+
+  /* Type scale (from brand brief) */
+  --fs-h1:        42px;
+  --fs-h2:        32px;
+  --fs-h3:        24px;
+  --fs-body-lg:   18px;
+  --fs-body:      16px;
+  --fs-caption:   13px;
+  --fs-micro:     11px;
+
+  --lh-tight:     1.2;   /* @kind other */
+  --lh-snug:      1.35;  /* @kind other */
+  --lh-body:      1.55;  /* @kind other */
+  --lh-loose:     1.65;  /* @kind other */
+
+  --ls-display:   -0.005em;   /* slight optical tightening on serifs */
+  --ls-ui:        0.005em;    /* tiny positive for elegance */
+  --ls-label:     0.16em;     /* SMALL CAPS LABELS */
+  --ls-micro:     0.20em;     /* MICRO BADGES */
+
+  /* ── Spacing ────────────────────────────────────────────────
+     Multiples of 4. Use generously — calm > dense. */
+  --sp-1:  4px;
+  --sp-2:  8px;
+  --sp-3:  12px;
+  --sp-4:  16px;
+  --sp-5:  20px;
+  --sp-6:  24px;
+  --sp-7:  32px;
+  --sp-8:  40px;
+  --sp-9:  48px;
+  --sp-10: 64px;
+  --sp-11: 80px;
+  --sp-12: 96px;
+
+  /* ── Radii — soft, never sharp ────────────────────────────── */
+  --r-xs:   4px;
+  --r-sm:   6px;
+  --r-md:   10px;
+  --r-lg:   16px;
+  --r-xl:   24px;
+  --r-pill: 999px;
+
+  /* ── Borders ──────────────────────────────────────────────── */
+  --bw-hair:   1px;
+  --bw-card:   1.5px;
+  --bw-cover:  3px;
+
+  /* ── Shadows — soft, layered, paper-like ──────────────────── */
+  --sh-paper:   0 1px 0 rgba(255,255,255,0.5) inset,
+                0 1px 2px rgba(75, 64, 56, 0.06),
+                0 6px 14px -8px rgba(75, 64, 56, 0.18);
+  --sh-card:    0 1px 0 rgba(255,255,255,0.6) inset,
+                0 2px 6px rgba(75, 64, 56, 0.07),
+                0 14px 28px -16px rgba(75, 64, 56, 0.22);
+  --sh-lift:    0 1px 0 rgba(255,255,255,0.7) inset,
+                0 6px 12px rgba(75, 64, 56, 0.10),
+                0 24px 40px -20px rgba(75, 64, 56, 0.28);
+  --sh-pressed: 0 1px 2px rgba(75, 64, 56, 0.18) inset;
+
+  /* Drop shadow used for placed ephemera (washi, stickers, polaroids) */
+  --sh-tape:    0 2px 1px rgba(75, 64, 56, 0.08),
+                0 6px 10px -4px rgba(75, 64, 56, 0.18);
+
+  /* ── Motion ───────────────────────────────────────────────── */
+  --ease-paper:   cubic-bezier(0.32, 0.72, 0.32, 1);   /* @kind other */ /* slow settle */
+  --ease-petal:   cubic-bezier(0.22, 1, 0.36, 1);       /* @kind other */ /* drift in */
+  --ease-press:   cubic-bezier(0.4, 0.0, 0.2, 1);       /* @kind other */
+  --dur-fast:     150ms;   /* @kind other */
+  --dur-base:     240ms;   /* @kind other */
+  --dur-slow:     480ms;   /* @kind other */
+  --dur-page:     600ms;        /* @kind other */ /* page-flip / book pull-out */
+
+  /* ── Layout ───────────────────────────────────────────────── */
+  --tablet-w: 1024px;
+  --tablet-h: 768px;
+  --sidebar-w: 110px;       /* Craft Room left rail */
+  --tool-palette-w: 68px;   /* Journal editor right rail */
+  --page-strip-w: 68px;     /* Journal editor left thumbnails */
+}
+
+/* ────────────────────────────────────────────────────────────────
+   Semantic typography
+   Apply these to elements directly with class names, or override
+   element selectors in your component CSS.
+   ──────────────────────────────────────────────────────────────── */
+
+html, body {
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  color: var(--fg-1);
+  background: var(--bg-1);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.pp-h1, .pp-h2, .pp-h3, .pp-display {
+  font-family: var(--font-display);
+  font-weight: 400;            /* DM Serif Display is single-weight */
+  letter-spacing: var(--ls-display);
+  color: var(--fg-1);
+  line-height: var(--lh-tight);
+  text-wrap: pretty;
+}
+.pp-h1       { font-size: var(--fs-h1); }
+.pp-h2       { font-size: var(--fs-h2); }
+.pp-h3       { font-size: var(--fs-h3); }
+.pp-display  { font-size: clamp(48px, 6vw, 84px); }
+
+.pp-script {
+  font-family: var(--font-script);
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--fg-2);
+}
+
+.pp-body-lg { font-size: var(--fs-body-lg); line-height: var(--lh-body); }
+.pp-body    { font-size: var(--fs-body);    line-height: var(--lh-body); }
+.pp-caption { font-size: var(--fs-caption); line-height: var(--lh-snug); color: var(--fg-3); }
+
+.pp-label {
+  font-family: var(--font-paper);
+  font-size: var(--fs-caption);
+  letter-spacing: var(--ls-label);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+.pp-micro {
+  font-family: var(--font-ui);
+  font-weight: 600;
+  font-size: var(--fs-micro);
+  letter-spacing: var(--ls-micro);
+  text-transform: uppercase;
+  color: var(--fg-3);
+}
+
+/* Quote / pull-out — Cormorant italic */
+.pp-quote {
+  font-family: var(--font-script);
+  font-style: italic;
+  font-size: 28px;
+  line-height: 1.4;
+  color: var(--fg-2);
+}
