@@ -1,6 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Image,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,11 +18,14 @@ import Animated, {
   withTiming,
   runOnJS,
   Easing,
+  interpolate,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { AdBanner } from '../../src/components/AdBanner';
+import { Button } from '../../src/components/Button';
 import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES } from '../../src/data/shop';
@@ -36,6 +41,32 @@ const PAGE_W = SPREAD_W / 2;
 const DEFAULT_ITEM_SIZE = 120;
 const MIN_ITEM_SIZE = 60;
 const MAX_ITEM_SIZE = 380;
+// Rotate handle sits below the selection frame: 14px stem + half of the 26px knob.
+const ROTATE_HANDLE_DIST = 14 + 13;
+const FLIP_DURATION = 310; // per half-turn — 620ms total
+const FLIP_EASING = Easing.bezier(0.32, 0.72, 0.32, 1);
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Cross-platform confirm: window.confirm on web (Alert buttons are no-ops there). */
+function confirmAsync(title: string, message: string): Promise<boolean> {
+  if (Platform.OS === 'web') {
+    return Promise.resolve(window.confirm(`${title}\n\n${message}`));
+  }
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Delete', style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
+
+function noop() {}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -198,6 +229,8 @@ function PlacedItemView({
       runOnJS(onMoveEnd)(item.id, tx.value, ty.value);
     });
 
+  // Two-finger pinch/rotate kept as a bonus for touch devices; the corner and
+  // rotate handles below are the primary (mouse-friendly) path.
   const pinchGesture = Gesture.Pinch()
     .onBegin(() => {
       startW.value = itemW.value;
@@ -231,6 +264,63 @@ function PlacedItemView({
     Gesture.Simultaneous(tapGesture, panGesture),
   );
 
+  // ── Handle drag state (one drag at a time, so one pair is enough) ──────────
+  // Start vector: handle position relative to the item center, in screen px.
+  const startVX = useSharedValue(0);
+  const startVY = useSharedValue(0);
+
+  /** Corner resize handle: proportional scale from the item center. */
+  function makeCornerGesture(hx: number, hy: number) {
+    return Gesture.Pan()
+      .onBegin(() => {
+        startW.value = itemW.value;
+        startH.value = itemH.value;
+        const rad = (rot.value * Math.PI) / 180;
+        const lx = (hx * itemW.value) / 2;
+        const ly = (hy * itemH.value) / 2;
+        // Rotate the local corner vector into screen space, then scale.
+        startVX.value = (lx * Math.cos(rad) - ly * Math.sin(rad)) * spreadScale;
+        startVY.value = (lx * Math.sin(rad) + ly * Math.cos(rad)) * spreadScale;
+      })
+      .onUpdate((e) => {
+        const d0 = Math.sqrt(startVX.value * startVX.value + startVY.value * startVY.value);
+        if (d0 < 1) return;
+        const vx = startVX.value + e.translationX;
+        const vy = startVY.value + e.translationY;
+        const d = Math.sqrt(vx * vx + vy * vy);
+        // Clamp the factor so both dimensions stay in range without breaking aspect.
+        const fMin = MIN_ITEM_SIZE / Math.min(startW.value, startH.value);
+        const fMax = MAX_ITEM_SIZE / Math.max(startW.value, startH.value);
+        const f = Math.max(fMin, Math.min(fMax, d / d0));
+        itemW.value = startW.value * f;
+        itemH.value = startH.value * f;
+      })
+      .onEnd(() => {
+        runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
+      });
+  }
+
+  /** Rotate handle: angle of the pointer around the item center, soft 15° snap. */
+  const rotateHandleGesture = Gesture.Pan()
+    .onBegin(() => {
+      const dist = itemH.value / 2 + ROTATE_HANDLE_DIST;
+      const rad = (rot.value * Math.PI) / 180;
+      // Handle starts below the center: local vector (0, +dist) rotated into screen space.
+      startVX.value = -dist * Math.sin(rad) * spreadScale;
+      startVY.value = dist * Math.cos(rad) * spreadScale;
+    })
+    .onUpdate((e) => {
+      const vx = startVX.value + e.translationX;
+      const vy = startVY.value + e.translationY;
+      // -90: the handle hangs below the item, atan2 of "down" is +90.
+      const deg = (Math.atan2(vy, vx) * 180) / Math.PI - 90;
+      const snapped = Math.round(deg / 15) * 15;
+      rot.value = Math.abs(deg - snapped) < 3 ? snapped : deg;
+    })
+    .onEnd(() => {
+      runOnJS(onRotateEnd)(item.id, rot.value);
+    });
+
   const animStyle = useAnimatedStyle(() => ({
     position: 'absolute' as const,
     left: tx.value - itemW.value / 2,
@@ -238,34 +328,68 @@ function PlacedItemView({
     width: itemW.value,
     height: itemH.value,
     transform: [{ rotate: `${rot.value}deg` }],
-    zIndex: item.z,
+    zIndex: isSelected ? 9999 : item.z,
   }));
 
   const toneKey = item.tone as keyof typeof SHOP_TONES;
   const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
 
+  const CORNERS = [
+    { hx: -1, hy: -1 },
+    { hx: 1, hy: -1 },
+    { hx: 1, hy: 1 },
+    { hx: -1, hy: 1 },
+  ];
+
+  // Frame + handles live INSIDE the rotated container so they track rotation
+  // (Canva-style). Handles sit as siblings of the content's GestureDetector so
+  // their pans never compete with the move pan.
   return (
-    <GestureDetector gesture={composed}>
-      <Animated.View style={animStyle}>
-        <View
-          style={[
-            styles.itemInner,
-            {
-              backgroundColor: bg,
-              borderColor: isSelected ? theme.palette.forest : 'transparent',
-              borderWidth: isSelected ? 2 : 0,
-            },
-          ]}
-        >
-          {item.flowerAsset ? (
-            <Image source={item.flowerAsset} style={styles.itemImage} resizeMode="contain" />
-          ) : (
-            <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
-          )}
-        </View>
-        {isSelected && <View style={styles.selectionDot} />}
-      </Animated.View>
-    </GestureDetector>
+    <Animated.View style={animStyle}>
+      <GestureDetector gesture={composed}>
+        <Animated.View style={styles.itemFill}>
+          <View style={[styles.itemInner, { backgroundColor: bg }]}>
+            {item.flowerAsset ? (
+              <Image source={item.flowerAsset} style={styles.itemImage} resizeMode="contain" />
+            ) : (
+              <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
+            )}
+          </View>
+        </Animated.View>
+      </GestureDetector>
+
+      {isSelected && (
+        <>
+          {/* Selection frame */}
+          <View style={styles.selectionFrame} pointerEvents="none" />
+
+          {/* Corner resize handles */}
+          {CORNERS.map(({ hx, hy }) => (
+            <GestureDetector key={`${hx},${hy}`} gesture={makeCornerGesture(hx, hy)}>
+              <View
+                style={[
+                  styles.handleTouch,
+                  hx < 0 ? { left: -12 } : { right: -12 },
+                  hy < 0 ? { top: -12 } : { bottom: -12 },
+                ]}
+              >
+                <View style={styles.handleDot} />
+              </View>
+            </GestureDetector>
+          ))}
+
+          {/* Rotate handle: stem + knob below the frame */}
+          <View style={styles.rotateHandleWrap} pointerEvents="box-none">
+            <View style={styles.rotateStem} />
+            <GestureDetector gesture={rotateHandleGesture}>
+              <View style={styles.rotateHandle}>
+                <Feather name="rotate-cw" size={13} color={theme.palette.forest} />
+              </View>
+            </GestureDetector>
+          </View>
+        </>
+      )}
+    </Animated.View>
   );
 }
 
@@ -295,19 +419,16 @@ function PaperPage({ pageNo }: { pageNo: number }) {
 // ─── ItemToolbar ──────────────────────────────────────────────────────────────
 
 interface ItemToolbarProps {
-  item: PlacedItem;
-  spreadScale: number;
+  left: number;
+  top: number;
   onBringForward: () => void;
   onSendBack: () => void;
   onDelete: () => void;
 }
 
-function ItemToolbar({ item, spreadScale, onBringForward, onSendBack, onDelete }: ItemToolbarProps) {
-  const toolbarX = item.x * spreadScale - 70;
-  const toolbarY = (item.y - item.h / 2) * spreadScale - 52;
-
+function ItemToolbar({ left, top, onBringForward, onSendBack, onDelete }: ItemToolbarProps) {
   return (
-    <View style={[styles.toolbar, { left: toolbarX, top: toolbarY }]}>
+    <View style={[styles.toolbar, { left, top }]}>
       <Pressable style={styles.toolBtn} onPress={onBringForward} hitSlop={4}>
         <Feather name="chevrons-up" size={16} color={theme.color.fg1} />
       </Pressable>
@@ -322,35 +443,78 @@ function ItemToolbar({ item, spreadScale, onBringForward, onSendBack, onDelete }
   );
 }
 
-// ─── usePageFlip ──────────────────────────────────────────────────────────────
+// ─── Page flip (only the turning half rotates, hinged at the spine) ──────────
 
-function usePageFlip() {
-  const outRotateY = useSharedValue(0);
-  const inRotateY = useSharedValue(90);
-  const outOpacity = useSharedValue(1);
-  const inOpacity = useSharedValue(0);
+interface FlipState {
+  dir: 'next' | 'prev';
+  from: number;
+  to: number;
+  /** Phase A: current page lifts 0→±90. Phase B: destination page lands ∓90→0. */
+  phase: 'A' | 'B';
+}
 
-  const flip = (direction: 'next' | 'prev', onMidpoint: () => void) => {
-    const sign = direction === 'next' ? -1 : 1;
-    const easing = Easing.bezier(0.32, 0.72, 0.32, 1);
+/**
+ * One half of a spread, clipped out of a full SpreadView render. Used for the
+ * static base under a flip and for the faces of the turning page.
+ */
+function SpreadHalf({ pages, page, side }: { pages: PageState[]; page: number; side: 'left' | 'right' }) {
+  return (
+    <View style={styles.spreadHalfClip} pointerEvents="none">
+      <View style={[styles.spreadHalfShift, side === 'right' && { marginLeft: -PAGE_W }]}>
+        <SpreadView
+          pages={pages}
+          activePage={page}
+          selectedId={null}
+          spreadScale={1}
+          onCanvasTap={noop}
+          onSelect={noop}
+          onMoveEnd={noop}
+          onResizeEnd={noop}
+          onRotateEnd={noop}
+        />
+      </View>
+    </View>
+  );
+}
 
-    outRotateY.value = withTiming(sign * -90, { duration: 310, easing }, (finished) => {
-      if (finished) {
-        runOnJS(onMidpoint)();
-        outOpacity.value = 0;
-        inRotateY.value = sign * 90;
-        inOpacity.value = 1;
-        outRotateY.value = 0;
-        inRotateY.value = withTiming(0, { duration: 310, easing }, (done) => {
-          if (done) {
-            outOpacity.value = 1;
-          }
-        });
-      }
-    });
-  };
+/**
+ * The turning page: a page-sized layer over one half of the spread, rotating
+ * in Y around the spine edge. The translateX sandwich moves the rotation axis
+ * from the center to the spine-side edge. A dark overlay fades 0 → 0.18 → 0
+ * as the page lifts.
+ */
+function FlipPage({
+  side,
+  rot,
+  children,
+}: {
+  side: 'left' | 'right';
+  rot: SharedValue<number>;
+  children: React.ReactNode;
+}) {
+  // Right half hinges on its LEFT edge; left half hinges on its RIGHT edge.
+  const hinge = side === 'right' ? 1 : -1;
+  const pageStyle = useAnimatedStyle(() => ({
+    transform: [
+      { perspective: 1200 },
+      { translateX: -hinge * (PAGE_W / 2) },
+      { rotateY: `${rot.value}deg` },
+      { translateX: hinge * (PAGE_W / 2) },
+    ],
+  }));
+  const shadeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(Math.abs(rot.value), [0, 90], [0, 0.18]),
+  }));
 
-  return { outRotateY, inRotateY, outOpacity, inOpacity, flip };
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[styles.flipPage, { left: side === 'right' ? PAGE_W : 0 }, pageStyle]}
+    >
+      {children}
+      <Animated.View style={[StyleSheet.absoluteFill, styles.flipShade, shadeStyle]} />
+    </Animated.View>
+  );
 }
 
 // ─── SpreadView ───────────────────────────────────────────────────────────────
@@ -449,20 +613,8 @@ export default function EditorScreen() {
   const spreadScale = baseScale * zoom;
 
   // ── Page flip animation ───────────────────────────────────────────────────
-  const { outRotateY, inRotateY, outOpacity, inOpacity, flip } = usePageFlip();
-
-  const outAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ perspective: 1200 }, { rotateY: `${outRotateY.value}deg` }],
-    opacity: outOpacity.value,
-  }));
-
-  const inAnimStyle = useAnimatedStyle(() => ({
-    transform: [{ perspective: 1200 }, { rotateY: `${inRotateY.value}deg` }],
-    opacity: inOpacity.value,
-    position: 'absolute' as const,
-    width: SPREAD_W,
-    height: SPREAD_H,
-  }));
+  const [flipState, setFlipState] = useState<FlipState | null>(null);
+  const flipRot = useSharedValue(0);
 
   // ── Drawer animation ──────────────────────────────────────────────────────
   const drawerX = useSharedValue(360);
@@ -630,18 +782,58 @@ export default function EditorScreen() {
   }
 
   // ── Page navigation ───────────────────────────────────────────────────────
-  function goToPage(newPage: number) {
-    if (newPage < 1 || newPage > pages.length) return;
+  function finishFlip(to: number) {
+    setActivePage(to);
+    setFlipState(null);
+  }
+
+  function startFlipPhaseB(dir: 'next' | 'prev', from: number, to: number) {
+    // Past 90° the turning page shows its back: the destination page landing.
+    setActivePage(to);
+    setFlipState({ dir, from, to, phase: 'B' });
+    flipRot.value = dir === 'next' ? 90 : -90;
+    flipRot.value = withTiming(0, { duration: FLIP_DURATION, easing: FLIP_EASING }, (finished) => {
+      if (finished) runOnJS(finishFlip)(to);
+    });
+  }
+
+  function goToPage(newPage: number, pageCount = pages.length) {
+    if (newPage < 1 || newPage > pageCount || newPage === activePage || flipState) return;
     setSelectedId(null);
-    const direction = newPage > activePage ? 'next' : 'prev';
-    flip(direction, () => setActivePage(newPage));
+    const dir: 'next' | 'prev' = newPage > activePage ? 'next' : 'prev';
+    const from = activePage;
+    const to = newPage;
+    setFlipState({ dir, from, to, phase: 'A' });
+    flipRot.value = 0;
+    flipRot.value = withTiming(
+      dir === 'next' ? -90 : 90,
+      { duration: FLIP_DURATION, easing: FLIP_EASING },
+      (finished) => {
+        if (finished) runOnJS(startFlipPhaseB)(dir, from, to);
+        else runOnJS(finishFlip)(to);
+      },
+    );
   }
 
   function addPage() {
     if (pages.length >= MAX_PAGES) return;
     const newPages = [...pages, { items: [] }];
     pushHistory(newPages);
-    goToPage(newPages.length);
+    scheduleSave(newPages);
+    goToPage(newPages.length, newPages.length);
+  }
+
+  async function handleDeletePage() {
+    const isCover = activePage === 1 || activePage === pages.length;
+    const contentPages = pages.length - 2; // first & last spreads carry the covers
+    if (isCover || contentPages <= 1) return;
+    const ok = await confirmAsync('Delete this page?', 'Items on it will be removed.');
+    if (!ok) return;
+    const newPages = pages.filter((_, i) => i !== activePage - 1);
+    setSelectedId(null);
+    setActivePage(Math.min(activePage, newPages.length));
+    pushHistory(newPages);
+    scheduleSave(newPages);
   }
 
   // ── Name editing ──────────────────────────────────────────────────────────
@@ -658,6 +850,27 @@ export default function EditorScreen() {
   const canUndo = historyIdx > 0;
   const canRedo = historyIdx < history.length - 1;
   const isPhone = screenW < theme.layout.phoneBreakpoint;
+  const isCoverSpread = activePage === 1 || activePage === pages.length;
+  const canDeletePage = !isCoverSpread && pages.length - 2 > 1;
+
+  // Fixed-size wrapper for the spread (Bug 1): its layout box never changes
+  // with zoom, so the scale transform happens in place around the center.
+  const containerW = SPREAD_W * baseScale;
+  const containerH = SPREAD_H * baseScale;
+
+  // Toolbar position in (unscaled) container coords, from item spread coords.
+  const toolbarLeft = selectedItem
+    ? containerW / 2 + (selectedItem.x - SPREAD_W / 2) * spreadScale - 56
+    : 0;
+  const toolbarTop = selectedItem
+    ? containerH / 2 + (selectedItem.y - selectedItem.h / 2 - SPREAD_H / 2) * spreadScale - 56
+    : 0;
+
+  const flipSide: 'left' | 'right' = flipState
+    ? (flipState.dir === 'next') === (flipState.phase === 'A')
+      ? 'right'
+      : 'left'
+    : 'right';
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
@@ -769,75 +982,62 @@ export default function EditorScreen() {
 
           {/* ── Canvas ───────────────────────────────────────────────── */}
           <View style={styles.canvasArea}>
-            <View
-              style={[
-                styles.spreadContainer,
-                {
-                  width: SPREAD_W * spreadScale,
-                  height: SPREAD_H * spreadScale,
-                },
-              ]}
-            >
-              {/* Current page (animates out) */}
-              <Animated.View
+            <View style={[styles.spreadContainer, { width: containerW, height: containerH }]}>
+              {/* The spread, laid out at full size and scaled in place around
+                  its center — the wrapper's layout box never changes. */}
+              <View
                 style={[
                   styles.spreadScaled,
                   { width: SPREAD_W, height: SPREAD_H, transform: [{ scale: spreadScale }] },
-                  outAnimStyle,
                 ]}
               >
-                <SpreadView
-                  pages={pages}
-                  activePage={activePage}
-                  selectedId={selectedId}
-                  spreadScale={spreadScale}
-                  onCanvasTap={() => setSelectedId(null)}
-                  onSelect={setSelectedId}
-                  onMoveEnd={handleMoveEnd}
-                  onResizeEnd={handleResizeEnd}
-                  onRotateEnd={handleRotateEnd}
-                />
-              </Animated.View>
-
-              {/* Incoming page (animates in) */}
-              <Animated.View
-                style={[
-                  styles.spreadScaled,
-                  {
-                    width: SPREAD_W,
-                    height: SPREAD_H,
-                    transform: [{ scale: spreadScale }],
-                    position: 'absolute',
-                  },
-                  inAnimStyle,
-                ]}
-                pointerEvents="none"
-              >
-                <SpreadView
-                  pages={pages}
-                  activePage={activePage}
-                  selectedId={null}
-                  spreadScale={spreadScale}
-                  onCanvasTap={() => {}}
-                  onSelect={() => {}}
-                  onMoveEnd={() => {}}
-                  onResizeEnd={() => {}}
-                  onRotateEnd={() => {}}
-                />
-              </Animated.View>
-
-              {/* Item toolbar (floats above selected item) */}
-              {selectedItem && (
-                <View
-                  style={[
-                    StyleSheet.absoluteFill,
-                    { transform: [{ scale: spreadScale }], transformOrigin: 'top left' },
-                  ]}
-                  pointerEvents="box-none"
-                >
-                  <ItemToolbar
-                    item={selectedItem}
+                {flipState ? (
+                  <View style={styles.flipStage}>
+                    {/* Static base: the side being revealed already shows the
+                        destination spread; the other keeps the current one. */}
+                    <View style={styles.spreadInner}>
+                      <SpreadHalf
+                        pages={pages}
+                        page={flipState.dir === 'next' ? flipState.from : flipState.to}
+                        side="left"
+                      />
+                      <SpreadHalf
+                        pages={pages}
+                        page={flipState.dir === 'next' ? flipState.to : flipState.from}
+                        side="right"
+                      />
+                    </View>
+                    {/* The turning page, hinged at the spine */}
+                    <FlipPage side={flipSide} rot={flipRot}>
+                      <SpreadHalf
+                        pages={pages}
+                        page={flipState.phase === 'A' ? flipState.from : flipState.to}
+                        side={flipSide}
+                      />
+                    </FlipPage>
+                  </View>
+                ) : (
+                  <SpreadView
+                    pages={pages}
+                    activePage={activePage}
+                    selectedId={selectedId}
                     spreadScale={spreadScale}
+                    onCanvasTap={() => setSelectedId(null)}
+                    onSelect={setSelectedId}
+                    onMoveEnd={handleMoveEnd}
+                    onResizeEnd={handleResizeEnd}
+                    onRotateEnd={handleRotateEnd}
+                  />
+                )}
+              </View>
+
+              {/* Item toolbar — OUTSIDE the scaled spread (canvas coords) so it
+                  keeps its size at any zoom and stays clickable on top. */}
+              {selectedItem && !flipState && (
+                <View style={styles.toolbarLayer} pointerEvents="box-none">
+                  <ItemToolbar
+                    left={toolbarLeft}
+                    top={toolbarTop}
                     onBringForward={() => handleBringForward(selectedItem.id)}
                     onSendBack={() => handleSendBack(selectedItem.id)}
                     onDelete={handleDeleteSelected}
@@ -864,6 +1064,26 @@ export default function EditorScreen() {
             <Pressable style={styles.fab} onPress={() => toggleDrawer(true)}>
               <Feather name="plus" size={26} color={theme.palette.cream} />
             </Pressable>
+
+            {/* Delete page — quiet affordance at the canvas bottom */}
+            {!isCoverSpread && (
+              <Pressable
+                style={[styles.deletePageBtn, !canDeletePage && styles.dimmed]}
+                onPress={handleDeletePage}
+                disabled={!canDeletePage}
+              >
+                <Feather
+                  name="trash-2"
+                  size={13}
+                  color={canDeletePage ? theme.palette.danger : theme.color.fg4}
+                />
+                <Text
+                  style={[styles.deletePageText, canDeletePage && { color: theme.palette.danger }]}
+                >
+                  Delete page
+                </Text>
+              </Pressable>
+            )}
           </View>
         </View>
 
@@ -943,6 +1163,18 @@ export default function EditorScreen() {
                 );
               })}
             </ScrollView>
+          </View>
+
+          {/* Shop CTA — more papers, stickers & seasonal packs */}
+          <View style={styles.drawerFooter}>
+            <Button
+              title="Browse the Shop"
+              variant="secondary"
+              onPress={() => {
+                toggleDrawer(false);
+                router.push('/(tabs)/shop');
+              }}
+            />
           </View>
         </Animated.View>
 
@@ -1105,13 +1337,24 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   spreadContainer: {
-    alignItems: 'flex-start',
-    justifyContent: 'flex-start',
+    // Fixed layout box (SPREAD × baseScale); zoom only changes the transform.
+    alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'visible',
   },
   spreadScaled: {
-    transformOrigin: 'top left',
+    // Default transform origin (center): scaling keeps the spread centered.
     ...theme.shadow.card,
+  },
+  toolbarLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    overflow: 'visible',
+    zIndex: 100,
+    elevation: 10,
   },
   spreadInner: {
     width: SPREAD_W,
@@ -1166,6 +1409,7 @@ const styles = StyleSheet.create({
   },
 
   // Placed items
+  itemFill: { flex: 1 },
   itemInner: {
     flex: 1,
     alignItems: 'center',
@@ -1177,16 +1421,88 @@ const styles = StyleSheet.create({
     width: '80%',
     height: '80%',
   },
-  selectionDot: {
+
+  // Selection frame + handles (Canva-style)
+  selectionFrame: {
     position: 'absolute',
-    top: -4,
-    right: -4,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: theme.palette.forest,
+    top: -3,
+    left: -3,
+    right: -3,
+    bottom: -3,
     borderWidth: 1.5,
-    borderColor: theme.palette.cream,
+    borderColor: theme.palette.forest,
+    borderRadius: 3,
+  },
+  handleTouch: {
+    // 24px touch target centered on the frame corner; visible dot is 12px.
+    position: 'absolute',
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+    cursor: 'pointer',
+  },
+  handleDot: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: theme.palette.cream,
+    borderWidth: 1.5,
+    borderColor: theme.palette.forest,
+    ...theme.shadow.tape,
+  },
+  rotateHandleWrap: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 20,
+  },
+  rotateStem: {
+    width: 1.5,
+    height: 14,
+    backgroundColor: theme.palette.forest,
+  },
+  rotateHandle: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1.5,
+    borderColor: theme.palette.forest,
+    alignItems: 'center',
+    justifyContent: 'center',
+    cursor: 'pointer',
+    ...theme.shadow.paper,
+  },
+
+  // Page flip
+  flipStage: {
+    width: SPREAD_W,
+    height: SPREAD_H,
+  },
+  spreadHalfClip: {
+    width: PAGE_W,
+    height: SPREAD_H,
+    overflow: 'hidden',
+  },
+  spreadHalfShift: {
+    width: SPREAD_W,
+    height: SPREAD_H,
+  },
+  flipPage: {
+    position: 'absolute',
+    top: 0,
+    width: PAGE_W,
+    height: SPREAD_H,
+    backfaceVisibility: 'hidden',
+    zIndex: 10,
+    ...theme.shadow.card,
+  },
+  flipShade: {
+    backgroundColor: theme.palette.charcoal,
   },
 
   // Item toolbar
@@ -1230,6 +1546,30 @@ const styles = StyleSheet.create({
     borderColor: theme.palette.hairline,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+
+  // Delete page
+  deletePageBtn: {
+    position: 'absolute',
+    bottom: 14,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 32,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(255,253,246,0.85)',
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+  },
+  deletePageText: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+    textTransform: 'uppercase',
+    color: theme.color.fg4,
   },
 
   // FAB
@@ -1334,4 +1674,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabActive: { backgroundColor: 'rgba(78,102,82,0.12)' },
+  drawerFooter: {
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: theme.palette.hairlineSoft,
+    backgroundColor: theme.color.surface,
+  },
 });
