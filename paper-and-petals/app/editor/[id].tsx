@@ -27,7 +27,8 @@ import { Screen } from '../../src/components/Screen';
 import { Button } from '../../src/components/Button';
 import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
-import { DRAWER_CATEGORIES, SHOP_TONES } from '../../src/data/shop';
+import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem } from '../../src/data/shop';
+import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
 import { screen, track } from '../../src/lib/analytics';
 
@@ -457,6 +458,140 @@ function ItemToolbar({ left, top, onBringForward, onSendBack, onDelete }: ItemTo
   );
 }
 
+// ─── DrawerBody ───────────────────────────────────────────────────────────────
+
+/** Visible categories in the editor drawer — exclude 'all' and 'collections'. */
+const EDITOR_CATEGORIES = DRAWER_CATEGORIES.filter((c) => c.id !== 'collections');
+
+interface DrawerBodyProps {
+  shopItems: ShopItem[];
+  drawerCat: string;
+  setDrawerCat: (cat: string) => void;
+  placeItem: (item: { id: string; glyph: string; tone: string; flowerAsset?: number }) => void;
+}
+
+function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem }: DrawerBodyProps) {
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+
+  // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
+  const itemsByCategory: Record<string, ShopItem[]> = shopItems.length > 0
+    ? shopItems.reduce(
+        (acc, item) => {
+          if (!acc[item.category]) acc[item.category] = [];
+          acc[item.category].push(item);
+          return acc;
+        },
+        {} as Record<string, ShopItem[]>,
+      )
+    : Object.fromEntries(
+        Object.entries(DRAWER_ITEMS).map(([cat, items]) => [
+          cat,
+          items.map((it) => ({
+            id: it.id,
+            category: cat,
+            name: it.id,
+            price: 0,
+            tone: it.tone as ShopItem['tone'],
+            glyph: it.glyph as ShopItem['glyph'],
+            flowerAsset: it.flowerAsset,
+            desc: '',
+            items: 0,
+            owned: true,
+            isNew: false,
+          })),
+        ]),
+      );
+
+  // Filter out collections from the item grid
+  const visibleItems = (itemsByCategory[drawerCat] ?? []).filter(
+    (item) => item.category !== 'collections',
+  );
+
+  return (
+    <View style={styles.drawerBody}>
+      {/* Item grid */}
+      <ScrollView contentContainerStyle={styles.drawerGrid}>
+        {visibleItems.map((item) => {
+          const toneKey = item.tone as keyof typeof SHOP_TONES;
+          const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
+          return (
+            <View key={item.id} style={styles.tileWrapper}>
+              <Pressable
+                style={[
+                  styles.tile,
+                  item.flowerAsset
+                    ? { backgroundColor: theme.palette.cream }
+                    : { backgroundColor: tone.bg },
+                  item.isNew && styles.tileNew,
+                ]}
+                onPress={() =>
+                  placeItem({
+                    id: item.id,
+                    glyph: item.glyph,
+                    tone: item.tone,
+                    flowerAsset: item.flowerAsset,
+                  })
+                }
+                {...({
+                  onPointerEnter: () => setHoveredItemId(item.id),
+                  onPointerLeave: () => setHoveredItemId(null),
+                } as any)}
+              >
+                {item.flowerAsset ? (
+                  <Image source={item.flowerAsset} style={styles.tileFlower} resizeMode="contain" />
+                ) : (
+                  <Feather name={item.glyph as any} size={28} color={tone.accent} />
+                )}
+                {item.isNew && (
+                  <View style={styles.tileNewTag}>
+                    <Text style={styles.tileNewText}>NEW</Text>
+                  </View>
+                )}
+              </Pressable>
+              {hoveredItemId === item.id && (
+                <View style={styles.itemTooltip} pointerEvents="none">
+                  <Text style={styles.tooltipText}>{item.name}</Text>
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+
+      {/* Category tabs on the right edge */}
+      <ScrollView style={styles.tabRail} contentContainerStyle={styles.tabRailContent}>
+        {EDITOR_CATEGORIES.map((c) => {
+          const isActive = c.id === drawerCat;
+          return (
+            <View key={c.id} style={styles.tabWrapper}>
+              <Pressable
+                style={[styles.tab, isActive && styles.tabActive]}
+                onPress={() => setDrawerCat(c.id)}
+                {...({
+                  onPointerEnter: () => setHoveredCategory(c.id),
+                  onPointerLeave: () => setHoveredCategory(null),
+                } as any)}
+              >
+                <Feather
+                  name={c.icon}
+                  size={18}
+                  color={isActive ? theme.palette.forest : theme.color.fg3}
+                />
+              </Pressable>
+              {hoveredCategory === c.id && (
+                <View style={styles.catTooltip} pointerEvents="none">
+                  <Text style={styles.tooltipText}>{c.label}</Text>
+                </View>
+              )}
+            </View>
+          );
+        })}
+      </ScrollView>
+    </View>
+  );
+}
+
 // ─── Page flip (only the turning half rotates, hinged at the spine) ──────────
 
 interface FlipState {
@@ -608,12 +743,21 @@ export default function EditorScreen() {
   const { id: journalId } = useLocalSearchParams<{ id: string }>();
   const journal = useAppStore((s) => s.journals.find((j) => j.id === journalId));
   const renameJournal = useAppStore((s) => s.renameJournal);
+  const shopItems = useAppStore((s) => s.shopItems);
+  const setShopItems = useAppStore((s) => s.setShopItems);
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
   useEffect(() => {
     screen('Editor', { journalId });
   }, [journalId]);
+
+  // Refresh live Sanity items on mount (same as shop screen)
+  useEffect(() => {
+    fetchLiveItems().then((results) => {
+      if (results.length > 0) setShopItems(results.map(sanityItemToShopItem));
+    });
+  }, []);
 
   // ── Core state ───────────────────────────────────────────────────────────
   const [pages, setPages] = useState<PageState[]>(() =>
@@ -1143,7 +1287,7 @@ export default function EditorScreen() {
             <View>
               <Text style={styles.drawerEyebrow}>YOUR COLLECTION</Text>
               <Text style={styles.drawerTitle}>
-                {DRAWER_CATEGORIES.find((c) => c.id === drawerCat)?.label}
+                {EDITOR_CATEGORIES.find((c) => c.id === drawerCat)?.label}
               </Text>
             </View>
             <Pressable onPress={() => toggleDrawer(false)} hitSlop={8}>
@@ -1151,60 +1295,12 @@ export default function EditorScreen() {
             </Pressable>
           </View>
 
-          <View style={styles.drawerBody}>
-            {/* Item grid */}
-            <ScrollView contentContainerStyle={styles.drawerGrid}>
-              {(DRAWER_ITEMS[drawerCat] ?? []).map((item, i) => {
-                const toneKey = item.tone as keyof typeof SHOP_TONES;
-                const tone = SHOP_TONES[toneKey];
-                const isNewItem = i < 2;
-                return (
-                  <Pressable
-                    key={`${drawerCat}-${i}`}
-                    style={[
-                      styles.tile,
-                      item.flowerAsset ? { backgroundColor: theme.palette.cream } : { backgroundColor: tone.bg },
-                      isNewItem && styles.tileNew,
-                    ]}
-                    onPress={() =>
-                      placeItem({ id: item.id, glyph: item.glyph, tone: item.tone, flowerAsset: item.flowerAsset })
-                    }
-                  >
-                    {item.flowerAsset ? (
-                      <Image source={item.flowerAsset} style={styles.tileFlower} resizeMode="contain" />
-                    ) : (
-                      <Feather name={item.glyph as any} size={28} color={tone.accent} />
-                    )}
-                    {isNewItem && (
-                      <View style={styles.tileNewTag}>
-                        <Text style={styles.tileNewText}>NEW</Text>
-                      </View>
-                    )}
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-
-            {/* Category tabs on the right edge */}
-            <ScrollView style={styles.tabRail} contentContainerStyle={styles.tabRailContent}>
-              {DRAWER_CATEGORIES.map((c) => {
-                const isActive = c.id === drawerCat;
-                return (
-                  <Pressable
-                    key={c.id}
-                    style={[styles.tab, isActive && styles.tabActive]}
-                    onPress={() => setDrawerCat(c.id)}
-                  >
-                    <Feather
-                      name={c.icon}
-                      size={18}
-                      color={isActive ? theme.palette.forest : theme.color.fg3}
-                    />
-                  </Pressable>
-                );
-              })}
-            </ScrollView>
-          </View>
+          <DrawerBody
+            shopItems={shopItems}
+            drawerCat={drawerCat}
+            setDrawerCat={setDrawerCat}
+            placeItem={placeItem}
+          />
 
           {/* Shop CTA — more papers, stickers & seasonal packs */}
           <View style={styles.drawerFooter}>
@@ -1714,6 +1810,11 @@ const styles = StyleSheet.create({
     borderLeftColor: theme.palette.hairlineSoft,
   },
   tabRailContent: { paddingVertical: 8, alignItems: 'center', gap: 4 },
+  tabWrapper: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   tab: {
     width: 40,
     height: 40,
@@ -1722,6 +1823,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabActive: { backgroundColor: 'rgba(78,102,82,0.12)' },
+  // Tile wrapper for item tooltip positioning
+  tileWrapper: {
+    position: 'relative',
+  },
+  // Category tooltip (appears to the LEFT of the tab rail icon)
+  catTooltip: {
+    position: 'absolute',
+    right: 48,
+    top: '50%',
+    marginTop: -13,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    ...theme.shadow.card,
+    zIndex: 200,
+    whiteSpace: 'nowrap',
+  } as any,
+  // Item name tooltip (appears ABOVE the tile)
+  itemTooltip: {
+    position: 'absolute',
+    bottom: '100%',
+    left: '50%',
+    marginLeft: -50,
+    width: 100,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: theme.radius.sm,
+    ...theme.shadow.card,
+    zIndex: 200,
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  tooltipText: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg1,
+  },
   drawerFooter: {
     padding: 14,
     borderTopWidth: 1,
