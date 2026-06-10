@@ -27,6 +27,9 @@ import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content
 // a grid of items. Tapping an item opens a detail panel with a large preview
 // and either a price CTA or an "Owned" stamp.
 
+// Same brand seal as Home (top-left there); the shop shows it top-right.
+const logoSage = require('../../assets/logos/logo_sage.png');
+
 export default function ShopScreen() {
   const router = useRouter();
   const ownedItems = useAppStore((s) => s.ownedItems);
@@ -80,7 +83,7 @@ export default function ShopScreen() {
           <Text style={styles.topTitleSerif}>The </Text>
           <Text style={styles.topTitleScript}>shop</Text>
         </View>
-        <View style={styles.backBtn} />
+        <Image source={logoSage} style={styles.brandLogo} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -343,6 +346,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   topTitle: { flexDirection: 'row', alignItems: 'baseline' },
+  brandLogo: { width: 44, height: 44, resizeMode: 'contain' },
   topTitleSerif: {
     fontFamily: theme.font.display,
     fontSize: 22,

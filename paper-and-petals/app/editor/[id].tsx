@@ -24,7 +24,6 @@ import Animated, {
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
-import { AdBanner } from '../../src/components/AdBanner';
 import { Button } from '../../src/components/Button';
 import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
@@ -198,21 +197,35 @@ function PlacedItemView({
   const startH = useSharedValue(item.h);
   const startRot = useSharedValue(item.rotate);
 
+  // Edge-based clamp: the item occupies [x - w/2, x + w/2]; at least MIN_VIS px
+  // of it must stay inside the spread. Off the LEFT edge: x + w/2 >= MIN_VIS,
+  // so x >= MIN_VIS - w/2. Off the RIGHT edge: x - w/2 <= SPREAD_W - MIN_VIS,
+  // so x <= SPREAD_W - MIN_VIS + w/2. (Axis-aligned approximation; rotation
+  // makes the exact visible-area math more complex than it is worth.)
   function clampX(x: number) {
     'worklet';
-    return Math.max(MIN_VIS, Math.min(SPREAD_W - MIN_VIS, x));
+    return Math.max(
+      MIN_VIS - itemW.value / 2,
+      Math.min(SPREAD_W - MIN_VIS + itemW.value / 2, x),
+    );
   }
 
   function clampY(y: number) {
     'worklet';
-    return Math.max(MIN_VIS, Math.min(SPREAD_H - MIN_VIS, y));
+    return Math.max(
+      MIN_VIS - itemH.value / 2,
+      Math.min(SPREAD_H - MIN_VIS + itemH.value / 2, y),
+    );
   }
 
+  // runOnJS(true): run the callback directly on the JS thread so a mouse click
+  // on web reliably re-selects the item.
   const tapGesture = Gesture.Tap()
     .maxDeltaX(8)
     .maxDeltaY(8)
+    .runOnJS(true)
     .onEnd(() => {
-      runOnJS(onSelect)(item.id);
+      onSelect(item.id);
     });
 
   const panGesture = Gesture.Pan()
@@ -562,8 +575,14 @@ function SpreadView({
       ) : (
         <PaperPage pageNo={activePage * 2 - 1} />
       )}
-      {/* Items layer — full spread */}
-      <Pressable style={StyleSheet.absoluteFill} onPress={onCanvasTap}>
+      {/* Background tap-to-deselect — the lowest layer. It must NOT wrap the
+          items: a parent Pressable's onPress can fire instead of (or race) a
+          child's tap gesture, especially on web. */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onCanvasTap} />
+      {/* Items layer — rendered after (above) the background as a sibling, so
+          each item's own tap gesture wins; box-none lets clicks on empty
+          space fall through to the deselect layer. */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
         {items.map((item) => (
           <PlacedItemView
             key={item.id}
@@ -576,7 +595,7 @@ function SpreadView({
             onRotateEnd={onRotateEnd}
           />
         ))}
-      </Pressable>
+      </View>
     </View>
   );
 }
@@ -588,7 +607,6 @@ export default function EditorScreen() {
   const { id: journalId } = useLocalSearchParams<{ id: string }>();
   const journal = useAppStore((s) => s.journals.find((j) => j.id === journalId));
   const renameJournal = useAppStore((s) => s.renameJournal);
-  const subscribed = useAppStore((s) => s.subscribed);
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
@@ -853,10 +871,11 @@ export default function EditorScreen() {
   const isCoverSpread = activePage === 1 || activePage === pages.length;
   const canDeletePage = !isCoverSpread && pages.length - 2 > 1;
 
-  // Fixed-size wrapper for the spread (Bug 1): its layout box never changes
-  // with zoom, so the scale transform happens in place around the center.
-  const containerW = SPREAD_W * baseScale;
-  const containerH = SPREAD_H * baseScale;
+  // Wrapper sized to the ZOOMED spread so the surrounding ScrollViews know the
+  // real content size; the spread is laid out at full size and scaled in place
+  // around its center, which exactly fills this box.
+  const containerW = SPREAD_W * spreadScale;
+  const containerH = SPREAD_H * spreadScale;
 
   // Toolbar position in (unscaled) container coords, from item spread coords.
   const toolbarLeft = selectedItem
@@ -982,69 +1001,84 @@ export default function EditorScreen() {
 
           {/* ── Canvas ───────────────────────────────────────────────── */}
           <View style={styles.canvasArea}>
-            <View style={[styles.spreadContainer, { width: containerW, height: containerH }]}>
-              {/* The spread, laid out at full size and scaled in place around
-                  its center — the wrapper's layout box never changes. */}
-              <View
-                style={[
-                  styles.spreadScaled,
-                  { width: SPREAD_W, height: SPREAD_H, transform: [{ scale: spreadScale }] },
-                ]}
+            {/* Nested ScrollViews: vertical outer + horizontal inner, so the
+                zoomed spread can be scrolled with wheel/scrollbars on web and
+                never paints over the page strip, top bar, or toolbar (the
+                canvas area clips). The spread centers itself when it is
+                smaller than the viewport (flexGrow + center). */}
+            <ScrollView
+              style={styles.canvasScroll}
+              contentContainerStyle={styles.canvasScrollVContent}
+            >
+              <ScrollView
+                horizontal
+                contentContainerStyle={styles.canvasScrollHContent}
               >
-                {flipState ? (
-                  <View style={styles.flipStage}>
-                    {/* Static base: the side being revealed already shows the
-                        destination spread; the other keeps the current one. */}
-                    <View style={styles.spreadInner}>
-                      <SpreadHalf
+                <View style={[styles.spreadContainer, { width: containerW, height: containerH }]}>
+                  {/* The spread, laid out at full size and scaled in place around
+                      its center — exactly filling the zoom-sized wrapper. */}
+                  <View
+                    style={[
+                      styles.spreadScaled,
+                      { width: SPREAD_W, height: SPREAD_H, transform: [{ scale: spreadScale }] },
+                    ]}
+                  >
+                    {flipState ? (
+                      <View style={styles.flipStage}>
+                        {/* Static base: the side being revealed already shows the
+                            destination spread; the other keeps the current one. */}
+                        <View style={styles.spreadInner}>
+                          <SpreadHalf
+                            pages={pages}
+                            page={flipState.dir === 'next' ? flipState.from : flipState.to}
+                            side="left"
+                          />
+                          <SpreadHalf
+                            pages={pages}
+                            page={flipState.dir === 'next' ? flipState.to : flipState.from}
+                            side="right"
+                          />
+                        </View>
+                        {/* The turning page, hinged at the spine */}
+                        <FlipPage side={flipSide} rot={flipRot}>
+                          <SpreadHalf
+                            pages={pages}
+                            page={flipState.phase === 'A' ? flipState.from : flipState.to}
+                            side={flipSide}
+                          />
+                        </FlipPage>
+                      </View>
+                    ) : (
+                      <SpreadView
                         pages={pages}
-                        page={flipState.dir === 'next' ? flipState.from : flipState.to}
-                        side="left"
+                        activePage={activePage}
+                        selectedId={selectedId}
+                        spreadScale={spreadScale}
+                        onCanvasTap={() => setSelectedId(null)}
+                        onSelect={setSelectedId}
+                        onMoveEnd={handleMoveEnd}
+                        onResizeEnd={handleResizeEnd}
+                        onRotateEnd={handleRotateEnd}
                       />
-                      <SpreadHalf
-                        pages={pages}
-                        page={flipState.dir === 'next' ? flipState.to : flipState.from}
-                        side="right"
+                    )}
+                  </View>
+
+                  {/* Item toolbar — OUTSIDE the scaled spread (canvas coords) so it
+                      keeps its size at any zoom and stays clickable on top. */}
+                  {selectedItem && !flipState && (
+                    <View style={styles.toolbarLayer} pointerEvents="box-none">
+                      <ItemToolbar
+                        left={toolbarLeft}
+                        top={toolbarTop}
+                        onBringForward={() => handleBringForward(selectedItem.id)}
+                        onSendBack={() => handleSendBack(selectedItem.id)}
+                        onDelete={handleDeleteSelected}
                       />
                     </View>
-                    {/* The turning page, hinged at the spine */}
-                    <FlipPage side={flipSide} rot={flipRot}>
-                      <SpreadHalf
-                        pages={pages}
-                        page={flipState.phase === 'A' ? flipState.from : flipState.to}
-                        side={flipSide}
-                      />
-                    </FlipPage>
-                  </View>
-                ) : (
-                  <SpreadView
-                    pages={pages}
-                    activePage={activePage}
-                    selectedId={selectedId}
-                    spreadScale={spreadScale}
-                    onCanvasTap={() => setSelectedId(null)}
-                    onSelect={setSelectedId}
-                    onMoveEnd={handleMoveEnd}
-                    onResizeEnd={handleResizeEnd}
-                    onRotateEnd={handleRotateEnd}
-                  />
-                )}
-              </View>
-
-              {/* Item toolbar — OUTSIDE the scaled spread (canvas coords) so it
-                  keeps its size at any zoom and stays clickable on top. */}
-              {selectedItem && !flipState && (
-                <View style={styles.toolbarLayer} pointerEvents="box-none">
-                  <ItemToolbar
-                    left={toolbarLeft}
-                    top={toolbarTop}
-                    onBringForward={() => handleBringForward(selectedItem.id)}
-                    onSendBack={() => handleSendBack(selectedItem.id)}
-                    onDelete={handleDeleteSelected}
-                  />
+                  )}
                 </View>
-              )}
-            </View>
+              </ScrollView>
+            </ScrollView>
 
             {/* Page nav affordances */}
             <Pressable
@@ -1177,9 +1211,6 @@ export default function EditorScreen() {
             />
           </View>
         </Animated.View>
-
-        {/* Ad banner for free users */}
-        {!subscribed && <AdBanner />}
       </Screen>
     </GestureHandlerRootView>
   );
@@ -1329,12 +1360,22 @@ const styles = StyleSheet.create({
     color: theme.color.fg4,
   },
 
-  // Canvas area
+  // Canvas area — clips the zoomed spread so it can never overlap the page
+  // strip, top bar, or toolbar; scrolling lives in the nested ScrollViews.
   canvasArea: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  canvasScroll: { flex: 1 },
+  canvasScrollVContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  canvasScrollHContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20,
+    padding: 24,
   },
   spreadContainer: {
     // Fixed layout box (SPREAD × baseScale); zoom only changes the transform.

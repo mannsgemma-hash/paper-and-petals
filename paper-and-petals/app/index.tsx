@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { Screen } from '../src/components/Screen';
 import { theme } from '../src/theme/theme';
 import { useAppStore } from '../src/store/app';
+import { markOpenedToday, resolveLaunchState } from '../src/lib/storage';
 
 // SCR-01 Loading. Universal load splash: monogram seal cycling colourways,
 // a rotating loading phrase, and a progress bar. When the bar fills, the stage
@@ -48,6 +49,23 @@ const LOAD_DURATION = 8000;
 export default function LoadingScreen() {
   const router = useRouter();
   const launchState = useAppStore((s) => s.launchState);
+  const setLaunchState = useAppStore((s) => s.setLaunchState);
+
+  // Real launch-state detection: 'new' until the welcome flow completes, then
+  // 'first-today' on the first open of each day (daily delivery), otherwise
+  // 'returning'. Resolves from persistent storage well before the bar fills.
+  useEffect(() => {
+    let cancelled = false;
+    resolveLaunchState().then((state) => {
+      if (cancelled) return;
+      setLaunchState(state);
+      // Stamp today's date now; the welcome flow stamps it itself for 'new'.
+      if (state !== 'new') markOpenedToday();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [setLaunchState]);
 
   const [logoIdx, setLogoIdx] = useState(0);
   // Randomise phrase start so each load doesn't always begin with "Tearing…".

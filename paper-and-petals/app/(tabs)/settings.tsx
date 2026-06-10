@@ -179,32 +179,6 @@ export default function SettingsScreen() {
             description="Save journal spreads as you place items. We don’t recommend turning this off."
             trailing={<Toggle on={prefs.autosave} onChange={setPref('autosave')} />}
           />
-          <SettingsRow
-            divider
-            icon="package"
-            title="Daily delivery time"
-            description="When your daily parcel of items arrives."
-            trailing={
-              <>
-                <ValuePill value="9:00 AM" />
-                <Chevron />
-              </>
-            }
-            onPress={() => {}}
-          />
-          <SettingsRow
-            divider
-            icon="feather"
-            title="Logo colourway"
-            description="Choose which monogram seal greets you on the loading screen."
-            trailing={
-              <>
-                <ValuePill value="Sage" />
-                <Chevron />
-              </>
-            }
-            onPress={() => {}}
-          />
         </SectionCard>
 
         {/* Notifications */}
@@ -238,14 +212,7 @@ export default function SettingsScreen() {
               <Toggle on={prefs.analytics} onChange={setPref('analytics')} />
             }
           />
-          <SettingsRow
-            divider
-            icon="archive"
-            title="Export your journals"
-            description="Save all of your journals as a single archive you can keep."
-            trailing={<Chevron />}
-            onPress={() => {}}
-          />
+          {/* Export parked until post-launch */}
           <SettingsRow
             divider
             icon="file-text"

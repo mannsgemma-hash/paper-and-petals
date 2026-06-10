@@ -21,6 +21,19 @@ type Phase = 'closed' | 'opening' | 'reveal';
 
 const easePaper = Easing.bezier(0.32, 0.72, 0.32, 1);
 
+const WEEKDAYS = [
+  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+];
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+/** Today's real date, e.g. "Wednesday, 11 June". */
+function formatDeliveryDate(d: Date): string {
+  return `${WEEKDAYS[d.getDay()]}, ${d.getDate()} ${MONTHS[d.getMonth()]}`;
+}
+
 export default function PackageScreen() {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('closed');
@@ -57,7 +70,7 @@ export default function PackageScreen() {
     <Screen>
       <Pressable style={styles.stage} onPress={handleTap}>
         {/* Date eyebrow */}
-        <Text style={styles.date}>Thursday, 4 April</Text>
+        <Text style={styles.date}>{formatDeliveryDate(new Date())}</Text>
         <Text style={styles.arrived}>A SMALL PARCEL HAS ARRIVED</Text>
 
         {/* Closed / opening box */}
