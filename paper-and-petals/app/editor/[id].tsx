@@ -1,6 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Animated,
   Image,
   Pressable,
   ScrollView,
@@ -10,37 +9,54 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  runOnJS,
+  Easing,
+} from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES } from '../../src/data/shop';
+import { supabase } from '../../src/lib/supabase';
 
-// SCR-07 Journal Editor — functional placeholder for the canvas engine.
-//
-// Page model: page 1 is a single page on the RIGHT (left side is the leather
-// inside front cover); pages 2..N-1 are open double spreads; page N is a
-// single page on the LEFT (right side is the leather back cover). Max 30
-// pages. Page changes cross-fade (the full 3-D page-turn arrives with the
-// Skia engine in Phase 3).
-//
-// The floating "+" opens the collection drawer (slides from the right) with
-// the store-matched category tabs. Tapping an item places it on the current
-// page at a soft random spot — drag/resize/rotate land in Phase 3.
+// ─── Constants ───────────────────────────────────────────────────────────────
 
 const MAX_PAGES = 30;
+const SPREAD_W = 720;
+const SPREAD_H = 500;
+const MIN_VIS = 30;
+const PAGE_W = SPREAD_W / 2;
+const DEFAULT_ITEM_SIZE = 120;
+const MIN_ITEM_SIZE = 60;
+const MAX_ITEM_SIZE = 380;
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface PlacedItem {
   id: string;
-  page: number;
+  itemId: string;
   glyph: string;
-  tone: keyof typeof SHOP_TONES;
-  x: number; // 0..1 of page width
-  y: number; // 0..1 of page height
-  rot: string;
+  tone: string;
   flowerAsset?: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  rotate: number;
+  z: number;
 }
+
+interface PageState {
+  items: PlacedItem[];
+}
+
+// ─── Flower assets ────────────────────────────────────────────────────────────
 
 const FLOWER_ASSETS = [
   require('../../assets/flowers/01-cornflower-violet.png'),
@@ -51,432 +67,907 @@ const FLOWER_ASSETS = [
   require('../../assets/flowers/06-zinnia-crimson.png'),
 ];
 
-// Drawer items per category — placeholder glyph tiles; florals use real art.
-const DRAWER_ITEMS: Record<string, { glyph: string; tone: keyof typeof SHOP_TONES; flowerAsset?: number }[]> = {
+// ─── Drawer items catalogue ───────────────────────────────────────────────────
+
+const DRAWER_ITEMS: Record<string, { id: string; glyph: string; tone: keyof typeof SHOP_TONES; flowerAsset?: number }[]> = {
   collections: [
-    { glyph: 'package', tone: 'sage' }, { glyph: 'package', tone: 'rose' },
-    { glyph: 'package', tone: 'blue' }, { glyph: 'package', tone: 'amber' },
+    { id: 'col-1', glyph: 'package', tone: 'sage' }, { id: 'col-2', glyph: 'package', tone: 'rose' },
+    { id: 'col-3', glyph: 'package', tone: 'blue' }, { id: 'col-4', glyph: 'package', tone: 'amber' },
   ],
   papers: [
-    { glyph: 'file-text', tone: 'cream' }, { glyph: 'file-text', tone: 'sage' },
-    { glyph: 'file', tone: 'amber' }, { glyph: 'file', tone: 'rose' },
-    { glyph: 'file-text', tone: 'mauve' }, { glyph: 'file', tone: 'blue' },
+    { id: 'pap-1', glyph: 'file-text', tone: 'cream' }, { id: 'pap-2', glyph: 'file-text', tone: 'sage' },
+    { id: 'pap-3', glyph: 'file', tone: 'amber' }, { id: 'pap-4', glyph: 'file', tone: 'rose' },
+    { id: 'pap-5', glyph: 'file-text', tone: 'mauve' }, { id: 'pap-6', glyph: 'file', tone: 'blue' },
   ],
   stickers: [
-    { glyph: 'disc', tone: 'oxblood' }, { glyph: 'star', tone: 'amber' },
-    { glyph: 'heart', tone: 'rose' }, { glyph: 'check', tone: 'sage' },
-    { glyph: 'arrow-right', tone: 'forest' }, { glyph: 'star', tone: 'gold' },
+    { id: 'stk-1', glyph: 'disc', tone: 'oxblood' }, { id: 'stk-2', glyph: 'star', tone: 'amber' },
+    { id: 'stk-3', glyph: 'heart', tone: 'rose' }, { id: 'stk-4', glyph: 'check', tone: 'sage' },
+    { id: 'stk-5', glyph: 'arrow-right', tone: 'forest' }, { id: 'stk-6', glyph: 'star', tone: 'gold' },
   ],
   tape: [
-    { glyph: 'minus', tone: 'sage' }, { glyph: 'minus', tone: 'rose' },
-    { glyph: 'minus', tone: 'amber' }, { glyph: 'paperclip', tone: 'gold' },
-    { glyph: 'link', tone: 'mauve' },
+    { id: 'tap-1', glyph: 'minus', tone: 'sage' }, { id: 'tap-2', glyph: 'minus', tone: 'rose' },
+    { id: 'tap-3', glyph: 'minus', tone: 'amber' }, { id: 'tap-4', glyph: 'paperclip', tone: 'gold' },
+    { id: 'tap-5', glyph: 'link', tone: 'mauve' },
   ],
   ephemera: [
-    { glyph: 'mail', tone: 'oxblood' }, { glyph: 'credit-card', tone: 'mauve' },
-    { glyph: 'mail', tone: 'cream' }, { glyph: 'credit-card', tone: 'amber' },
+    { id: 'eph-1', glyph: 'mail', tone: 'oxblood' }, { id: 'eph-2', glyph: 'credit-card', tone: 'mauve' },
+    { id: 'eph-3', glyph: 'mail', tone: 'cream' }, { id: 'eph-4', glyph: 'credit-card', tone: 'amber' },
   ],
   florals: FLOWER_ASSETS.map((asset, i) => ({
+    id: `flo-${i}`,
     glyph: 'feather',
     tone: (['mauve', 'oxblood', 'blue', 'rose', 'rose', 'oxblood'] as const)[i],
     flowerAsset: asset,
   })),
   frames: [
-    { glyph: 'circle', tone: 'gold' }, { glyph: 'square', tone: 'gold' },
-    { glyph: 'tag', tone: 'cream' },
+    { id: 'frm-1', glyph: 'circle', tone: 'gold' }, { id: 'frm-2', glyph: 'square', tone: 'gold' },
+    { id: 'frm-3', glyph: 'tag', tone: 'cream' },
   ],
   type: [
-    { glyph: 'edit-3', tone: 'forest' }, { glyph: 'hash', tone: 'oxblood' },
-    { glyph: 'type', tone: 'cream' },
+    { id: 'typ-1', glyph: 'edit-3', tone: 'forest' }, { id: 'typ-2', glyph: 'hash', tone: 'oxblood' },
+    { id: 'typ-3', glyph: 'type', tone: 'cream' },
   ],
   paint: [
-    { glyph: 'droplet', tone: 'rose' }, { glyph: 'edit-2', tone: 'sage' },
-    { glyph: 'edit-2', tone: 'mauve' },
+    { id: 'pnt-1', glyph: 'droplet', tone: 'rose' }, { id: 'pnt-2', glyph: 'edit-2', tone: 'sage' },
+    { id: 'pnt-3', glyph: 'edit-2', tone: 'mauve' },
   ],
   fabric: [
-    { glyph: 'layers', tone: 'sage' }, { glyph: 'layers', tone: 'cream' },
-    { glyph: 'x', tone: 'rose' },
+    { id: 'fab-1', glyph: 'layers', tone: 'sage' }, { id: 'fab-2', glyph: 'layers', tone: 'cream' },
+    { id: 'fab-3', glyph: 'x', tone: 'rose' },
   ],
   photos: [
-    { glyph: 'image', tone: 'cream' }, { glyph: 'copy', tone: 'blue' },
+    { id: 'pho-1', glyph: 'image', tone: 'cream' }, { id: 'pho-2', glyph: 'copy', tone: 'blue' },
   ],
   details: [
-    { glyph: 'sun', tone: 'cream' }, { glyph: 'gift', tone: 'oxblood' },
-    { glyph: 'gift', tone: 'rose' },
+    { id: 'det-1', glyph: 'sun', tone: 'cream' }, { id: 'det-2', glyph: 'gift', tone: 'oxblood' },
+    { id: 'det-3', glyph: 'gift', tone: 'rose' },
   ],
 };
 
-export default function EditorScreen() {
-  const router = useRouter();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const journal = useAppStore((s) => s.journals.find((j) => j.id === id));
-  const renameJournal = useAppStore((s) => s.renameJournal);
+// ─── PlacedItemView ───────────────────────────────────────────────────────────
 
-  const [pages, setPages] = useState(8);
-  const [page, setPage] = useState(2);
-  const [placed, setPlaced] = useState<PlacedItem[]>([]);
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState(journal?.name ?? 'Journal');
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerCat, setDrawerCat] = useState('papers');
+interface PlacedItemViewProps {
+  item: PlacedItem;
+  isSelected: boolean;
+  spreadScale: number;
+  onSelect: (id: string) => void;
+  onMoveEnd: (id: string, x: number, y: number) => void;
+  onResizeEnd: (id: string, w: number, h: number) => void;
+  onRotateEnd: (id: string, rotate: number) => void;
+}
 
-  const pageFade = useRef(new Animated.Value(1)).current;
-  const drawerX = useRef(new Animated.Value(360)).current;
+function PlacedItemView({
+  item,
+  isSelected,
+  spreadScale,
+  onSelect,
+  onMoveEnd,
+  onResizeEnd,
+  onRotateEnd,
+}: PlacedItemViewProps) {
+  const tx = useSharedValue(item.x);
+  const ty = useSharedValue(item.y);
+  const rot = useSharedValue(item.rotate);
+  const itemW = useSharedValue(item.w);
+  const itemH = useSharedValue(item.h);
 
-  const { width } = useWindowDimensions();
-  const compact = width < theme.layout.phoneBreakpoint;
+  // Sync when item prop changes from undo/redo or external updates
+  useEffect(() => {
+    tx.value = item.x;
+    ty.value = item.y;
+    rot.value = item.rotate;
+    itemW.value = item.w;
+    itemH.value = item.h;
+  }, [item.x, item.y, item.rotate, item.w, item.h]);
 
-  const goToPage = (p: number) => {
-    if (p === page || p < 1 || p > pages) return;
-    // Cross-fade placeholder for the page-turn animation.
-    Animated.timing(pageFade, {
-      toValue: 0,
-      duration: 180,
-      useNativeDriver: true,
-    }).start(() => {
-      setPage(p);
-      Animated.timing(pageFade, {
-        toValue: 1,
-        duration: 280,
-        useNativeDriver: true,
-      }).start();
+  const startX = useSharedValue(item.x);
+  const startY = useSharedValue(item.y);
+  const startW = useSharedValue(item.w);
+  const startH = useSharedValue(item.h);
+  const startRot = useSharedValue(item.rotate);
+
+  function clampX(x: number) {
+    'worklet';
+    return Math.max(MIN_VIS, Math.min(SPREAD_W - MIN_VIS, x));
+  }
+
+  function clampY(y: number) {
+    'worklet';
+    return Math.max(MIN_VIS, Math.min(SPREAD_H - MIN_VIS, y));
+  }
+
+  const tapGesture = Gesture.Tap()
+    .maxDeltaX(8)
+    .maxDeltaY(8)
+    .onEnd(() => {
+      runOnJS(onSelect)(item.id);
     });
-  };
 
-  const addPage = () => setPages((n) => Math.min(n + 1, MAX_PAGES));
+  const panGesture = Gesture.Pan()
+    .minDistance(6)
+    .onBegin(() => {
+      startX.value = tx.value;
+      startY.value = ty.value;
+    })
+    .onUpdate((e) => {
+      tx.value = clampX(startX.value + e.translationX / spreadScale);
+      ty.value = clampY(startY.value + e.translationY / spreadScale);
+    })
+    .onEnd(() => {
+      runOnJS(onMoveEnd)(item.id, tx.value, ty.value);
+    });
 
-  const toggleDrawer = (open: boolean) => {
-    setDrawerOpen(open);
-    Animated.timing(drawerX, {
-      toValue: open ? 0 : 360,
-      duration: 320,
-      useNativeDriver: true,
-    }).start();
-  };
+  const pinchGesture = Gesture.Pinch()
+    .onBegin(() => {
+      startW.value = itemW.value;
+      startH.value = itemH.value;
+    })
+    .onUpdate((e) => {
+      const newW = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startW.value * e.scale));
+      const newH = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startH.value * e.scale));
+      itemW.value = newW;
+      itemH.value = newH;
+    })
+    .onEnd(() => {
+      runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
+    });
 
-  const placeItem = (item: { glyph: string; tone: keyof typeof SHOP_TONES; flowerAsset?: number }) => {
-    setPlaced((arr) => [
-      ...arr,
-      {
-        id: `p-${Date.now()}`,
-        page,
-        glyph: item.glyph,
-        tone: item.tone,
-        flowerAsset: item.flowerAsset,
-        x: 0.18 + Math.random() * 0.55,
-        y: 0.15 + Math.random() * 0.55,
-        rot: `${Math.round(Math.random() * 16 - 8)}deg`,
-      },
-    ]);
-    toggleDrawer(false);
-  };
+  const rotationGesture = Gesture.Rotation()
+    .onBegin(() => {
+      startRot.value = rot.value;
+    })
+    .onUpdate((e) => {
+      const rawDeg = startRot.value + (e.rotation * 180) / Math.PI;
+      const snapped = Math.round(rawDeg / 15) * 15;
+      rot.value = Math.abs(rawDeg - snapped) < 3 ? snapped : rawDeg;
+    })
+    .onEnd(() => {
+      runOnJS(onRotateEnd)(item.id, rot.value);
+    });
 
-  const commitName = () => {
-    setEditingName(false);
-    const name = nameDraft.trim();
-    if (name && journal) renameJournal(journal.id, name);
-    else setNameDraft(journal?.name ?? 'Journal');
-  };
+  const composed = Gesture.Race(
+    Gesture.Simultaneous(pinchGesture, rotationGesture),
+    Gesture.Simultaneous(tapGesture, panGesture),
+  );
 
-  const isFirst = page === 1;
-  const isLast = page === pages;
-  const pageItems = placed.filter((it) => it.page === page);
+  const animStyle = useAnimatedStyle(() => ({
+    position: 'absolute' as const,
+    left: tx.value - itemW.value / 2,
+    top: ty.value - itemH.value / 2,
+    width: itemW.value,
+    height: itemH.value,
+    transform: [{ rotate: `${rot.value}deg` }],
+    zIndex: item.z,
+  }));
+
+  const toneKey = item.tone as keyof typeof SHOP_TONES;
+  const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
 
   return (
-    <Screen texture={false} style={styles.root}>
-      {/* ── Top bar ─────────────────────────────────────────────────── */}
-      <View style={styles.topbar}>
-        <Pressable style={styles.iconBtn} onPress={() => router.back()}>
-          <Feather name="arrow-left" size={20} color={theme.color.fg1} />
-        </Pressable>
-
-        {/* Editable journal name */}
-        {editingName ? (
-          <TextInput
-            style={styles.nameInput}
-            value={nameDraft}
-            onChangeText={setNameDraft}
-            onBlur={commitName}
-            onSubmitEditing={commitName}
-            autoFocus
-          />
-        ) : (
-          <Pressable style={styles.nameWrap} onPress={() => setEditingName(true)}>
-            <Text style={styles.name} numberOfLines={1}>
-              {journal?.name ?? 'Journal'}
-            </Text>
-            <Feather name="edit-2" size={14} color={theme.color.fg3} />
-          </Pressable>
-        )}
-
-        <View style={styles.topRight}>
-          {/* Undo / redo — wired to history in Phase 3 with the canvas engine */}
-          <Pressable style={[styles.iconBtn, styles.dimmed]} disabled>
-            <Feather name="rotate-ccw" size={18} color={theme.color.fg3} />
-          </Pressable>
-          <Pressable style={[styles.iconBtn, styles.dimmed]} disabled>
-            <Feather name="rotate-cw" size={18} color={theme.color.fg3} />
-          </Pressable>
-          <Pressable style={styles.layersBtn}>
-            <Feather name="layers" size={16} color={theme.color.fg1} />
-            <Text style={styles.layersText}>{pageItems.length}</Text>
-          </Pressable>
+    <GestureDetector gesture={composed}>
+      <Animated.View style={animStyle}>
+        <View
+          style={[
+            styles.itemInner,
+            {
+              backgroundColor: bg,
+              borderColor: isSelected ? theme.palette.forest : 'transparent',
+              borderWidth: isSelected ? 2 : 0,
+            },
+          ]}
+        >
+          {item.flowerAsset ? (
+            <Image source={item.flowerAsset} style={styles.itemImage} resizeMode="contain" />
+          ) : (
+            <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
+          )}
         </View>
-      </View>
-
-      <View style={styles.body}>
-        {/* ── Page strip ───────────────────────────────────────────── */}
-        <View style={styles.strip}>
-          <ScrollView contentContainerStyle={styles.stripScroll}>
-            {Array.from({ length: pages }, (_, i) => i + 1).map((p) => (
-              <Pressable
-                key={p}
-                style={[styles.thumb, p === page && styles.thumbActive]}
-                onPress={() => goToPage(p)}
-              >
-                <Text
-                  style={[styles.thumbNum, p === page && styles.thumbNumActive]}
-                >
-                  {p}
-                </Text>
-                {(p === 1 || p === pages) && (
-                  <Text style={[styles.thumbTag, p === page && styles.thumbNumActive]}>
-                    {p === 1 ? 'FIRST' : 'LAST'}
-                  </Text>
-                )}
-              </Pressable>
-            ))}
-            <Pressable
-              style={[styles.thumbAdd, pages >= MAX_PAGES && styles.dimmed]}
-              onPress={addPage}
-              disabled={pages >= MAX_PAGES}
-            >
-              <Feather name="plus" size={18} color={theme.color.fg2} />
-              <Text style={styles.thumbCount}>
-                {pages}/{MAX_PAGES}
-              </Text>
-            </Pressable>
-          </ScrollView>
-        </View>
-
-        {/* ── Canvas ───────────────────────────────────────────────── */}
-        <View style={styles.canvasArea}>
-          <Animated.View style={[styles.spread, { opacity: pageFade }]}>
-            {/* Left side */}
-            {isFirst ? (
-              <LeatherCover side="left" label="FRONT COVER · INSIDE" />
-            ) : (
-              <PaperPage
-                items={isLast ? pageItems : pageItems}
-                showItems={true}
-                pageNo={isLast ? page : page % 2 === 0 ? page : page - 1}
-              />
-            )}
-            {/* Spine */}
-            <View style={styles.spineShadow} />
-            {/* Right side */}
-            {isLast ? (
-              <LeatherCover side="right" label="BACK COVER · INSIDE" />
-            ) : (
-              <PaperPage
-                items={isFirst ? pageItems : []}
-                showItems={isFirst}
-                pageNo={isFirst ? 1 : page % 2 === 0 ? page + 1 : page}
-              />
-            )}
-          </Animated.View>
-
-          {/* Page nav affordances */}
-          <Pressable
-            style={[styles.pageNav, { left: 8 }, page <= 1 && styles.hidden]}
-            onPress={() => goToPage(page - 1)}
-          >
-            <Feather name="chevron-left" size={24} color={theme.color.fg2} />
-          </Pressable>
-          <Pressable
-            style={[styles.pageNav, { right: 8 }, page >= pages && styles.hidden]}
-            onPress={() => goToPage(page + 1)}
-          >
-            <Feather name="chevron-right" size={24} color={theme.color.fg2} />
-          </Pressable>
-
-          {/* Floating add button */}
-          <Pressable style={styles.fab} onPress={() => toggleDrawer(true)}>
-            <Feather name="plus" size={26} color={theme.palette.cream} />
-          </Pressable>
-
-          {/* Hint */}
-          <Text style={styles.hint}>
-            Tap + to add from your collection · full drag & drop arrives with
-            the canvas engine
-          </Text>
-        </View>
-      </View>
-
-      {/* ── Collection drawer ─────────────────────────────────────── */}
-      {drawerOpen && (
-        <Pressable style={styles.drawerScrim} onPress={() => toggleDrawer(false)} />
-      )}
-      <Animated.View
-        style={[
-          styles.drawer,
-          compact && styles.drawerCompact,
-          { transform: [{ translateX: drawerX }] },
-        ]}
-      >
-        <View style={styles.drawerHeader}>
-          <View>
-            <Text style={styles.drawerEyebrow}>YOUR COLLECTION</Text>
-            <Text style={styles.drawerTitle}>
-              {DRAWER_CATEGORIES.find((c) => c.id === drawerCat)?.label}
-            </Text>
-          </View>
-          <Pressable onPress={() => toggleDrawer(false)} hitSlop={8}>
-            <Feather name="x" size={20} color={theme.color.fg2} />
-          </Pressable>
-        </View>
-
-        <View style={styles.drawerBody}>
-          {/* Item grid */}
-          <ScrollView contentContainerStyle={styles.drawerGrid}>
-            {(DRAWER_ITEMS[drawerCat] ?? []).map((item, i) => {
-              const tone = SHOP_TONES[item.tone];
-              const isNewItem = i < 2;
-              return (
-                <Pressable
-                  key={`${drawerCat}-${i}`}
-                  style={[
-                    styles.tile,
-                    item.flowerAsset
-                      ? { backgroundColor: theme.palette.cream }
-                      : { backgroundColor: tone.bg },
-                    isNewItem && styles.tileNew,
-                  ]}
-                  onPress={() => placeItem(item)}
-                >
-                  {item.flowerAsset ? (
-                    <Image
-                      source={item.flowerAsset}
-                      style={styles.tileFlower}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <Feather name={item.glyph as any} size={28} color={tone.accent} />
-                  )}
-                  {isNewItem && (
-                    <View style={styles.tileNewTag}>
-                      <Text style={styles.tileNewText}>NEW</Text>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-
-          {/* Category tabs on the right edge */}
-          <ScrollView style={styles.tabRail} contentContainerStyle={styles.tabRailContent}>
-            {DRAWER_CATEGORIES.map((c) => {
-              const isActive = c.id === drawerCat;
-              return (
-                <Pressable
-                  key={c.id}
-                  style={[styles.tab, isActive && styles.tabActive]}
-                  onPress={() => setDrawerCat(c.id)}
-                >
-                  <Feather
-                    name={c.icon}
-                    size={18}
-                    color={isActive ? theme.palette.forest : theme.color.fg3}
-                  />
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+        {isSelected && <View style={styles.selectionDot} />}
       </Animated.View>
-    </Screen>
+    </GestureDetector>
   );
 }
 
-function LeatherCover({ side, label }: { side: 'left' | 'right'; label: string }) {
+// ─── LeatherCover ─────────────────────────────────────────────────────────────
+
+function LeatherCover({ side }: { side: 'left' | 'right' }) {
   return (
-    <View
-      style={[
-        styles.page,
-        styles.leather,
-        side === 'left' ? styles.pageLeft : styles.pageRight,
-      ]}
-    >
+    <View style={[styles.page, styles.leather, side === 'left' ? styles.pageLeft : styles.pageRight]}>
       <View style={styles.monogram}>
         <Text style={styles.monogramText}>P&P</Text>
       </View>
-      <Text style={styles.leatherLabel}>{label}</Text>
+      <Text style={styles.leatherLabel}>{side === 'left' ? 'FRONT COVER · INSIDE' : 'BACK COVER · INSIDE'}</Text>
     </View>
   );
 }
 
-function PaperPage({
-  items,
-  showItems,
-  pageNo,
-}: {
-  items: PlacedItem[];
-  showItems: boolean;
-  pageNo: number;
-}) {
+// ─── PaperPage ────────────────────────────────────────────────────────────────
+
+function PaperPage({ pageNo }: { pageNo: number }) {
   return (
     <View style={[styles.page, styles.paper]}>
-      {showItems &&
-        items.map((it) => {
-          const tone = SHOP_TONES[it.tone];
-          return (
-            <View
-              key={it.id}
-              style={[
-                styles.placedItem,
-                {
-                  left: `${it.x * 100}%` as const,
-                  top: `${it.y * 100}%` as const,
-                  transform: [{ rotate: it.rot }],
-                },
-                it.flowerAsset
-                  ? styles.placedFlower
-                  : { backgroundColor: tone.bg },
-              ]}
-            >
-              {it.flowerAsset ? (
-                <Image
-                  source={it.flowerAsset}
-                  style={styles.placedFlowerImg}
-                  resizeMode="contain"
-                />
-              ) : (
-                <Feather name={it.glyph as any} size={26} color={tone.accent} />
-              )}
-            </View>
-          );
-        })}
       <Text style={styles.pageNo}>{pageNo}</Text>
     </View>
   );
 }
 
+// ─── ItemToolbar ──────────────────────────────────────────────────────────────
+
+interface ItemToolbarProps {
+  item: PlacedItem;
+  spreadScale: number;
+  onBringForward: () => void;
+  onSendBack: () => void;
+  onDelete: () => void;
+}
+
+function ItemToolbar({ item, spreadScale, onBringForward, onSendBack, onDelete }: ItemToolbarProps) {
+  const toolbarX = item.x * spreadScale - 70;
+  const toolbarY = (item.y - item.h / 2) * spreadScale - 52;
+
+  return (
+    <View style={[styles.toolbar, { left: toolbarX, top: toolbarY }]}>
+      <Pressable style={styles.toolBtn} onPress={onBringForward} hitSlop={4}>
+        <Feather name="chevrons-up" size={16} color={theme.color.fg1} />
+      </Pressable>
+      <Pressable style={styles.toolBtn} onPress={onSendBack} hitSlop={4}>
+        <Feather name="chevrons-down" size={16} color={theme.color.fg1} />
+      </Pressable>
+      <View style={styles.toolDivider} />
+      <Pressable style={[styles.toolBtn, styles.toolDanger]} onPress={onDelete} hitSlop={4}>
+        <Feather name="trash-2" size={16} color={theme.palette.terracotta} />
+      </Pressable>
+    </View>
+  );
+}
+
+// ─── usePageFlip ──────────────────────────────────────────────────────────────
+
+function usePageFlip() {
+  const outRotateY = useSharedValue(0);
+  const inRotateY = useSharedValue(90);
+  const outOpacity = useSharedValue(1);
+  const inOpacity = useSharedValue(0);
+
+  const flip = (direction: 'next' | 'prev', onMidpoint: () => void) => {
+    const sign = direction === 'next' ? -1 : 1;
+    const easing = Easing.bezier(0.32, 0.72, 0.32, 1);
+
+    outRotateY.value = withTiming(sign * -90, { duration: 310, easing }, (finished) => {
+      if (finished) {
+        runOnJS(onMidpoint)();
+        outOpacity.value = 0;
+        inRotateY.value = sign * 90;
+        inOpacity.value = 1;
+        outRotateY.value = 0;
+        inRotateY.value = withTiming(0, { duration: 310, easing }, (done) => {
+          if (done) {
+            outOpacity.value = 1;
+          }
+        });
+      }
+    });
+  };
+
+  return { outRotateY, inRotateY, outOpacity, inOpacity, flip };
+}
+
+// ─── SpreadView ───────────────────────────────────────────────────────────────
+
+interface SpreadViewProps {
+  pages: PageState[];
+  activePage: number;
+  selectedId: string | null;
+  spreadScale: number;
+  onCanvasTap: () => void;
+  onSelect: (id: string) => void;
+  onMoveEnd: (id: string, x: number, y: number) => void;
+  onResizeEnd: (id: string, w: number, h: number) => void;
+  onRotateEnd: (id: string, rotate: number) => void;
+}
+
+function SpreadView({
+  pages,
+  activePage,
+  selectedId,
+  spreadScale,
+  onCanvasTap,
+  onSelect,
+  onMoveEnd,
+  onResizeEnd,
+  onRotateEnd,
+}: SpreadViewProps) {
+  const isFirstPage = activePage === 1;
+  const isLastPage = activePage === pages.length;
+  const items = pages[activePage - 1]?.items ?? [];
+
+  return (
+    <View style={styles.spreadInner}>
+      {/* Left page */}
+      {isFirstPage ? (
+        <LeatherCover side="left" />
+      ) : (
+        <PaperPage pageNo={activePage * 2 - 2} />
+      )}
+      {/* Spine shadow */}
+      <View style={styles.spineShadow} />
+      {/* Right page */}
+      {isLastPage ? (
+        <LeatherCover side="right" />
+      ) : (
+        <PaperPage pageNo={activePage * 2 - 1} />
+      )}
+      {/* Items layer — full spread */}
+      <Pressable style={StyleSheet.absoluteFill} onPress={onCanvasTap}>
+        {items.map((item) => (
+          <PlacedItemView
+            key={item.id}
+            item={item}
+            isSelected={selectedId === item.id}
+            spreadScale={spreadScale}
+            onSelect={onSelect}
+            onMoveEnd={onMoveEnd}
+            onResizeEnd={onResizeEnd}
+            onRotateEnd={onRotateEnd}
+          />
+        ))}
+      </Pressable>
+    </View>
+  );
+}
+
+// ─── Main EditorScreen ────────────────────────────────────────────────────────
+
+export default function EditorScreen() {
+  const router = useRouter();
+  const { id: journalId } = useLocalSearchParams<{ id: string }>();
+  const journal = useAppStore((s) => s.journals.find((j) => j.id === journalId));
+  const renameJournal = useAppStore((s) => s.renameJournal);
+
+  const { width: screenW, height: screenH } = useWindowDimensions();
+
+  // ── Core state ───────────────────────────────────────────────────────────
+  const [pages, setPages] = useState<PageState[]>(() =>
+    Array.from({ length: 8 }, () => ({ items: [] })),
+  );
+  const [activePage, setActivePage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1.0);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerCat, setDrawerCat] = useState('papers');
+  const [history, setHistory] = useState<PageState[][]>([]);
+  const [historyIdx, setHistoryIdx] = useState(-1);
+  const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
+  const [editingName, setEditingName] = useState(false);
+
+  // ── Layout ────────────────────────────────────────────────────────────────
+  const canvasW = screenW - 80;
+  const canvasH = screenH - 64;
+  const baseScale = Math.min(canvasW / SPREAD_W, canvasH / SPREAD_H) * 0.9;
+  const spreadScale = baseScale * zoom;
+
+  // ── Page flip animation ───────────────────────────────────────────────────
+  const { outRotateY, inRotateY, outOpacity, inOpacity, flip } = usePageFlip();
+
+  const outAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ perspective: 1200 }, { rotateY: `${outRotateY.value}deg` }],
+    opacity: outOpacity.value,
+  }));
+
+  const inAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ perspective: 1200 }, { rotateY: `${inRotateY.value}deg` }],
+    opacity: inOpacity.value,
+    position: 'absolute' as const,
+    width: SPREAD_W,
+    height: SPREAD_H,
+  }));
+
+  // ── Drawer animation ──────────────────────────────────────────────────────
+  const drawerX = useSharedValue(360);
+  const drawerAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: drawerX.value }],
+  }));
+
+  const toggleDrawer = (open: boolean) => {
+    setDrawerOpen(open);
+    drawerX.value = withTiming(open ? 0 : 360, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
+  };
+
+  // ── Save timeout ──────────────────────────────────────────────────────────
+  const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function scheduleSave(pgs: PageState[]) {
+    if (saveTimeout.current) clearTimeout(saveTimeout.current);
+    saveTimeout.current = setTimeout(() => {
+      supabase
+        .from('spreads')
+        .upsert(
+          pgs.map((pg, i) => ({
+            journal_id: journalId,
+            page_number: i + 1,
+            scene: { items: pg.items },
+            updated_at: new Date().toISOString(),
+          })),
+        )
+        .then(({ error }) => {
+          if (error) console.warn('Save error', error);
+        });
+    }, 1200);
+  }
+
+  // ── History helpers ───────────────────────────────────────────────────────
+  function pushHistory(newPages: PageState[]) {
+    setHistory((prevHistory) => {
+      const trimmed = prevHistory.slice(0, historyIdx + 1);
+      const next = [...trimmed, newPages].slice(-60);
+      setHistoryIdx(next.length - 1);
+      return next;
+    });
+    setPages(newPages);
+  }
+
+  function undo() {
+    if (historyIdx <= 0) return;
+    const idx = historyIdx - 1;
+    setHistoryIdx(idx);
+    setPages(history[idx]);
+  }
+
+  function redo() {
+    if (historyIdx >= history.length - 1) return;
+    const idx = historyIdx + 1;
+    setHistoryIdx(idx);
+    setPages(history[idx]);
+  }
+
+  // ── Item placement ────────────────────────────────────────────────────────
+  function placeItem(shopItem: { id: string; glyph: string; tone: string; flowerAsset?: number }) {
+    const currentItems = pages[activePage - 1].items;
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+
+    const newItem: PlacedItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      itemId: shopItem.id,
+      glyph: shopItem.glyph,
+      tone: shopItem.tone,
+      flowerAsset: shopItem.flowerAsset,
+      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.4,
+      y: SPREAD_H * 0.3 + Math.random() * SPREAD_H * 0.4,
+      w: DEFAULT_ITEM_SIZE,
+      h: DEFAULT_ITEM_SIZE,
+      rotate: (Math.random() - 0.5) * 20,
+      z: maxZ + 1,
+    };
+
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    setSelectedId(newItem.id);
+    toggleDrawer(false);
+  }
+
+  // ── Item handlers ─────────────────────────────────────────────────────────
+  function handleMoveEnd(id: string, x: number, y: number) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, x, y } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleResizeEnd(id: string, w: number, h: number) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, w, h } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleRotateEnd(id: string, rotate: number) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, rotate } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleBringForward(id: string) {
+    const pageItems = pages[activePage - 1].items;
+    const item = pageItems.find((it) => it.id === id);
+    if (!item) return;
+    const above = pageItems.filter((it) => it.z > item.z).sort((a, b) => a.z - b.z)[0];
+    if (!above) return;
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? {
+            ...p,
+            items: p.items.map((it) =>
+              it.id === id ? { ...it, z: above.z } : it.id === above.id ? { ...it, z: item.z } : it,
+            ),
+          }
+        : p,
+    );
+    pushHistory(newPages);
+  }
+
+  function handleSendBack(id: string) {
+    const pageItems = pages[activePage - 1].items;
+    const item = pageItems.find((it) => it.id === id);
+    if (!item) return;
+    const below = pageItems.filter((it) => it.z < item.z).sort((a, b) => b.z - a.z)[0];
+    if (!below) return;
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? {
+            ...p,
+            items: p.items.map((it) =>
+              it.id === id ? { ...it, z: below.z } : it.id === below.id ? { ...it, z: item.z } : it,
+            ),
+          }
+        : p,
+    );
+    pushHistory(newPages);
+  }
+
+  function handleDeleteSelected() {
+    if (!selectedId) return;
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: p.items.filter((it) => it.id !== selectedId) } : p,
+    );
+    setSelectedId(null);
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  // ── Page navigation ───────────────────────────────────────────────────────
+  function goToPage(newPage: number) {
+    if (newPage < 1 || newPage > pages.length) return;
+    setSelectedId(null);
+    const direction = newPage > activePage ? 'next' : 'prev';
+    flip(direction, () => setActivePage(newPage));
+  }
+
+  function addPage() {
+    if (pages.length >= MAX_PAGES) return;
+    const newPages = [...pages, { items: [] }];
+    pushHistory(newPages);
+    goToPage(newPages.length);
+  }
+
+  // ── Name editing ──────────────────────────────────────────────────────────
+  function commitName() {
+    setEditingName(false);
+    const name = journalName.trim();
+    if (name && journal) renameJournal(journal.id, name);
+    else setJournalName(journal?.name ?? 'My Journal');
+  }
+
+  // ── Derived ───────────────────────────────────────────────────────────────
+  const currentPageItems = pages[activePage - 1]?.items ?? [];
+  const selectedItem = selectedId ? currentPageItems.find((it) => it.id === selectedId) : null;
+  const canUndo = historyIdx > 0;
+  const canRedo = historyIdx < history.length - 1;
+  const isPhone = screenW < theme.layout.phoneBreakpoint;
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Screen texture={false} style={styles.root}>
+        {/* ── Top bar ─────────────────────────────────────────────────── */}
+        <View style={styles.topbar}>
+          <Pressable style={styles.iconBtn} onPress={() => router.back()}>
+            <Feather name="arrow-left" size={20} color={theme.color.fg1} />
+          </Pressable>
+
+          {editingName ? (
+            <TextInput
+              style={styles.nameInput}
+              value={journalName}
+              onChangeText={setJournalName}
+              onBlur={commitName}
+              onSubmitEditing={commitName}
+              autoFocus
+            />
+          ) : (
+            <Pressable style={styles.nameWrap} onPress={() => setEditingName(true)}>
+              <Text style={styles.name} numberOfLines={1}>
+                {journal?.name ?? journalName}
+              </Text>
+              <Feather name="edit-2" size={14} color={theme.color.fg3} />
+            </Pressable>
+          )}
+
+          <View style={styles.topRight}>
+            {/* Undo */}
+            <Pressable
+              style={[styles.iconBtn, !canUndo && styles.dimmed]}
+              onPress={undo}
+              disabled={!canUndo}
+            >
+              <Feather name="rotate-ccw" size={18} color={canUndo ? theme.color.fg1 : theme.color.fg3} />
+            </Pressable>
+            {/* Redo */}
+            <Pressable
+              style={[styles.iconBtn, !canRedo && styles.dimmed]}
+              onPress={redo}
+              disabled={!canRedo}
+            >
+              <Feather name="rotate-cw" size={18} color={canRedo ? theme.color.fg1 : theme.color.fg3} />
+            </Pressable>
+            {/* Zoom out */}
+            <Pressable
+              style={[styles.iconBtn, zoom <= 0.5 && styles.dimmed]}
+              onPress={() => setZoom((z) => Math.max(0.5, z - 0.1))}
+              disabled={zoom <= 0.5}
+            >
+              <Feather name="zoom-out" size={18} color={theme.color.fg1} />
+            </Pressable>
+            {/* Zoom indicator */}
+            <View style={styles.zoomBadge}>
+              <Text style={styles.zoomText}>{Math.round(zoom * 100)}%</Text>
+            </View>
+            {/* Zoom in */}
+            <Pressable
+              style={[styles.iconBtn, zoom >= 2.0 && styles.dimmed]}
+              onPress={() => setZoom((z) => Math.min(2.0, z + 0.1))}
+              disabled={zoom >= 2.0}
+            >
+              <Feather name="zoom-in" size={18} color={theme.color.fg1} />
+            </Pressable>
+            {/* Layer count */}
+            <Pressable style={styles.layersBtn}>
+              <Feather name="layers" size={16} color={theme.color.fg1} />
+              <Text style={styles.layersText}>{currentPageItems.length}</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.body}>
+          {/* ── Page strip ───────────────────────────────────────────── */}
+          <View style={styles.strip}>
+            <ScrollView contentContainerStyle={styles.stripScroll}>
+              {pages.map((_, i) => {
+                const p = i + 1;
+                return (
+                  <Pressable
+                    key={p}
+                    style={[styles.thumb, p === activePage && styles.thumbActive]}
+                    onPress={() => goToPage(p)}
+                  >
+                    <Text style={[styles.thumbNum, p === activePage && styles.thumbNumActive]}>
+                      {p}
+                    </Text>
+                    {(p === 1 || p === pages.length) && (
+                      <Text style={[styles.thumbTag, p === activePage && styles.thumbNumActive]}>
+                        {p === 1 ? 'FIRST' : 'LAST'}
+                      </Text>
+                    )}
+                  </Pressable>
+                );
+              })}
+              <Pressable
+                style={[styles.thumbAdd, pages.length >= MAX_PAGES && styles.dimmed]}
+                onPress={addPage}
+                disabled={pages.length >= MAX_PAGES}
+              >
+                <Feather name="plus" size={18} color={theme.color.fg2} />
+                <Text style={styles.thumbCount}>
+                  {pages.length}/{MAX_PAGES}
+                </Text>
+              </Pressable>
+            </ScrollView>
+          </View>
+
+          {/* ── Canvas ───────────────────────────────────────────────── */}
+          <View style={styles.canvasArea}>
+            <View
+              style={[
+                styles.spreadContainer,
+                {
+                  width: SPREAD_W * spreadScale,
+                  height: SPREAD_H * spreadScale,
+                },
+              ]}
+            >
+              {/* Current page (animates out) */}
+              <Animated.View
+                style={[
+                  styles.spreadScaled,
+                  { width: SPREAD_W, height: SPREAD_H, transform: [{ scale: spreadScale }] },
+                  outAnimStyle,
+                ]}
+              >
+                <SpreadView
+                  pages={pages}
+                  activePage={activePage}
+                  selectedId={selectedId}
+                  spreadScale={spreadScale}
+                  onCanvasTap={() => setSelectedId(null)}
+                  onSelect={setSelectedId}
+                  onMoveEnd={handleMoveEnd}
+                  onResizeEnd={handleResizeEnd}
+                  onRotateEnd={handleRotateEnd}
+                />
+              </Animated.View>
+
+              {/* Incoming page (animates in) */}
+              <Animated.View
+                style={[
+                  styles.spreadScaled,
+                  {
+                    width: SPREAD_W,
+                    height: SPREAD_H,
+                    transform: [{ scale: spreadScale }],
+                    position: 'absolute',
+                  },
+                  inAnimStyle,
+                ]}
+                pointerEvents="none"
+              >
+                <SpreadView
+                  pages={pages}
+                  activePage={activePage}
+                  selectedId={null}
+                  spreadScale={spreadScale}
+                  onCanvasTap={() => {}}
+                  onSelect={() => {}}
+                  onMoveEnd={() => {}}
+                  onResizeEnd={() => {}}
+                  onRotateEnd={() => {}}
+                />
+              </Animated.View>
+
+              {/* Item toolbar (floats above selected item) */}
+              {selectedItem && (
+                <View
+                  style={[
+                    StyleSheet.absoluteFill,
+                    { transform: [{ scale: spreadScale }], transformOrigin: 'top left' },
+                  ]}
+                  pointerEvents="box-none"
+                >
+                  <ItemToolbar
+                    item={selectedItem}
+                    spreadScale={spreadScale}
+                    onBringForward={() => handleBringForward(selectedItem.id)}
+                    onSendBack={() => handleSendBack(selectedItem.id)}
+                    onDelete={handleDeleteSelected}
+                  />
+                </View>
+              )}
+            </View>
+
+            {/* Page nav affordances */}
+            <Pressable
+              style={[styles.pageNav, { left: 8 }, activePage <= 1 && styles.hidden]}
+              onPress={() => goToPage(activePage - 1)}
+            >
+              <Feather name="chevron-left" size={24} color={theme.color.fg2} />
+            </Pressable>
+            <Pressable
+              style={[styles.pageNav, { right: 8 }, activePage >= pages.length && styles.hidden]}
+              onPress={() => goToPage(activePage + 1)}
+            >
+              <Feather name="chevron-right" size={24} color={theme.color.fg2} />
+            </Pressable>
+
+            {/* Floating add button */}
+            <Pressable style={styles.fab} onPress={() => toggleDrawer(true)}>
+              <Feather name="plus" size={26} color={theme.palette.cream} />
+            </Pressable>
+          </View>
+        </View>
+
+        {/* ── Collection drawer ─────────────────────────────────────── */}
+        {drawerOpen && (
+          <Pressable style={styles.drawerScrim} onPress={() => toggleDrawer(false)} />
+        )}
+        <Animated.View
+          style={[
+            styles.drawer,
+            isPhone && styles.drawerCompact,
+            drawerAnimStyle,
+          ]}
+        >
+          <View style={styles.drawerHeader}>
+            <View>
+              <Text style={styles.drawerEyebrow}>YOUR COLLECTION</Text>
+              <Text style={styles.drawerTitle}>
+                {DRAWER_CATEGORIES.find((c) => c.id === drawerCat)?.label}
+              </Text>
+            </View>
+            <Pressable onPress={() => toggleDrawer(false)} hitSlop={8}>
+              <Feather name="x" size={20} color={theme.color.fg2} />
+            </Pressable>
+          </View>
+
+          <View style={styles.drawerBody}>
+            {/* Item grid */}
+            <ScrollView contentContainerStyle={styles.drawerGrid}>
+              {(DRAWER_ITEMS[drawerCat] ?? []).map((item, i) => {
+                const toneKey = item.tone as keyof typeof SHOP_TONES;
+                const tone = SHOP_TONES[toneKey];
+                const isNewItem = i < 2;
+                return (
+                  <Pressable
+                    key={`${drawerCat}-${i}`}
+                    style={[
+                      styles.tile,
+                      item.flowerAsset ? { backgroundColor: theme.palette.cream } : { backgroundColor: tone.bg },
+                      isNewItem && styles.tileNew,
+                    ]}
+                    onPress={() =>
+                      placeItem({ id: item.id, glyph: item.glyph, tone: item.tone, flowerAsset: item.flowerAsset })
+                    }
+                  >
+                    {item.flowerAsset ? (
+                      <Image source={item.flowerAsset} style={styles.tileFlower} resizeMode="contain" />
+                    ) : (
+                      <Feather name={item.glyph as any} size={28} color={tone.accent} />
+                    )}
+                    {isNewItem && (
+                      <View style={styles.tileNewTag}>
+                        <Text style={styles.tileNewText}>NEW</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+
+            {/* Category tabs on the right edge */}
+            <ScrollView style={styles.tabRail} contentContainerStyle={styles.tabRailContent}>
+              {DRAWER_CATEGORIES.map((c) => {
+                const isActive = c.id === drawerCat;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.tab, isActive && styles.tabActive]}
+                    onPress={() => setDrawerCat(c.id)}
+                  >
+                    <Feather
+                      name={c.icon}
+                      size={18}
+                      color={isActive ? theme.palette.forest : theme.color.fg3}
+                    />
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Animated.View>
+      </Screen>
+    </GestureHandlerRootView>
+  );
+}
+
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
   root: { backgroundColor: theme.color.bg2 },
+
+  // Top bar
   topbar: {
     height: 60,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
     paddingHorizontal: 16,
     backgroundColor: theme.color.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.palette.hairlineSoft,
   },
   iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: theme.color.bg1,
     borderWidth: 1,
     borderColor: theme.palette.hairline,
@@ -509,14 +1000,30 @@ const styles = StyleSheet.create({
     marginLeft: 'auto',
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+  },
+  zoomBadge: {
+    height: 28,
+    paddingHorizontal: 10,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.bg1,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomText: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.color.fg2,
   },
   layersBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    height: 40,
-    paddingHorizontal: 14,
+    height: 36,
+    paddingHorizontal: 12,
     borderRadius: theme.radius.pill,
     backgroundColor: theme.color.bg1,
     borderWidth: 1,
@@ -528,6 +1035,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.color.fg1,
   },
+
+  // Body layout
   body: { flex: 1, flexDirection: 'row' },
 
   // Page strip
@@ -583,23 +1092,32 @@ const styles = StyleSheet.create({
     color: theme.color.fg4,
   },
 
-  // Canvas
+  // Canvas area
   canvasArea: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
   },
-  spread: {
-    flexDirection: 'row',
-    width: '92%',
-    maxWidth: 760,
-    aspectRatio: 1.45,
-    borderRadius: theme.radius.sm,
-    overflow: 'hidden',
+  spreadContainer: {
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+    overflow: 'visible',
+  },
+  spreadScaled: {
+    transformOrigin: 'top left',
     ...theme.shadow.card,
   },
-  page: { flex: 1, position: 'relative' },
+  spreadInner: {
+    width: SPREAD_W,
+    height: SPREAD_H,
+    flexDirection: 'row',
+    borderRadius: theme.radius.sm,
+    overflow: 'hidden',
+  },
+
+  // Pages
+  page: { flex: 1, height: SPREAD_H, overflow: 'hidden', position: 'relative' },
   pageLeft: {},
   pageRight: {},
   paper: { backgroundColor: '#F6EEDD' },
@@ -641,17 +1159,60 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.color.fg4,
   },
-  placedItem: {
-    position: 'absolute',
-    width: 64,
-    height: 76,
-    borderRadius: theme.radius.xs,
+
+  // Placed items
+  itemInner: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: theme.radius.xs,
     ...theme.shadow.tape,
   },
-  placedFlower: { backgroundColor: 'transparent' },
-  placedFlowerImg: { width: 76, height: 88 },
+  itemImage: {
+    width: '80%',
+    height: '80%',
+  },
+  selectionDot: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: theme.palette.forest,
+    borderWidth: 1.5,
+    borderColor: theme.palette.cream,
+  },
+
+  // Item toolbar
+  toolbar: {
+    position: 'absolute',
+    flexDirection: 'row',
+    backgroundColor: theme.color.surface,
+    borderRadius: 20,
+    padding: 4,
+    gap: 2,
+    ...theme.shadow.card,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+  },
+  toolBtn: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 16,
+  },
+  toolDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: theme.palette.hairlineSoft,
+    alignSelf: 'center',
+    marginHorizontal: 2,
+  },
+  toolDanger: {},
+
+  // Page nav
   pageNav: {
     position: 'absolute',
     top: '50%',
@@ -665,6 +1226,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+
+  // FAB
   fab: {
     position: 'absolute',
     top: 18,
@@ -676,14 +1239,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...theme.shadow.lift,
-  },
-  hint: {
-    position: 'absolute',
-    bottom: 10,
-    fontFamily: theme.font.ui,
-    fontSize: 11,
-    color: theme.color.fg4,
-    textAlign: 'center',
   },
 
   // Drawer
