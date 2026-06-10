@@ -3,6 +3,8 @@ import { Stack, SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { usePPFonts } from '../src/theme/fonts';
 import { theme } from '../src/theme/theme';
+import { initRevenueCat } from '../src/lib/revenuecat';
+import { useAppStore } from '../src/store/app';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -12,6 +14,11 @@ export default function RootLayout() {
   useEffect(() => {
     if (fontsLoaded) SplashScreen.hideAsync();
   }, [fontsLoaded]);
+
+  useEffect(() => {
+    initRevenueCat();
+    useAppStore.getState().checkAndSyncPremium();
+  }, []);
 
   if (!fontsLoaded) return null;
 

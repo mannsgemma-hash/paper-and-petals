@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  Alert,
   Image,
   Modal,
   Pressable,
@@ -32,6 +33,7 @@ export default function ShopScreen() {
   const purchaseItem = useAppStore((s) => s.purchaseItem);
   const shopItems = useAppStore((s) => s.shopItems);
   const setShopItems = useAppStore((s) => s.setShopItems);
+  const subscribed = useAppStore((s) => s.subscribed);
 
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -148,6 +150,7 @@ export default function ShopScreen() {
                 <ItemCard
                   item={it}
                   owned={isOwned(it)}
+                  subscribed={subscribed}
                   onOpen={() => setOpenItem(it)}
                 />
               </View>
@@ -160,8 +163,23 @@ export default function ShopScreen() {
       <ItemDetail
         item={openItem}
         owned={openItem ? isOwned(openItem) : false}
+        subscribed={subscribed}
         onClose={() => setOpenItem(null)}
-        onPurchase={(it) => purchaseItem(it.id)}
+        onPurchase={(it) => {
+          if (!subscribed && it.price > 0) {
+            Alert.alert(
+              'Subscription item',
+              'This item is included free with The Cottage subscription, or available to purchase individually.',
+              [
+                { text: 'Subscribe', onPress: () => { setOpenItem(null); router.push('/subscription'); } },
+                { text: 'Buy individually', onPress: () => purchaseItem(it.id) },
+                { text: 'Cancel', style: 'cancel' },
+              ],
+            );
+          } else {
+            purchaseItem(it.id);
+          }
+        }}
       />
     </Screen>
   );
@@ -206,12 +224,15 @@ function PriceTag({ price, owned }: { price: number; owned: boolean }) {
 function ItemCard({
   item,
   owned,
+  subscribed,
   onOpen,
 }: {
   item: ShopItem;
   owned: boolean;
+  subscribed: boolean;
   onOpen: () => void;
 }) {
+  const showLock = !subscribed && item.price > 0 && !owned;
   return (
     <Pressable
       onPress={onOpen}
@@ -222,6 +243,11 @@ function ItemCard({
         {item.isNew && (
           <View style={styles.newBadge}>
             <Text style={styles.newBadgeText}>NEW</Text>
+          </View>
+        )}
+        {showLock && (
+          <View style={styles.lockBadge}>
+            <Feather name="lock" size={11} color={theme.palette.terracotta} />
           </View>
         )}
       </View>
@@ -241,11 +267,13 @@ function ItemCard({
 function ItemDetail({
   item,
   owned,
+  subscribed,
   onClose,
   onPurchase,
 }: {
   item: ShopItem | null;
   owned: boolean;
+  subscribed: boolean;
   onClose: () => void;
   onPurchase: (it: ShopItem) => void;
 }) {
@@ -462,6 +490,19 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     color: theme.palette.cream,
     fontWeight: '700',
+  },
+  lockBadge: {
+    position: 'absolute',
+    bottom: 7,
+    right: 7,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: 'rgba(255,253,246,0.90)',
+    borderWidth: 1,
+    borderColor: 'rgba(196,123,99,0.30)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   cardBody: {
     padding: 12,

@@ -32,6 +32,8 @@ interface AppState {
   shopItems: ShopItem[];
   setLaunchState: (s: LaunchState) => void;
   toggleSubscribed: () => void;
+  setPremium: (v: boolean) => void;
+  checkAndSyncPremium: () => Promise<void>;
   renameJournal: (id: string, name: string) => void;
   addJournal: () => Journal;
   purchaseItem: (id: string) => void;
@@ -47,6 +49,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   shopItems: SHOP_CATALOGUE,
   setLaunchState: (launchState) => set({ launchState }),
   toggleSubscribed: () => set((s) => ({ subscribed: !s.subscribed })),
+  setPremium: (v) => set({ subscribed: v }),
+  checkAndSyncPremium: async () => {
+    // Lazy import to avoid circular deps and native module issues at module load
+    try {
+      const { getIsPremium } = await import('../lib/revenuecat')
+      const isPremium = await getIsPremium()
+      set({ subscribed: isPremium })
+    } catch {
+      // Silently ignore — native module may not be available in dev/web
+    }
+  },
   renameJournal: (id, name) =>
     set((s) => ({
       journals: s.journals.map((j) => (j.id === id ? { ...j, name } : j)),

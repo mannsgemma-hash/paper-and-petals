@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
+  Alert,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import { Card } from '../src/components/Card';
 import { Eyebrow } from '../src/components/Eyebrow';
 import { theme } from '../src/theme/theme';
 import { useAppStore } from '../src/store/app';
+import { purchasePackage, restorePurchases } from '../src/lib/revenuecat';
 
 // SCR-24 Subscription Management. Cancel-first, no dark patterns.
 // The benefit list leads with the ad-free studio; copy is calm and plain.
@@ -29,7 +31,56 @@ const SUB_BENEFITS = [
 export default function SubscriptionScreen() {
   const router = useRouter();
   const subscribed = useAppStore((s) => s.subscribed);
+  const setPremium = useAppStore((s) => s.setPremium);
   const toggleSubscribed = useAppStore((s) => s.toggleSubscribed);
+
+  const [loading, setLoading] = useState(false);
+
+  async function handleStartSubscription() {
+    setLoading(true);
+    try {
+      const success = await purchasePackage('monthly');
+      if (success) {
+        setPremium(true);
+        Alert.alert('Welcome to The Cottage!', 'Your subscription is now active.', [{ text: 'Thanks!' }]);
+      }
+    } catch (e: any) {
+      Alert.alert('Purchase failed', e?.message ?? 'Something went wrong. Please try again.', [{ text: 'OK' }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleSwitchToAnnual() {
+    setLoading(true);
+    try {
+      const success = await purchasePackage('annual');
+      if (success) {
+        setPremium(true);
+      }
+    } catch (e: any) {
+      Alert.alert('Purchase failed', e?.message ?? 'Something went wrong. Please try again.', [{ text: 'OK' }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleRestorePurchases() {
+    setLoading(true);
+    try {
+      const success = await restorePurchases();
+      if (success) {
+        setPremium(true);
+        Alert.alert('Purchases restored', 'Your subscription has been restored.', [{ text: 'Great!' }]);
+      } else {
+        Alert.alert('Nothing to restore', 'No active subscription was found for your account.', [{ text: 'OK' }]);
+      }
+    } catch {
+      Alert.alert('Restore failed', 'Could not restore purchases. Please try again.', [{ text: 'OK' }]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <Screen texture={false} style={styles.root}>
@@ -68,10 +119,11 @@ export default function SubscriptionScreen() {
           </View>
           {!subscribed && (
             <Button
-              title="Start subscription"
+              title={loading ? 'Please wait…' : 'Start subscription'}
               pill
-              onPress={toggleSubscribed}
+              onPress={handleStartSubscription}
               style={styles.startBtn}
+              disabled={loading}
             />
           )}
         </Card>
@@ -81,13 +133,19 @@ export default function SubscriptionScreen() {
           <Card style={styles.card}>
             <Text style={styles.cardTitle}>Cancel subscription</Text>
             <Text style={styles.cardBody}>
-              Your deliveries will return to one per day. You’ll keep
-              everything you’ve collected.
+              Your deliveries will return to one per day. You'll keep
+              everything you've collected.
             </Text>
             <Button
               title="Cancel subscription"
               variant="danger"
-              onPress={toggleSubscribed}
+              onPress={() =>
+                Alert.alert(
+                  'Cancel subscription',
+                  'To cancel, open Settings → Apple ID → Subscriptions on your device.',
+                  [{ text: 'OK' }],
+                )
+              }
               style={styles.cancelBtn}
             />
           </Card>
@@ -101,9 +159,22 @@ export default function SubscriptionScreen() {
               $39.99 a year — save roughly two months. No price tricks at
               renewal.
             </Text>
-            <Button title="Switch to annual" onPress={() => {}} />
+            <Button
+              title={loading ? 'Please wait…' : 'Switch to annual'}
+              onPress={handleSwitchToAnnual}
+              disabled={loading}
+            />
           </View>
         </Card>
+
+        {/* Restore purchases */}
+        <Pressable
+          style={styles.restoreLink}
+          onPress={handleRestorePurchases}
+          disabled={loading}
+        >
+          <Text style={styles.restoreText}>Restore purchases</Text>
+        </Pressable>
 
         <Text style={styles.footer}>
           BILLED THROUGH THE APP STORE · CANCEL ANY TIME, NO SCARE SCREENS
@@ -216,6 +287,17 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   annualCopy: { flex: 1, minWidth: 200, marginBottom: 0 },
+  restoreLink: {
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  restoreText: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    color: theme.color.fg3,
+    textDecorationLine: 'underline',
+  },
   footer: {
     textAlign: 'center',
     fontFamily: theme.font.ui,

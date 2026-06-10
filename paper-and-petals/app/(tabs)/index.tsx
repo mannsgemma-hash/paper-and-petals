@@ -13,6 +13,7 @@ import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { Wordmark } from '../../src/components/Wordmark';
+import { AdBanner } from '../../src/components/AdBanner';
 import { theme } from '../../src/theme/theme';
 import { useAppStore, type Journal } from '../../src/store/app';
 
@@ -31,6 +32,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const journals = useAppStore((s) => s.journals);
   const addJournal = useAppStore((s) => s.addJournal);
+  const subscribed = useAppStore((s) => s.subscribed);
 
   const [active, setActive] = useState(0);
   const dragDX = useRef(new Animated.Value(0)).current;
@@ -179,6 +181,9 @@ export default function HomeScreen() {
           </Pressable>
         ))}
       </View>
+
+      {/* Ad banner for free users */}
+      {!subscribed && <AdBanner />}
     </Screen>
   );
 }

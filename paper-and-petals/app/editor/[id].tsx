@@ -20,6 +20,7 @@ import Animated, {
 import { Feather } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
+import { AdBanner } from '../../src/components/AdBanner';
 import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES } from '../../src/data/shop';
@@ -423,6 +424,7 @@ export default function EditorScreen() {
   const { id: journalId } = useLocalSearchParams<{ id: string }>();
   const journal = useAppStore((s) => s.journals.find((j) => j.id === journalId));
   const renameJournal = useAppStore((s) => s.renameJournal);
+  const subscribed = useAppStore((s) => s.subscribed);
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
@@ -943,6 +945,9 @@ export default function EditorScreen() {
             </ScrollView>
           </View>
         </Animated.View>
+
+        {/* Ad banner for free users */}
+        {!subscribed && <AdBanner />}
       </Screen>
     </GestureHandlerRootView>
   );
