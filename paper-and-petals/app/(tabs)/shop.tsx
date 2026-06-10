@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image,
   Modal,
@@ -16,11 +16,11 @@ import { Screen } from '../../src/components/Screen';
 import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
 import {
-  SHOP_CATALOGUE,
   SHOP_CATEGORIES,
   SHOP_TONES,
   type ShopItem,
 } from '../../src/data/shop';
+import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
 
 // SCR-06 Shop. Search bar at the top, wrapping centred category chips, then
 // a grid of items. Tapping an item opens a detail panel with a large preview
@@ -30,10 +30,20 @@ export default function ShopScreen() {
   const router = useRouter();
   const ownedItems = useAppStore((s) => s.ownedItems);
   const purchaseItem = useAppStore((s) => s.purchaseItem);
+  const shopItems = useAppStore((s) => s.shopItems);
+  const setShopItems = useAppStore((s) => s.setShopItems);
 
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
   const [openItem, setOpenItem] = useState<ShopItem | null>(null);
+
+  useEffect(() => {
+    fetchLiveItems().then((results) => {
+      if (results.length > 0) {
+        setShopItems(results.map(sanityItemToShopItem));
+      }
+    });
+  }, []);
 
   const { width } = useWindowDimensions();
   const columns = width >= 900 ? 4 : width >= 640 ? 3 : 2;
@@ -42,12 +52,12 @@ export default function ShopScreen() {
 
   const filtered = useMemo(
     () =>
-      SHOP_CATALOGUE.filter(
+      shopItems.filter(
         (it) =>
           (category === 'all' || it.category === category) &&
           (!query || it.name.toLowerCase().includes(query.toLowerCase()))
       ),
-    [category, query]
+    [shopItems, category, query]
   );
 
   const sectionLabel =

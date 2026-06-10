@@ -1,0 +1,21 @@
+{
+  "name": "paper-and-petals-studio",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "sanity dev",
+    "build": "sanity build",
+    "deploy": "sanity deploy",
+    "seed": "node --experimental-vm-modules scripts/seed.mjs"
+  },
+  "dependencies": {
+    "@sanity/vision": "^3.72.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "sanity": "^3.72.1"
+  },
+  "devDependencies": {
+    "@sanity/types": "^3.72.1",
+    "typescript": "^5.7.2"
+  }
+}

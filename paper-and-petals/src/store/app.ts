@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { SHOP_CATALOGUE, ShopItem } from '../data/shop';
 
 /** Launch state drives where SCR-01 routes after the bar fills. */
 export type LaunchState = 'new' | 'first-today' | 'returning';
@@ -28,11 +29,14 @@ interface AppState {
   subscribed: boolean;
   journals: Journal[];
   ownedItems: Record<string, boolean>;
+  shopItems: ShopItem[];
   setLaunchState: (s: LaunchState) => void;
   toggleSubscribed: () => void;
   renameJournal: (id: string, name: string) => void;
   addJournal: () => Journal;
   purchaseItem: (id: string) => void;
+  setShopItems: (items: ShopItem[]) => void;
+  markItemOwned: (id: string) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -40,6 +44,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   subscribed: false,
   journals: SEED_JOURNALS,
   ownedItems: {},
+  shopItems: SHOP_CATALOGUE,
   setLaunchState: (launchState) => set({ launchState }),
   toggleSubscribed: () => set((s) => ({ subscribed: !s.subscribed })),
   renameJournal: (id, name) =>
@@ -63,4 +68,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   purchaseItem: (id) =>
     set((s) => ({ ownedItems: { ...s.ownedItems, [id]: true } })),
+  setShopItems: (items) => set({ shopItems: items }),
+  markItemOwned: (id) =>
+    set((s) => ({
+      ownedItems: { ...s.ownedItems, [id]: true },
+      shopItems: s.shopItems.map((it) =>
+        it.id === id ? { ...it, owned: true } : it
+      ),
+    })),
 }));
