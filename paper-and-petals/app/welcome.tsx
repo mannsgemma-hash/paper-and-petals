@@ -16,6 +16,7 @@ import { Button } from '../src/components/Button';
 import { theme } from '../src/theme/theme';
 import { useAppStore } from '../src/store/app';
 import { markWelcomeComplete } from '../src/lib/storage';
+import { track } from '../src/lib/analytics';
 
 // SCR-02 First-launch Welcome. Brand seal hero + intro form + onboarding CTAs.
 // Only Name is mandatory; the rest are optional.
@@ -38,6 +39,7 @@ export default function WelcomeScreen() {
 
   const finish = (withSubscription: boolean) => {
     if (withSubscription && !subscribed) toggleSubscribed();
+    track('welcome_completed', { subscribed: withSubscription });
     setLaunchState('returning');
     // Persist welcome completion (+ today's open) so the next launch routes
     // by date, then let new users experience their first daily delivery.

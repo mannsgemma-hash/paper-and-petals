@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Animated,
   Image,
@@ -15,6 +15,7 @@ import { Screen } from '../../src/components/Screen';
 import { Wordmark } from '../../src/components/Wordmark';
 import { theme } from '../../src/theme/theme';
 import { useAppStore, type Journal } from '../../src/store/app';
+import { screen, track } from '../../src/lib/analytics';
 
 // SCR-05 Home Screen. Toca-Boca-style journal carousel.
 // Central featured journal with smaller neighbours peeking on either side.
@@ -32,6 +33,10 @@ export default function HomeScreen() {
   const journals = useAppStore((s) => s.journals);
   const addJournal = useAppStore((s) => s.addJournal);
 
+  useEffect(() => {
+    screen('Home');
+  }, []);
+
   const [active, setActive] = useState(0);
   const dragDX = useRef(new Animated.Value(0)).current;
   const dragState = useRef({ dragging: false, lastDX: 0 });
@@ -45,8 +50,10 @@ export default function HomeScreen() {
     if (Math.abs(dragState.current.lastDX) > 5) return; // swipe, not tap
     if (j.isNew) {
       const created = addJournal();
+      track('journal_opened', { journalId: created.id });
       router.push(`/editor/${created.id}`);
     } else {
+      track('journal_opened', { journalId: j.id });
       router.push(`/editor/${j.id}`);
     }
   };

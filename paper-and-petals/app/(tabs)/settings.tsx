@@ -238,11 +238,11 @@ export default function SettingsScreen() {
           />
           <SettingsRow
             divider
-            icon="mail"
-            title="Send feedback"
-            description="Share an idea, report a bug, or vote on what we build next — it opens our feedback board."
+            icon="message-square"
+            title="Share feedback"
+            description="Ideas, bugs, or just to say hello"
             trailing={<Chevron />}
-            onPress={() => {}}
+            onPress={() => router.push('/feedback')}
           />
           {account.signedIn && (
             <SettingsRow

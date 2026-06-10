@@ -22,6 +22,7 @@ import {
   type ShopItem,
 } from '../../src/data/shop';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
+import { screen, track } from '../../src/lib/analytics';
 
 // SCR-06 Shop. Search bar at the top, wrapping centred category chips, then
 // a grid of items. Tapping an item opens a detail panel with a large preview
@@ -43,6 +44,7 @@ export default function ShopScreen() {
   const [openItem, setOpenItem] = useState<ShopItem | null>(null);
 
   useEffect(() => {
+    screen('Shop');
     fetchLiveItems().then((results) => {
       if (results.length > 0) {
         setShopItems(results.map(sanityItemToShopItem));
@@ -175,12 +177,13 @@ export default function ShopScreen() {
               'This item is included free with The Cottage subscription, or available to purchase individually.',
               [
                 { text: 'Subscribe', onPress: () => { setOpenItem(null); router.push('/subscription'); } },
-                { text: 'Buy individually', onPress: () => purchaseItem(it.id) },
+                { text: 'Buy individually', onPress: () => { purchaseItem(it.id); track('item_purchased', { itemId: it.id, price: it.price }); } },
                 { text: 'Cancel', style: 'cancel' },
               ],
             );
           } else {
             purchaseItem(it.id);
+            track('item_purchased', { itemId: it.id, price: it.price });
           }
         }}
       />

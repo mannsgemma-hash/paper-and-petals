@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -16,6 +16,7 @@ import { Eyebrow } from '../src/components/Eyebrow';
 import { theme } from '../src/theme/theme';
 import { useAppStore } from '../src/store/app';
 import { purchasePackage, restorePurchases } from '../src/lib/revenuecat';
+import { screen, track } from '../src/lib/analytics';
 
 // SCR-24 Subscription Management. Cancel-first, no dark patterns.
 // The benefit list leads with the ad-free studio; copy is calm and plain.
@@ -36,12 +37,17 @@ export default function SubscriptionScreen() {
 
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    screen('Subscription');
+  }, []);
+
   async function handleStartSubscription() {
     setLoading(true);
     try {
       const success = await purchasePackage('monthly');
       if (success) {
         setPremium(true);
+        track('subscription_started', { plan: 'monthly' });
         Alert.alert('Welcome to The Cottage!', 'Your subscription is now active.', [{ text: 'Thanks!' }]);
       }
     } catch (e: any) {
@@ -57,6 +63,7 @@ export default function SubscriptionScreen() {
       const success = await purchasePackage('annual');
       if (success) {
         setPremium(true);
+        track('subscription_started', { plan: 'annual' });
       }
     } catch (e: any) {
       Alert.alert('Purchase failed', e?.message ?? 'Something went wrong. Please try again.', [{ text: 'OK' }]);

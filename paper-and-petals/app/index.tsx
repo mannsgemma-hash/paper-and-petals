@@ -5,6 +5,7 @@ import { Screen } from '../src/components/Screen';
 import { theme } from '../src/theme/theme';
 import { useAppStore } from '../src/store/app';
 import { markOpenedToday, resolveLaunchState } from '../src/lib/storage';
+import { screen } from '../src/lib/analytics';
 
 // SCR-01 Loading. Universal load splash: monogram seal cycling colourways,
 // a rotating loading phrase, and a progress bar. When the bar fills, the stage
@@ -50,6 +51,10 @@ export default function LoadingScreen() {
   const router = useRouter();
   const launchState = useAppStore((s) => s.launchState);
   const setLaunchState = useAppStore((s) => s.setLaunchState);
+
+  useEffect(() => {
+    screen('Loading');
+  }, []);
 
   // Real launch-state detection: 'new' until the welcome flow completes, then
   // 'first-today' on the first open of each day (daily delivery), otherwise

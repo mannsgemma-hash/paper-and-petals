@@ -29,6 +29,7 @@ import { theme } from '../../src/theme/theme';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES } from '../../src/data/shop';
 import { supabase } from '../../src/lib/supabase';
+import { screen, track } from '../../src/lib/analytics';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -610,6 +611,10 @@ export default function EditorScreen() {
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
+  useEffect(() => {
+    screen('Editor', { journalId });
+  }, [journalId]);
+
   // ── Core state ───────────────────────────────────────────────────────────
   const [pages, setPages] = useState<PageState[]>(() =>
     Array.from({ length: 8 }, () => ({ items: [] })),
@@ -718,6 +723,7 @@ export default function EditorScreen() {
     scheduleSave(newPages);
     setSelectedId(newItem.id);
     toggleDrawer(false);
+    track('item_placed', { category: drawerCat });
   }
 
   // ── Item handlers ─────────────────────────────────────────────────────────
@@ -839,6 +845,7 @@ export default function EditorScreen() {
     pushHistory(newPages);
     scheduleSave(newPages);
     goToPage(newPages.length, newPages.length);
+    track('page_added');
   }
 
   async function handleDeletePage() {

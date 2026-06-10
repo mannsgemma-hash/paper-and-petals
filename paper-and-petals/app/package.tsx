@@ -12,6 +12,7 @@ import { useRouter } from 'expo-router';
 import { Screen } from '../src/components/Screen';
 import { Eyebrow } from '../src/components/Eyebrow';
 import { theme } from '../src/theme/theme';
+import { track } from '../src/lib/analytics';
 
 // SCR-03 Package Opening. First-open-of-the-day ritual:
 // wiggling postage box → tap → lid lifts, contents drift up →
@@ -46,6 +47,7 @@ export default function PackageScreen() {
       setPhase('opening');
       setTimeout(() => {
         setPhase('reveal');
+        track('pack_opened');
         Animated.parallel([
           Animated.timing(boxOpacity, {
             toValue: 0,
@@ -62,6 +64,7 @@ export default function PackageScreen() {
         ]).start();
       }, 700);
     } else if (phase === 'reveal') {
+      track('pack_dismissed');
       router.replace('/(tabs)');
     }
   };
