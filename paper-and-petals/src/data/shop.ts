@@ -52,8 +52,8 @@ export interface ShopItem {
   price: number;
   tone: ShopTone;
   glyph: FeatherName;
-  /** Real pressed-flower art, when the item has it. */
-  flowerAsset?: number;
+  /** Real artwork — local require() number or Sanity URL { uri: string }. */
+  flowerAsset?: number | { uri: string };
   desc: string;
   items: number;
   owned: boolean;

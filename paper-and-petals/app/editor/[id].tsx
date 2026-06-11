@@ -76,7 +76,7 @@ interface PlacedItem {
   itemId: string;
   glyph: string;
   tone: string;
-  flowerAsset?: number;
+  flowerAsset?: number | { uri: string };
   x: number;
   y: number;
   w: number;
@@ -363,9 +363,9 @@ function PlacedItemView({
     <Animated.View style={animStyle}>
       <GestureDetector gesture={composed}>
         <Animated.View style={styles.itemFill}>
-          <View style={[styles.itemInner, { backgroundColor: bg }]}>
+          <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }]}>
             {item.flowerAsset ? (
-              <Image source={item.flowerAsset} style={styles.itemImage} resizeMode="contain" />
+              <Image source={item.flowerAsset as any} style={styles.itemImage} resizeMode="contain" />
             ) : (
               <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
             )}
@@ -467,7 +467,7 @@ interface DrawerBodyProps {
   shopItems: ShopItem[];
   drawerCat: string;
   setDrawerCat: (cat: string) => void;
-  placeItem: (item: { id: string; glyph: string; tone: string; flowerAsset?: number }) => void;
+  placeItem: (item: { id: string; glyph: string; tone: string; flowerAsset?: number | { uri: string } }) => void;
 }
 
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem }: DrawerBodyProps) {
@@ -842,7 +842,7 @@ export default function EditorScreen() {
   }
 
   // ── Item placement ────────────────────────────────────────────────────────
-  function placeItem(shopItem: { id: string; glyph: string; tone: string; flowerAsset?: number }) {
+  function placeItem(shopItem: { id: string; glyph: string; tone: string; flowerAsset?: number | { uri: string } }) {
     const currentItems = pages[activePage - 1].items;
     const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
 
@@ -1559,7 +1559,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: theme.radius.xs,
-    ...theme.shadow.tape,
   },
   itemImage: {
     width: '80%',
