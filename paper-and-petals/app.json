@@ -28,9 +28,7 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
-      ["react-native-onesignal", { "mode": "development" }],
-      "react-native-purchases"
+      "expo-router"
     ]
   }
 }
