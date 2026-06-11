@@ -475,10 +475,13 @@ interface DrawerBodyProps {
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const ownedItems = useAppStore((s) => s.ownedItems);
-  const subscribed = useAppStore((s) => s.subscribed);
+  const deliveredItemIds = useAppStore((s) => s.deliveredItemIds);
 
   const isOwned = (item: ShopItem) =>
-    subscribed || item.owned || !!ownedItems[item.id] || item.price === 0;
+    item.price === 0 ||
+    item.owned ||
+    !!ownedItems[item.id] ||
+    deliveredItemIds.includes(item.id);
 
   // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
   const itemsByCategory: Record<string, ShopItem[]> = shopItems.length > 0

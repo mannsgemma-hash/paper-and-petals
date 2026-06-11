@@ -30,6 +30,8 @@ interface AppState {
   journals: Journal[];
   ownedItems: Record<string, boolean>;
   shopItems: ShopItem[];
+  /** IDs of items unlocked via daily delivery (persists for the session). */
+  deliveredItemIds: string[];
   setLaunchState: (s: LaunchState) => void;
   toggleSubscribed: () => void;
   setPremium: (v: boolean) => void;
@@ -39,6 +41,7 @@ interface AppState {
   purchaseItem: (id: string) => void;
   setShopItems: (items: ShopItem[]) => void;
   markItemOwned: (id: string) => void;
+  setDeliveredItemIds: (ids: string[]) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -46,6 +49,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   subscribed: false,
   journals: SEED_JOURNALS,
   ownedItems: {},
+  deliveredItemIds: [],
   shopItems: SHOP_CATALOGUE,
   setLaunchState: (launchState) => set({ launchState }),
   toggleSubscribed: () => set((s) => ({ subscribed: !s.subscribed })),
@@ -89,4 +93,5 @@ export const useAppStore = create<AppState>((set, get) => ({
         it.id === id ? { ...it, owned: true } : it
       ),
     })),
+  setDeliveredItemIds: (ids) => set({ deliveredItemIds: ids }),
 }));
