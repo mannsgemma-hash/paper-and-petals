@@ -384,8 +384,8 @@ function PlacedItemView({
               <View
                 style={[
                   styles.handleTouch,
-                  hx < 0 ? { left: -12 } : { right: -12 },
-                  hy < 0 ? { top: -12 } : { bottom: -12 },
+                  hx < 0 ? { left: -8 } : { right: -8 },
+                  hy < 0 ? { top: -8 } : { bottom: -8 },
                 ]}
               >
                 <View style={styles.handleDot} />
@@ -783,6 +783,7 @@ export default function EditorScreen() {
   const [drawerCat, setDrawerCat] = useState('papers');
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  const [clipboard, setClipboard] = useState<PlacedItem | null>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
@@ -964,6 +965,44 @@ export default function EditorScreen() {
     scheduleSave(newPages);
   }
 
+  // ── Copy / paste ──────────────────────────────────────────────────────────
+  function copySelected() {
+    const item = pages[activePage - 1]?.items.find((it) => it.id === selectedId);
+    if (item) setClipboard(item);
+  }
+
+  function pasteClipboard() {
+    if (!clipboard) return;
+    const currentItems = pages[activePage - 1]?.items ?? [];
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+    const pasted: PlacedItem = {
+      ...clipboard,
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      x: Math.min(clipboard.x + 24, SPREAD_W - MIN_VIS),
+      y: Math.min(clipboard.y + 24, SPREAD_H - MIN_VIS),
+      z: maxZ + 1,
+    };
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, pasted] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    setSelectedId(pasted.id);
+  }
+
+  // Keyboard shortcuts (web only)
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+    const onKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      if (e.key === 'c') { e.preventDefault(); copySelected(); }
+      if (e.key === 'v') { e.preventDefault(); pasteClipboard(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedId, clipboard, pages, activePage]);
+
   // ── Page navigation ───────────────────────────────────────────────────────
   function finishFlip(to: number) {
     setActivePage(to);
@@ -1100,6 +1139,22 @@ export default function EditorScreen() {
               disabled={!canRedo}
             >
               <Feather name="rotate-cw" size={18} color={canRedo ? theme.color.fg1 : theme.color.fg3} />
+            </Pressable>
+            {/* Copy */}
+            <Pressable
+              style={[styles.iconBtn, !selectedId && styles.dimmed]}
+              onPress={copySelected}
+              disabled={!selectedId}
+            >
+              <Feather name="copy" size={18} color={selectedId ? theme.color.fg1 : theme.color.fg3} />
+            </Pressable>
+            {/* Paste */}
+            <Pressable
+              style={[styles.iconBtn, !clipboard && styles.dimmed]}
+              onPress={pasteClipboard}
+              disabled={!clipboard}
+            >
+              <Feather name="clipboard" size={18} color={clipboard ? theme.color.fg1 : theme.color.fg3} />
             </Pressable>
             {/* Zoom out */}
             <Pressable
@@ -1729,8 +1784,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.xs,
   },
   itemImage: {
-    width: '80%',
-    height: '80%',
+    width: '96%',
+    height: '96%',
   },
 
   // Selection frame + handles (Canva-style)
@@ -1954,7 +2009,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: theme.palette.terracotta,
   },
-  tileFlower: { width: '85%', height: '85%' },
+  tileFlower: { width: '92%', height: '92%' },
   tileNewTag: {
     position: 'absolute',
     top: 4,
