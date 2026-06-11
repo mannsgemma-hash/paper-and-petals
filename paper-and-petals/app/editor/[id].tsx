@@ -468,10 +468,11 @@ interface DrawerBodyProps {
   drawerCat: string;
   setDrawerCat: (cat: string) => void;
   placeItem: (item: { id: string; glyph: string; tone: string; flowerAsset?: number | { uri: string } }) => void;
+  hoveredCategory: string | null;
+  setHoveredCategory: (id: string | null) => void;
 }
 
-function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem }: DrawerBodyProps) {
-  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
 
   // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
@@ -579,15 +580,27 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem }: DrawerBod
                   color={isActive ? theme.palette.forest : theme.color.fg3}
                 />
               </Pressable>
-              {hoveredCategory === c.id && (
-                <View style={styles.catTooltip} pointerEvents="none">
-                  <Text style={styles.tooltipText}>{c.label}</Text>
-                </View>
-              )}
             </View>
           );
         })}
       </ScrollView>
+
+      {/* Category tooltip — sibling to both ScrollViews so it's never clipped */}
+      {hoveredCategory && (() => {
+        const idx = EDITOR_CATEGORIES.findIndex(c => c.id === hoveredCategory);
+        const label = EDITOR_CATEGORIES[idx]?.label;
+        if (!label) return null;
+        // top relative to drawerBody: 8px tabRail paddingTop + idx * 44 (tab 40 + gap 4) + 20 (half tab)
+        const topOffset = 8 + idx * 44 + 20;
+        return (
+          <View
+            style={[styles.catTooltip, { top: topOffset, right: 52 }]}
+            pointerEvents="none"
+          >
+            <Text style={styles.tooltipText}>{label}</Text>
+          </View>
+        );
+      })()}
     </View>
   );
 }
@@ -768,6 +781,7 @@ export default function EditorScreen() {
   const [zoom, setZoom] = useState(1.0);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerCat, setDrawerCat] = useState('papers');
+  const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
@@ -1300,6 +1314,8 @@ export default function EditorScreen() {
             drawerCat={drawerCat}
             setDrawerCat={setDrawerCat}
             placeItem={placeItem}
+            hoveredCategory={hoveredCategory}
+            setHoveredCategory={setHoveredCategory}
           />
 
           {/* Shop CTA — more papers, stickers & seasonal packs */}
@@ -1842,10 +1858,10 @@ const styles = StyleSheet.create({
     zIndex: 200,
     whiteSpace: 'nowrap',
   } as any,
-  // Item name tooltip (appears ABOVE the tile)
+  // Item name tooltip (appears BELOW the tile)
   itemTooltip: {
     position: 'absolute',
-    bottom: '100%',
+    top: '100%',
     left: '50%',
     marginLeft: -50,
     width: 100,
@@ -1858,7 +1874,7 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
     zIndex: 200,
     alignItems: 'center',
-    marginBottom: 4,
+    marginTop: 4,
   },
   tooltipText: {
     fontFamily: theme.font.ui,
