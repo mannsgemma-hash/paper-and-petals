@@ -1,7 +1,7 @@
 import { sanity } from '../lib/sanity'
 import { SHOP_CATALOGUE, ShopItem } from '../data/shop'
 
-const LIVE_ITEMS_QUERY = `*[_type == "item" && publishAt <= now()] | order(category asc, name asc) {
+const LIVE_ITEMS_QUERY = `*[_type == "item" && (!defined(publishAt) || publishAt <= now())] | order(category asc, name asc) {
   _id,
   name,
   category,
