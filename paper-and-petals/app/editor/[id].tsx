@@ -782,6 +782,7 @@ export default function EditorScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerCat, setDrawerCat] = useState('papers');
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
+  const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
@@ -1121,7 +1122,10 @@ export default function EditorScreen() {
               <Feather name="zoom-in" size={18} color={theme.color.fg1} />
             </Pressable>
             {/* Layer count */}
-            <Pressable style={styles.layersBtn}>
+            <Pressable
+              style={[styles.layersBtn, layerPanelOpen && styles.layersBtnActive]}
+              onPress={() => setLayerPanelOpen((o) => !o)}
+            >
               <Feather name="layers" size={16} color={theme.color.fg1} />
               <Text style={styles.layersText}>{currentPageItems.length}</Text>
             </Pressable>
@@ -1286,6 +1290,68 @@ export default function EditorScreen() {
           </View>
         </View>
 
+        {/* ── Layers panel ──────────────────────────────────────────── */}
+        {layerPanelOpen && (
+          <>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setLayerPanelOpen(false)} />
+            <View style={styles.layerPanel}>
+              <View style={styles.layerPanelHeader}>
+                <Text style={styles.layerPanelTitle}>Layers</Text>
+                <Pressable onPress={() => setLayerPanelOpen(false)} hitSlop={8}>
+                  <Feather name="x" size={16} color={theme.color.fg2} />
+                </Pressable>
+              </View>
+              <ScrollView>
+                {[...currentPageItems].sort((a, b) => b.z - a.z).map((item, idx, arr) => {
+                  const toneKey = item.tone as keyof typeof SHOP_TONES;
+                  const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
+                  const isSelected = item.id === selectedId;
+                  const itemName = shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
+                  return (
+                    <Pressable
+                      key={item.id}
+                      style={[styles.layerRow, isSelected && styles.layerRowActive]}
+                      onPress={() => { setSelectedId(item.id); setLayerPanelOpen(false); }}
+                    >
+                      <View style={[styles.layerThumb, { backgroundColor: item.flowerAsset ? theme.palette.cream : tone.bg }]}>
+                        {item.flowerAsset ? (
+                          <Image source={item.flowerAsset as any} style={styles.layerThumbImg} resizeMode="contain" />
+                        ) : (
+                          <Feather name={item.glyph as any} size={13} color={tone.accent} />
+                        )}
+                      </View>
+                      <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
+                      <View style={styles.layerActions}>
+                        <Pressable
+                          style={styles.layerBtn}
+                          onPress={() => handleBringForward(item.id)}
+                          disabled={idx === 0}
+                          hitSlop={4}
+                        >
+                          <Feather name="chevron-up" size={14} color={idx === 0 ? theme.color.fg4 : theme.color.fg2} />
+                        </Pressable>
+                        <Pressable
+                          style={styles.layerBtn}
+                          onPress={() => handleSendBack(item.id)}
+                          disabled={idx === arr.length - 1}
+                          hitSlop={4}
+                        >
+                          <Feather name="chevron-down" size={14} color={idx === arr.length - 1 ? theme.color.fg4 : theme.color.fg2} />
+                        </Pressable>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+                {currentPageItems.length === 0 && (
+                  <View style={styles.layerEmpty}>
+                    <Text style={styles.layerEmptyText}>No items on this page</Text>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </>
+        )}
+
         {/* ── Collection drawer ─────────────────────────────────────── */}
         {drawerOpen && (
           <Pressable style={styles.drawerScrim} onPress={() => toggleDrawer(false)} />
@@ -1421,6 +1487,92 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: theme.color.fg1,
+  },
+  layersBtnActive: {
+    backgroundColor: 'rgba(78,102,82,0.12)',
+  },
+
+  // Layers panel
+  layerPanel: {
+    position: 'absolute',
+    top: 60,
+    right: 0,
+    width: 260,
+    maxHeight: 420,
+    backgroundColor: theme.color.surface,
+    borderLeftWidth: 1,
+    borderLeftColor: theme.palette.hairline,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.palette.hairline,
+    borderBottomLeftRadius: theme.radius.md,
+    ...theme.shadow.card,
+    zIndex: 150,
+    elevation: 10,
+  },
+  layerPanelHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.palette.hairlineSoft,
+  },
+  layerPanelTitle: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.color.fg1,
+  },
+  layerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.palette.hairlineSoft,
+  },
+  layerRowActive: {
+    backgroundColor: 'rgba(78,102,82,0.08)',
+  },
+  layerThumb: {
+    width: 32,
+    height: 32,
+    borderRadius: theme.radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  layerThumbImg: {
+    width: '80%',
+    height: '80%',
+  },
+  layerName: {
+    flex: 1,
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg1,
+  },
+  layerActions: {
+    flexDirection: 'row',
+    gap: 2,
+    flexShrink: 0,
+  },
+  layerBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  layerEmpty: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  layerEmptyText: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg3,
   },
 
   // Body layout
