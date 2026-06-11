@@ -23,6 +23,7 @@ import {
 } from '../../src/data/shop';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
 import { screen, track } from '../../src/lib/analytics';
+import { purchaseSingleItem } from '../../src/lib/revenuecat';
 
 // SCR-06 Shop. Search bar at the top, wrapping centred category chips, then
 // a grid of items. Tapping an item opens a detail panel with a large preview
@@ -34,10 +35,11 @@ const logoSage = require('../../assets/logos/logo_sage.png');
 export default function ShopScreen() {
   const router = useRouter();
   const ownedItems = useAppStore((s) => s.ownedItems);
-  const purchaseItem = useAppStore((s) => s.purchaseItem);
+  const markItemOwned = useAppStore((s) => s.markItemOwned);
   const shopItems = useAppStore((s) => s.shopItems);
   const setShopItems = useAppStore((s) => s.setShopItems);
   const subscribed = useAppStore((s) => s.subscribed);
+  const [purchasing, setPurchasing] = useState(false);
 
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
@@ -170,21 +172,38 @@ export default function ShopScreen() {
         owned={openItem ? isOwned(openItem) : false}
         subscribed={subscribed}
         onClose={() => setOpenItem(null)}
-        onPurchase={(it) => {
-          if (!subscribed && it.price > 0) {
-            Alert.alert(
-              'Subscription item',
-              'This item is included free with The Cottage subscription, or available to purchase individually.',
-              [
-                { text: 'Subscribe', onPress: () => { setOpenItem(null); router.push('/subscription'); } },
-                { text: 'Buy individually', onPress: () => { purchaseItem(it.id); track('item_purchased', { itemId: it.id, price: it.price }); } },
-                { text: 'Cancel', style: 'cancel' },
-              ],
-            );
-          } else {
-            purchaseItem(it.id);
-            track('item_purchased', { itemId: it.id, price: it.price });
-          }
+        onPurchase={async (it) => {
+          if (subscribed) return; // already unlocked
+          Alert.alert(
+            it.name,
+            `£${it.price.toFixed(2)} · ${it.items} pieces\n\nSubscribe to unlock every item, or buy this one individually.`,
+            [
+              {
+                text: `Subscribe`,
+                onPress: () => { setOpenItem(null); router.push('/subscription'); },
+              },
+              {
+                text: `Buy for £${it.price.toFixed(2)}`,
+                onPress: async () => {
+                  setPurchasing(true);
+                  try {
+                    const ok = await purchaseSingleItem(it.id);
+                    if (ok) {
+                      markItemOwned(it.id);
+                      track('item_purchased', { itemId: it.id, price: it.price });
+                      setOpenItem(null);
+                      Alert.alert('Added to your collection', `${it.name} is now in your library.`);
+                    }
+                  } catch (e: any) {
+                    Alert.alert('Purchase unavailable', e.message ?? 'Please try again or subscribe to unlock all items.');
+                  } finally {
+                    setPurchasing(false);
+                  }
+                },
+              },
+              { text: 'Cancel', style: 'cancel' },
+            ],
+          );
         }}
       />
     </Screen>

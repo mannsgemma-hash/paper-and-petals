@@ -474,6 +474,11 @@ interface DrawerBodyProps {
 
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  const ownedItems = useAppStore((s) => s.ownedItems);
+  const subscribed = useAppStore((s) => s.subscribed);
+
+  const isOwned = (item: ShopItem) =>
+    subscribed || item.owned || !!ownedItems[item.id] || item.price === 0;
 
   // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
   const itemsByCategory: Record<string, ShopItem[]> = shopItems.length > 0
@@ -504,16 +509,22 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
         ]),
       );
 
-  // Filter out collections from the item grid
+  // Only show owned items (or all items for subscribers); never show collections here
   const visibleItems = (itemsByCategory[drawerCat] ?? []).filter(
-    (item) => item.category !== 'collections',
+    (item) => item.category !== 'collections' && isOwned(item),
   );
 
   return (
     <View style={styles.drawerBody}>
       {/* Item grid */}
-      <ScrollView contentContainerStyle={styles.drawerGrid}>
-        {visibleItems.map((item) => {
+      <ScrollView contentContainerStyle={visibleItems.length === 0 ? styles.drawerEmpty : styles.drawerGrid}>
+        {visibleItems.length === 0 ? (
+          <View style={styles.drawerEmptyInner}>
+            <Feather name="lock" size={22} color={theme.color.fg4} />
+            <Text style={styles.drawerEmptyText}>No items owned here yet</Text>
+            <Text style={styles.drawerEmptyHint}>Visit the shop to add items to your collection</Text>
+          </View>
+        ) : visibleItems.map((item) => {
           const toneKey = item.tone as keyof typeof SHOP_TONES;
           const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
           return (
@@ -1996,6 +2007,27 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 10,
     padding: 14,
+  },
+  drawerEmpty: { flexGrow: 1 },
+  drawerEmptyInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    gap: 8,
+  },
+  drawerEmptyText: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.color.fg3,
+    textAlign: 'center',
+  },
+  drawerEmptyHint: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg4,
+    textAlign: 'center',
   },
   tile: {
     width: 78,

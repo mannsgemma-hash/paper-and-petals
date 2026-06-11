@@ -44,6 +44,24 @@ export async function purchasePackage(packageType: 'monthly' | 'annual'): Promis
   }
 }
 
+/**
+ * Purchase a single item from the store.
+ * Product identifiers must be created in App Store Connect / Google Play
+ * using the convention: com.paperandpetals.item.<itemId>
+ */
+export async function purchaseSingleItem(itemId: string): Promise<boolean> {
+  if (!Purchases) throw new Error('Store not available on this platform')
+  const productId = `com.paperandpetals.item.${itemId}`
+  const products = await Purchases.getProducts([productId])
+  if (!products || products.length === 0) {
+    throw new Error('This item is not yet available for individual purchase. Please subscribe to unlock all items.')
+  }
+  const { customerInfo } = await Purchases.purchaseStoreProduct(products[0])
+  return !!customerInfo.nonSubscriptionTransactions?.find(
+    (t: any) => t.productIdentifier === productId
+  )
+}
+
 export async function restorePurchases(): Promise<boolean> {
   if (!Purchases) return false
   try {
