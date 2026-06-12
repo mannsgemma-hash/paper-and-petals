@@ -36,6 +36,7 @@ import { theme } from '../../src/theme/theme';
 import { JOURNAL_FONTS, familyForFontKey } from '../../src/theme/fonts';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem } from '../../src/data/shop';
+import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
 import { screen, track } from '../../src/lib/analytics';
@@ -1234,6 +1235,7 @@ export default function EditorScreen() {
   const [textEditorId, setTextEditorId] = useState<string | null>(null);
   const [penMode, setPenMode] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const tapeToneIdx = useRef(0);
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
@@ -1571,6 +1573,37 @@ export default function EditorScreen() {
     pushHistory(newPages);
     scheduleSave(newPages);
     track('doodle_added');
+  }
+
+  // ── Templates ─────────────────────────────────────────────────────────────
+  function applyTemplate(tpl: JournalTemplate) {
+    const baseZ = pages[activePage - 1].items.reduce((m, i) => Math.max(m, i.z), 0);
+    const stamp = Date.now();
+    const newItems: PlacedItem[] = tpl.items.map((t, idx) => ({
+      id: `${stamp}-${idx}-${Math.random().toString(36).slice(2)}`,
+      itemId: t.kind ?? 'item',
+      kind: t.kind ?? 'item',
+      glyph: t.glyph ?? 'square',
+      tone: t.tone ?? 'sage',
+      text: t.text,
+      fontKey: t.fontKey,
+      color: t.color,
+      shadow: t.shadow,
+      x: t.x,
+      y: t.y,
+      w: t.w,
+      h: t.h,
+      rotate: t.rotate ?? 0,
+      z: baseZ + 1 + idx,
+    }));
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, ...newItems] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    setTemplatePickerOpen(false);
+    setSelectedId(null);
+    track('template_applied', { templateId: tpl.id });
   }
 
   // ── Export & share ────────────────────────────────────────────────────────
@@ -2042,6 +2075,11 @@ export default function EditorScreen() {
               <Feather name="edit-3" size={20} color={penMode ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
+            {/* Starter templates */}
+            <Pressable style={[styles.miniFab, { top: 284 }]} onPress={() => setTemplatePickerOpen(true)}>
+              <Feather name="grid" size={20} color={theme.palette.forest} />
+            </Pressable>
+
             {/* Pen-mode hint */}
             {penMode && (
               <View style={styles.penHint} pointerEvents="none">
@@ -2194,6 +2232,41 @@ export default function EditorScreen() {
             onChange={(patch) => updateTextItem(editingTextItem.id, patch)}
             onClose={closeTextEditor}
           />
+        )}
+
+        {/* ── Template picker ───────────────────────────────────────── */}
+        {templatePickerOpen && (
+          <View style={styles.textModalScrim}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setTemplatePickerOpen(false)} />
+            <View style={styles.templateCard}>
+              <View style={styles.templateHeader}>
+                <View>
+                  <Text style={styles.drawerEyebrow}>START FROM A LAYOUT</Text>
+                  <Text style={styles.textModalTitle}>Starter templates</Text>
+                </View>
+                <Pressable onPress={() => setTemplatePickerOpen(false)} hitSlop={8}>
+                  <Feather name="x" size={20} color={theme.color.fg2} />
+                </Pressable>
+              </View>
+              <Text style={styles.templateHint}>
+                Drops editable pieces onto this page — move, restyle, or delete anything.
+              </Text>
+              <ScrollView contentContainerStyle={styles.templateGrid}>
+                {JOURNAL_TEMPLATES.map((tpl) => {
+                  const tone = SHOP_TONES[tpl.tone as keyof typeof SHOP_TONES] ?? SHOP_TONES.sage;
+                  return (
+                    <Pressable key={tpl.id} style={styles.templateTile} onPress={() => applyTemplate(tpl)}>
+                      <View style={[styles.templateThumb, { backgroundColor: tone.bg }]}>
+                        <Feather name={tpl.icon as any} size={30} color={tone.accent} />
+                      </View>
+                      <Text style={styles.templateName}>{tpl.name}</Text>
+                      <Text style={styles.templateBlurb} numberOfLines={2}>{tpl.blurb}</Text>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
         )}
 
         {/* ── Purchase arrival ──────────────────────────────────────── */}
@@ -3048,6 +3121,57 @@ const styles = StyleSheet.create({
   },
   textModalActions: {
     marginTop: 8,
+  },
+
+  // Template picker
+  templateCard: {
+    width: 560,
+    maxWidth: '92%',
+    maxHeight: '84%',
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.lg,
+    padding: 20,
+    ...theme.shadow.lift,
+  },
+  templateHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  templateHint: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg3,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  templateGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  templateTile: {
+    width: 158,
+    gap: 6,
+  },
+  templateThumb: {
+    width: '100%',
+    height: 96,
+    borderRadius: theme.radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  templateName: {
+    fontFamily: theme.font.ui,
+    fontSize: 14,
+    fontWeight: '600',
+    color: theme.color.fg1,
+  },
+  templateBlurb: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.color.fg3,
+    lineHeight: 15,
   },
 
   // Delivery / unboxing overlay
