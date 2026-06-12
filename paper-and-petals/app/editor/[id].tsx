@@ -39,6 +39,7 @@ import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem } from '../../src/data/shop';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
+import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
 import { screen, track } from '../../src/lib/analytics';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -1264,6 +1265,18 @@ export default function EditorScreen() {
     screen('Editor', { journalId });
   }, [journalId]);
 
+  // First-run tips — shown once, then remembered.
+  useEffect(() => {
+    hasSeenEditorTips().then((seen) => {
+      if (!seen) setShowTips(true);
+    });
+  }, []);
+
+  function dismissTips() {
+    setShowTips(false);
+    markEditorTipsSeen();
+  }
+
   // Refresh live Sanity items on mount (same as shop screen)
   useEffect(() => {
     fetchLiveItems().then((results) => {
@@ -1287,6 +1300,7 @@ export default function EditorScreen() {
   const [penMode, setPenMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [showTips, setShowTips] = useState(false);
   const tapeToneIdx = useRef(0);
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
@@ -2321,6 +2335,36 @@ export default function EditorScreen() {
           </View>
         )}
 
+        {/* ── First-run tips ────────────────────────────────────────── */}
+        {showTips && (
+          <View style={styles.textModalScrim}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={dismissTips} />
+            <View style={styles.tipsCard}>
+              <Text style={styles.drawerEyebrow}>WELCOME TO YOUR CRAFT DESK</Text>
+              <Text style={styles.textModalTitle}>A few ways to play</Text>
+              {[
+                { icon: 'plus', label: 'Add papers, stickers & florals from your collection' },
+                { icon: 'type', label: 'Drop in text — choose a handwritten font and colour' },
+                { icon: 'image', label: 'Bring in your own photos from the camera roll' },
+                { icon: 'minus', label: 'Lay washi tape and stretch it to any length' },
+                { icon: 'edit-3', label: 'Doodle freehand with the pen' },
+                { icon: 'grid', label: 'Start from a ready-made layout' },
+                { icon: 'share', label: 'Share or save your finished spread' },
+              ].map((t) => (
+                <View key={t.icon} style={styles.tipRow}>
+                  <View style={styles.tipIcon}>
+                    <Feather name={t.icon as any} size={16} color={theme.palette.forest} />
+                  </View>
+                  <Text style={styles.tipLabel}>{t.label}</Text>
+                </View>
+              ))}
+              <View style={styles.textModalActions}>
+                <Button title="Start crafting" onPress={dismissTips} />
+              </View>
+            </View>
+          </View>
+        )}
+
         {/* ── Purchase arrival ──────────────────────────────────────── */}
         {pendingDelivery.length > 0 && (
           <DeliveryOverlay
@@ -3210,6 +3254,39 @@ const styles = StyleSheet.create({
   },
   textModalActions: {
     marginTop: 8,
+  },
+
+  // First-run tips
+  tipsCard: {
+    width: 420,
+    maxWidth: '92%',
+    maxHeight: '88%',
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.lg,
+    padding: 22,
+    gap: 6,
+    ...theme.shadow.lift,
+  },
+  tipRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+  },
+  tipIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: 'rgba(78,102,82,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tipLabel: {
+    flex: 1,
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    color: theme.color.fg2,
+    lineHeight: 18,
   },
 
   // Template picker

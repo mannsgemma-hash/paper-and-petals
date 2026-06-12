@@ -89,3 +89,15 @@ export async function markWelcomeComplete(): Promise<void> {
   await setItem(KEY_WELCOME_COMPLETE, '1');
   await markOpenedToday();
 }
+
+// ─── Editor onboarding ──────────────────────────────────────────────────────────
+
+const KEY_EDITOR_TIPS_SEEN = 'pp:editor-tips-seen';
+
+export async function hasSeenEditorTips(): Promise<boolean> {
+  return (await getItem(KEY_EDITOR_TIPS_SEEN)) === '1';
+}
+
+export async function markEditorTipsSeen(): Promise<void> {
+  await setItem(KEY_EDITOR_TIPS_SEEN, '1');
+}
