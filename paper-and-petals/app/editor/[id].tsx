@@ -1288,6 +1288,8 @@ export default function EditorScreen() {
   const [pages, setPages] = useState<PageState[]>(() =>
     Array.from({ length: 8 }, () => ({ items: [] })),
   );
+  const pagesRef = useRef(pages);
+  pagesRef.current = pages;
   const [activePage, setActivePage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1.0);
@@ -1329,10 +1331,42 @@ export default function EditorScreen() {
     drawerX.value = withTiming(open ? 0 : 360, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
   };
 
-  // ── Save timeout ──────────────────────────────────────────────────────────
+  // ── Load + save ─────────────────────────────────────────────────────────────
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Saves are blocked until the journal's saved spreads have loaded, so a fast
+  // first edit can never overwrite stored work with the blank starter pages.
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase
+      .from('spreads')
+      .select('page_number, scene')
+      .eq('journal_id', journalId)
+      .order('page_number', { ascending: true })
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (!error && data && data.length > 0) {
+          const loaded: PageState[] = data.map((row: any) => ({
+            items: (row.scene?.items ?? []) as PlacedItem[],
+          }));
+          setPages(loaded);
+          setHistory([loaded]);
+          setHistoryIdx(0);
+        } else {
+          // No saved spreads yet — seed history with the blank starter book.
+          setHistory((h) => (h.length === 0 ? [pagesRef.current] : h));
+          setHistoryIdx((i) => (i < 0 ? 0 : i));
+        }
+        loadedRef.current = true;
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [journalId]);
 
   function scheduleSave(pgs: PageState[]) {
+    if (!loadedRef.current) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(() => {
       supabase
