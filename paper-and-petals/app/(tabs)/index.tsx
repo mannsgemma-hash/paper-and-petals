@@ -15,6 +15,7 @@ import { Screen } from '../../src/components/Screen';
 import { Wordmark } from '../../src/components/Wordmark';
 import { theme } from '../../src/theme/theme';
 import { useAppStore, type Journal } from '../../src/store/app';
+import { promptOfTheDay } from '../../src/data/prompts';
 import { screen, track } from '../../src/lib/analytics';
 
 // SCR-05 Home Screen. Toca-Boca-style journal carousel.
@@ -171,6 +172,12 @@ export default function HomeScreen() {
           disabled={active === journals.length - 1}
           onPress={next}
         />
+      </View>
+
+      {/* Prompt of the day — a soft nudge, never a nag */}
+      <View style={styles.promptRibbon} pointerEvents="none">
+        <Feather name="feather" size={13} color={theme.palette.terracotta} />
+        <Text style={styles.promptText} numberOfLines={1}>{promptOfTheDay()}</Text>
       </View>
 
       {/* Page indicators */}
@@ -348,6 +355,25 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     zIndex: 20,
     ...theme.shadow.paper,
+  },
+  promptRibbon: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingHorizontal: 24,
+    zIndex: 4,
+  },
+  promptText: {
+    fontFamily: theme.font.script,
+    fontStyle: 'italic',
+    fontSize: 16,
+    color: theme.color.fg2,
+    textAlign: 'center',
   },
   dots: {
     position: 'absolute',

@@ -647,7 +647,9 @@ interface DrawerBodyProps {
 
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const ownedItems = useAppStore((s) => s.ownedItems);
+  const recentItemIds = useAppStore((s) => s.recentItemIds);
 
   const isOwned = (item: ShopItem) =>
     item.price === 0 || item.owned || !!ownedItems[item.id];
@@ -681,67 +683,115 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
         ]),
       );
 
-  // Only show owned items (or all items for subscribers); never show collections here
-  const visibleItems = (itemsByCategory[drawerCat] ?? []).filter(
-    (item) => item.category !== 'collections' && isOwned(item),
-  );
+  // Flat list of everything owned (excluding collections) for search + recents.
+  const allOwned = Object.values(itemsByCategory)
+    .flat()
+    .filter((item) => item.category !== 'collections' && isOwned(item));
+
+  const q = query.trim().toLowerCase();
+  // Search spans the whole owned collection; otherwise show the active category.
+  const visibleItems = q
+    ? allOwned.filter((item) => item.name.toLowerCase().includes(q))
+    : (itemsByCategory[drawerCat] ?? []).filter(
+        (item) => item.category !== 'collections' && isOwned(item),
+      );
+
+  // Recently used — only when not searching and we have history.
+  const recents = !q
+    ? recentItemIds
+        .map((id) => allOwned.find((it) => it.id === id))
+        .filter((it): it is ShopItem => !!it)
+        .slice(0, 8)
+    : [];
+
+  const renderTile = (item: ShopItem, keyPrefix = '') => {
+    const toneKey = item.tone as keyof typeof SHOP_TONES;
+    const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
+    return (
+      <View key={keyPrefix + item.id} style={styles.tileWrapper}>
+        <Pressable
+          style={[
+            styles.tile,
+            item.flowerAsset ? { backgroundColor: theme.palette.cream } : { backgroundColor: tone.bg },
+            item.isNew && styles.tileNew,
+          ]}
+          onPress={() =>
+            placeItem({ id: item.id, glyph: item.glyph, tone: item.tone, flowerAsset: item.flowerAsset })
+          }
+          {...({
+            onPointerEnter: () => setHoveredItemId(keyPrefix + item.id),
+            onPointerLeave: () => setHoveredItemId(null),
+          } as any)}
+        >
+          {item.flowerAsset ? (
+            <Image source={item.flowerAsset} style={styles.tileFlower} resizeMode="contain" />
+          ) : (
+            <Feather name={item.glyph as any} size={28} color={tone.accent} />
+          )}
+          {item.isNew && (
+            <View style={styles.tileNewTag}>
+              <Text style={styles.tileNewText}>NEW</Text>
+            </View>
+          )}
+        </Pressable>
+        {hoveredItemId === keyPrefix + item.id && (
+          <View style={styles.itemTooltip} pointerEvents="none">
+            <Text style={styles.tooltipText}>{item.name}</Text>
+          </View>
+        )}
+      </View>
+    );
+  };
 
   return (
     <View style={styles.drawerBody}>
-      {/* Item grid */}
-      <ScrollView contentContainerStyle={visibleItems.length === 0 ? styles.drawerEmpty : styles.drawerGrid}>
-        {visibleItems.length === 0 ? (
-          <View style={styles.drawerEmptyInner}>
-            <Feather name="lock" size={22} color={theme.color.fg4} />
-            <Text style={styles.drawerEmptyText}>No items owned here yet</Text>
-            <Text style={styles.drawerEmptyHint}>Visit the shop to add items to your collection</Text>
-          </View>
-        ) : visibleItems.map((item) => {
-          const toneKey = item.tone as keyof typeof SHOP_TONES;
-          const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
-          return (
-            <View key={item.id} style={styles.tileWrapper}>
-              <Pressable
-                style={[
-                  styles.tile,
-                  item.flowerAsset
-                    ? { backgroundColor: theme.palette.cream }
-                    : { backgroundColor: tone.bg },
-                  item.isNew && styles.tileNew,
-                ]}
-                onPress={() =>
-                  placeItem({
-                    id: item.id,
-                    glyph: item.glyph,
-                    tone: item.tone,
-                    flowerAsset: item.flowerAsset,
-                  })
-                }
-                {...({
-                  onPointerEnter: () => setHoveredItemId(item.id),
-                  onPointerLeave: () => setHoveredItemId(null),
-                } as any)}
-              >
-                {item.flowerAsset ? (
-                  <Image source={item.flowerAsset} style={styles.tileFlower} resizeMode="contain" />
-                ) : (
-                  <Feather name={item.glyph as any} size={28} color={tone.accent} />
-                )}
-                {item.isNew && (
-                  <View style={styles.tileNewTag}>
-                    <Text style={styles.tileNewText}>NEW</Text>
-                  </View>
-                )}
-              </Pressable>
-              {hoveredItemId === item.id && (
-                <View style={styles.itemTooltip} pointerEvents="none">
-                  <Text style={styles.tooltipText}>{item.name}</Text>
-                </View>
-              )}
+      <View style={styles.drawerLeft}>
+        {/* Search */}
+        <View style={styles.drawerSearch}>
+          <Feather name="search" size={16} color={theme.color.fg3} />
+          <TextInput
+            style={styles.drawerSearchInput}
+            value={query}
+            onChangeText={setQuery}
+            placeholder="Search your collection…"
+            placeholderTextColor={theme.color.fg4}
+          />
+          {query.length > 0 && (
+            <Pressable onPress={() => setQuery('')} hitSlop={8}>
+              <Feather name="x" size={14} color={theme.color.fg3} />
+            </Pressable>
+          )}
+        </View>
+
+        {/* Item grid */}
+        <ScrollView contentContainerStyle={visibleItems.length === 0 ? styles.drawerEmpty : undefined}>
+          {/* Recently used */}
+          {recents.length > 0 && (
+            <>
+              <Text style={styles.drawerSectionLabel}>RECENTLY USED</Text>
+              <View style={styles.drawerGrid}>{recents.map((it) => renderTile(it, 'recent-'))}</View>
+              <View style={styles.drawerSectionDivider} />
+              <Text style={styles.drawerSectionLabel}>
+                {EDITOR_CATEGORIES.find((c) => c.id === drawerCat)?.label?.toUpperCase()}
+              </Text>
+            </>
+          )}
+
+          {visibleItems.length === 0 ? (
+            <View style={styles.drawerEmptyInner}>
+              <Feather name={q ? 'search' : 'lock'} size={22} color={theme.color.fg4} />
+              <Text style={styles.drawerEmptyText}>
+                {q ? 'Nothing matches that' : 'No items owned here yet'}
+              </Text>
+              <Text style={styles.drawerEmptyHint}>
+                {q ? 'Try another word.' : 'Visit the shop to add items to your collection'}
+              </Text>
             </View>
-          );
-        })}
-      </ScrollView>
+          ) : (
+            <View style={styles.drawerGrid}>{visibleItems.map((it) => renderTile(it))}</View>
+          )}
+        </ScrollView>
+      </View>
 
       {/* Category tabs on the right edge */}
       <ScrollView style={styles.tabRail} contentContainerStyle={styles.tabRailContent}>
@@ -1206,6 +1256,7 @@ export default function EditorScreen() {
   const setShopItems = useAppStore((s) => s.setShopItems);
   const pendingDelivery = useAppStore((s) => s.pendingDelivery);
   const clearPendingDelivery = useAppStore((s) => s.clearPendingDelivery);
+  const noteRecentItem = useAppStore((s) => s.noteRecentItem);
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
@@ -1336,6 +1387,7 @@ export default function EditorScreen() {
     pushHistory(newPages);
     scheduleSave(newPages);
     setSelectedId(newItem.id);
+    noteRecentItem(shopItem.id);
     toggleDrawer(false);
     track('item_placed', { category: drawerCat });
   }
@@ -2822,6 +2874,43 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   drawerBody: { flex: 1, flexDirection: 'row' },
+  drawerLeft: { flex: 1 },
+  drawerSearch: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    margin: 12,
+    marginBottom: 6,
+    paddingHorizontal: 12,
+    height: 38,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.bg1,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+  },
+  drawerSearchInput: {
+    flex: 1,
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    color: theme.color.fg1,
+    paddingVertical: 0,
+  },
+  drawerSectionLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 9,
+    letterSpacing: 2,
+    fontWeight: '600',
+    color: theme.color.fg3,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 4,
+  },
+  drawerSectionDivider: {
+    height: 1,
+    backgroundColor: theme.palette.hairlineSoft,
+    marginHorizontal: 14,
+    marginTop: 8,
+  },
   drawerGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

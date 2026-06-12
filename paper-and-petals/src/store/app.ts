@@ -31,6 +31,8 @@ interface AppState {
   shopItems: ShopItem[];
   /** Items just purchased and waiting to be "unwrapped" in the editor. */
   pendingDelivery: ShopItem[];
+  /** Most-recently placed item ids, newest first (capped). */
+  recentItemIds: string[];
   setLaunchState: (s: LaunchState) => void;
   renameJournal: (id: string, name: string) => void;
   addJournal: () => Journal;
@@ -39,6 +41,7 @@ interface AppState {
   markItemOwned: (id: string) => void;
   queueDelivery: (item: ShopItem) => void;
   clearPendingDelivery: () => void;
+  noteRecentItem: (id: string) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -46,6 +49,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   journals: SEED_JOURNALS,
   ownedItems: {},
   pendingDelivery: [],
+  recentItemIds: [],
   shopItems: SHOP_CATALOGUE,
   setLaunchState: (launchState) => set({ launchState }),
   renameJournal: (id, name) =>
@@ -84,4 +88,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         : [...s.pendingDelivery, item],
     })),
   clearPendingDelivery: () => set({ pendingDelivery: [] }),
+  noteRecentItem: (id) =>
+    set((s) => ({
+      recentItemIds: [id, ...s.recentItemIds.filter((r) => r !== id)].slice(0, 16),
+    })),
 }));
