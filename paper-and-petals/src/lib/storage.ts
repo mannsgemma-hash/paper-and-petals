@@ -72,14 +72,11 @@ export function todayKey(): string {
 }
 
 /**
- * Boot routing: no completed welcome → 'new'; first open of the day →
- * 'first-today' (daily delivery / package screen); otherwise 'returning'.
+ * Boot routing: no completed welcome → 'new'; otherwise 'returning'.
  */
 export async function resolveLaunchState(): Promise<LaunchState> {
   const welcomeComplete = await getItem(KEY_WELCOME_COMPLETE);
-  if (!welcomeComplete) return 'new';
-  const lastOpen = await getItem(KEY_LAST_OPEN_DATE);
-  return lastOpen === todayKey() ? 'returning' : 'first-today';
+  return welcomeComplete ? 'returning' : 'new';
 }
 
 /** Stamp today so subsequent opens this day route straight to the tabs. */

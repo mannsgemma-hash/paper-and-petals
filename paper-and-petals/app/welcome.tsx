@@ -26,8 +26,6 @@ const logoTerracotta = require('../assets/logos/logo_terracotta.png');
 export default function WelcomeScreen() {
   const router = useRouter();
   const setLaunchState = useAppStore((s) => s.setLaunchState);
-  const toggleSubscribed = useAppStore((s) => s.toggleSubscribed);
-  const subscribed = useAppStore((s) => s.subscribed);
 
   const { width } = useWindowDimensions();
   const phone = width < theme.layout.phoneBreakpoint;
@@ -37,14 +35,12 @@ export default function WelcomeScreen() {
     setForm((f) => ({ ...f, [k]: v }));
   const canContinue = form.name.trim().length > 0;
 
-  const finish = (withSubscription: boolean) => {
-    if (withSubscription && !subscribed) toggleSubscribed();
-    track('welcome_completed', { subscribed: withSubscription });
+  const finish = () => {
+    track('welcome_completed');
     setLaunchState('returning');
-    // Persist welcome completion (+ today's open) so the next launch routes
-    // by date, then let new users experience their first daily delivery.
+    // Persist welcome completion so the next launch routes straight home.
     markWelcomeComplete();
-    router.replace('/package');
+    router.replace('/(tabs)');
   };
 
   return (
@@ -121,19 +117,11 @@ export default function WelcomeScreen() {
           {/* Actions */}
           <View style={[styles.actions, { width: phone ? '100%' : 320 }]}>
             <Button
-              title="Subscribe & continue"
+              title="Begin"
               pill
               disabled={!canContinue}
-              onPress={() => finish(true)}
+              onPress={finish}
               style={styles.fullWidth}
-            />
-            <Button
-              title="Continue without subscribing"
-              variant="ghost"
-              disabled={!canContinue}
-              onPress={() => finish(false)}
-              style={styles.fullWidth}
-              textStyle={styles.ghostText}
             />
           </View>
         </ScrollView>

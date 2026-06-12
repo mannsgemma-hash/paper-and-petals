@@ -36,9 +36,9 @@ export default function ShopScreen() {
   const router = useRouter();
   const ownedItems = useAppStore((s) => s.ownedItems);
   const markItemOwned = useAppStore((s) => s.markItemOwned);
+  const queueDelivery = useAppStore((s) => s.queueDelivery);
   const shopItems = useAppStore((s) => s.shopItems);
   const setShopItems = useAppStore((s) => s.setShopItems);
-  const subscribed = useAppStore((s) => s.subscribed);
   const [purchasing, setPurchasing] = useState(false);
 
   const [category, setCategory] = useState('all');
@@ -157,7 +157,6 @@ export default function ShopScreen() {
                 <ItemCard
                   item={it}
                   owned={isOwned(it)}
-                  subscribed={subscribed}
                   onOpen={() => setOpenItem(it)}
                 />
               </View>
@@ -170,18 +169,13 @@ export default function ShopScreen() {
       <ItemDetail
         item={openItem}
         owned={openItem ? isOwned(openItem) : false}
-        subscribed={subscribed}
+        purchasing={purchasing}
         onClose={() => setOpenItem(null)}
         onPurchase={async (it) => {
-          if (subscribed) return; // already unlocked
           Alert.alert(
             it.name,
-            `£${it.price.toFixed(2)} · ${it.items} pieces\n\nSubscribe to unlock every item, or buy this one individually.`,
+            `£${it.price.toFixed(2)} · ${it.items} pieces`,
             [
-              {
-                text: `Subscribe`,
-                onPress: () => { setOpenItem(null); router.push('/subscription'); },
-              },
               {
                 text: `Buy for £${it.price.toFixed(2)}`,
                 onPress: async () => {
@@ -190,12 +184,16 @@ export default function ShopScreen() {
                     const ok = await purchaseSingleItem(it.id);
                     if (ok) {
                       markItemOwned(it.id);
+                      queueDelivery(it);
                       track('item_purchased', { itemId: it.id, price: it.price });
                       setOpenItem(null);
-                      Alert.alert('Added to your collection', `${it.name} is now in your library.`);
+                      Alert.alert(
+                        'On its way!',
+                        `${it.name} has been added to your collection — open a journal to watch it arrive.`,
+                      );
                     }
                   } catch (e: any) {
-                    Alert.alert('Purchase unavailable', e.message ?? 'Please try again or subscribe to unlock all items.');
+                    Alert.alert('Purchase unavailable', e.message ?? 'Please try again in a moment.');
                   } finally {
                     setPurchasing(false);
                   }
@@ -249,15 +247,13 @@ function PriceTag({ price, owned }: { price: number; owned: boolean }) {
 function ItemCard({
   item,
   owned,
-  subscribed,
   onOpen,
 }: {
   item: ShopItem;
   owned: boolean;
-  subscribed: boolean;
   onOpen: () => void;
 }) {
-  const showLock = !subscribed && item.price > 0 && !owned;
+  const showLock = item.price > 0 && !owned;
   return (
     <Pressable
       onPress={onOpen}
@@ -292,13 +288,13 @@ function ItemCard({
 function ItemDetail({
   item,
   owned,
-  subscribed,
+  purchasing,
   onClose,
   onPurchase,
 }: {
   item: ShopItem | null;
   owned: boolean;
-  subscribed: boolean;
+  purchasing: boolean;
   onClose: () => void;
   onPurchase: (it: ShopItem) => void;
 }) {
@@ -329,11 +325,14 @@ function ItemDetail({
                     </Pressable>
                   ) : (
                     <Pressable
-                      style={styles.buyBtn}
+                      style={[styles.buyBtn, purchasing && { opacity: 0.6 }]}
                       onPress={() => onPurchase(item)}
+                      disabled={purchasing}
                     >
                       <Feather name="star" size={14} color={theme.palette.cream} />
-                      <Text style={styles.buyBtnText}>Add to your collection</Text>
+                      <Text style={styles.buyBtnText}>
+                        {purchasing ? 'Adding…' : 'Add to your collection'}
+                      </Text>
                     </Pressable>
                   )}
                 </View>

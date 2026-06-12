@@ -16,6 +16,9 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withDelay,
+  withRepeat,
+  withSequence,
   runOnJS,
   Easing,
   interpolate,
@@ -550,13 +553,9 @@ interface DrawerBodyProps {
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const ownedItems = useAppStore((s) => s.ownedItems);
-  const deliveredItemIds = useAppStore((s) => s.deliveredItemIds);
 
   const isOwned = (item: ShopItem) =>
-    item.price === 0 ||
-    item.owned ||
-    !!ownedItems[item.id] ||
-    deliveredItemIds.includes(item.id);
+    item.price === 0 || item.owned || !!ownedItems[item.id];
 
   // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
   const itemsByCategory: Record<string, ShopItem[]> = shopItems.length > 0
@@ -922,6 +921,115 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
   );
 }
 
+// ─── DeliveryOverlay ──────────────────────────────────────────────────────────
+
+/**
+ * The "your order has arrived" ritual: a parcel pops in, shakes, then bursts
+ * open as the purchased pieces drift up — before the editor zooms the buyer to
+ * the item drawer. Reuses the spread's reanimated stack.
+ */
+function DeliveryOverlay({ items, onDone }: { items: ShopItem[]; onDone: () => void }) {
+  const scrim = useSharedValue(0);
+  const boxScale = useSharedValue(0.6);
+  const boxRot = useSharedValue(0);
+  const boxOpacity = useSharedValue(0);
+  const reveal = useSharedValue(0);
+  const done = useRef(false);
+
+  function finish() {
+    if (done.current) return;
+    done.current = true;
+    onDone();
+  }
+
+  useEffect(() => {
+    scrim.value = withTiming(1, { duration: 280 });
+    boxOpacity.value = withTiming(1, { duration: 280 });
+    boxScale.value = withTiming(1, { duration: 360, easing: FLIP_EASING });
+    // Shake the parcel after it pops in.
+    boxRot.value = withDelay(
+      420,
+      withRepeat(
+        withSequence(
+          withTiming(-5, { duration: 90 }),
+          withTiming(5, { duration: 90 }),
+        ),
+        6,
+        true,
+      ),
+    );
+    // Burst open: the box lifts away as the contents drift up.
+    const tOpen = setTimeout(() => {
+      boxScale.value = withTiming(1.5, { duration: 440, easing: FLIP_EASING });
+      boxOpacity.value = withTiming(0, { duration: 440 });
+      reveal.value = withTiming(1, { duration: 520, easing: FLIP_EASING });
+    }, 1600);
+    // Zoom on to the drawer.
+    const tDone = setTimeout(finish, 3300);
+    return () => {
+      clearTimeout(tOpen);
+      clearTimeout(tDone);
+    };
+  }, []);
+
+  const scrimStyle = useAnimatedStyle(() => ({ opacity: scrim.value }));
+  const boxStyle = useAnimatedStyle(() => ({
+    opacity: boxOpacity.value,
+    transform: [{ scale: boxScale.value }, { rotate: `${boxRot.value}deg` }],
+  }));
+  const revealStyle = useAnimatedStyle(() => ({
+    opacity: reveal.value,
+    transform: [{ translateY: (1 - reveal.value) * 28 }],
+  }));
+
+  return (
+    <Pressable style={styles.deliveryScrimWrap} onPress={finish}>
+      <Animated.View style={[StyleSheet.absoluteFill, styles.deliveryBackdrop, scrimStyle]} />
+
+      {/* Revealed contents */}
+      <Animated.View style={[styles.deliveryReveal, revealStyle]} pointerEvents="none">
+        <Text style={styles.deliveryEyebrow}>YOUR ORDER HAS ARRIVED</Text>
+        <Text style={styles.deliveryTitle}>
+          {items.length === 1 ? items[0].name : `${items.length} new pieces`}
+        </Text>
+        <View style={styles.deliveryItemRow}>
+          {items.slice(0, 4).map((it) => {
+            const tone = SHOP_TONES[it.tone as keyof typeof SHOP_TONES] ?? SHOP_TONES.sage;
+            return (
+              <View key={it.id} style={styles.deliveryTile}>
+                <View
+                  style={[
+                    styles.deliveryTileArt,
+                    { backgroundColor: it.flowerAsset ? theme.palette.cream : tone.bg },
+                  ]}
+                >
+                  {it.flowerAsset ? (
+                    <Image source={it.flowerAsset as any} style={styles.deliveryTileImg} resizeMode="contain" />
+                  ) : (
+                    <Feather name={it.glyph as any} size={30} color={tone.accent} />
+                  )}
+                </View>
+                <Text style={styles.deliveryTileLabel} numberOfLines={1}>{it.name}</Text>
+              </View>
+            );
+          })}
+        </View>
+        <Text style={styles.deliverySub}>Added to your collection — nothing ever expires.</Text>
+      </Animated.View>
+
+      {/* The parcel */}
+      <Animated.View style={[styles.deliveryBox, boxStyle]} pointerEvents="none">
+        <View style={styles.deliveryBoxLid} />
+        <View style={styles.deliveryBoxStringV} />
+        <View style={styles.deliveryBoxStringH} />
+        <View style={styles.deliveryBoxStamp}>
+          <Text style={styles.deliveryBoxStampText}>P&P</Text>
+        </View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 // ─── Main EditorScreen ────────────────────────────────────────────────────────
 
 export default function EditorScreen() {
@@ -931,6 +1039,8 @@ export default function EditorScreen() {
   const renameJournal = useAppStore((s) => s.renameJournal);
   const shopItems = useAppStore((s) => s.shopItems);
   const setShopItems = useAppStore((s) => s.setShopItems);
+  const pendingDelivery = useAppStore((s) => s.pendingDelivery);
+  const clearPendingDelivery = useAppStore((s) => s.clearPendingDelivery);
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
@@ -1753,6 +1863,20 @@ export default function EditorScreen() {
             onClose={closeTextEditor}
           />
         )}
+
+        {/* ── Purchase arrival ──────────────────────────────────────── */}
+        {pendingDelivery.length > 0 && (
+          <DeliveryOverlay
+            items={pendingDelivery}
+            onDone={() => {
+              const first = pendingDelivery[0];
+              const cat = EDITOR_CATEGORIES.find((c) => c.id === first?.category);
+              if (cat) setDrawerCat(cat.id);
+              clearPendingDelivery();
+              toggleDrawer(true);
+            }}
+          />
+        )}
       </Screen>
     </GestureHandlerRootView>
   );
@@ -2551,5 +2675,127 @@ const styles = StyleSheet.create({
   },
   textModalActions: {
     marginTop: 8,
+  },
+
+  // Delivery / unboxing overlay
+  deliveryScrimWrap: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 400,
+    elevation: 24,
+  },
+  deliveryBackdrop: {
+    backgroundColor: 'rgba(43,42,40,0.55)',
+  },
+  deliveryReveal: {
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 24,
+  },
+  deliveryEyebrow: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    letterSpacing: 2.8,
+    fontWeight: '600',
+    color: theme.palette.cream,
+    opacity: 0.8,
+  },
+  deliveryTitle: {
+    fontFamily: theme.font.display,
+    fontSize: 30,
+    color: theme.palette.cream,
+    textAlign: 'center',
+  },
+  deliveryItemRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 8,
+  },
+  deliveryTile: {
+    alignItems: 'center',
+    gap: 6,
+    width: 96,
+  },
+  deliveryTileArt: {
+    width: 88,
+    height: 100,
+    borderRadius: theme.radius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    ...theme.shadow.tape,
+  },
+  deliveryTileImg: { width: '88%', height: '88%' },
+  deliveryTileLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.palette.cream,
+    textAlign: 'center',
+  },
+  deliverySub: {
+    fontFamily: theme.font.script,
+    fontStyle: 'italic',
+    fontSize: 15,
+    color: theme.palette.cream,
+    opacity: 0.85,
+    marginTop: 6,
+    textAlign: 'center',
+  },
+  deliveryBox: {
+    position: 'absolute',
+    width: 150,
+    height: 120,
+    backgroundColor: '#C4A377',
+    borderRadius: theme.radius.sm,
+    ...theme.shadow.lift,
+  },
+  deliveryBoxLid: {
+    position: 'absolute',
+    left: -4,
+    right: -4,
+    top: -2,
+    height: 36,
+    backgroundColor: '#D3B289',
+    borderRadius: theme.radius.sm,
+  },
+  deliveryBoxStringV: {
+    position: 'absolute',
+    left: '50%',
+    marginLeft: -2,
+    top: -6,
+    bottom: 0,
+    width: 4,
+    backgroundColor: theme.palette.espresso,
+  },
+  deliveryBoxStringH: {
+    position: 'absolute',
+    top: '52%',
+    left: 0,
+    right: 0,
+    height: 4,
+    backgroundColor: theme.palette.espresso,
+  },
+  deliveryBoxStamp: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    width: 38,
+    height: 46,
+    backgroundColor: theme.palette.cream,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    borderColor: theme.palette.terracotta,
+    borderRadius: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deliveryBoxStampText: {
+    fontFamily: theme.font.display,
+    fontSize: 14,
+    color: theme.palette.terracotta,
+    transform: [{ rotate: '-10deg' }],
   },
 });

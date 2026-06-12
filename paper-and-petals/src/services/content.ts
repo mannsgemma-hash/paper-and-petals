@@ -1,40 +1,9 @@
 import { sanity } from '../lib/sanity'
 import { SHOP_CATALOGUE, ShopItem } from '../data/shop'
 
-// ─── Daily pack ───────────────────────────────────────────────────────────────
-
-const PACK_ITEM_FRAGMENT = `{
-  _id,
-  name,
-  category,
-  tone,
-  glyphFallback,
-  "assetUrl": asset.asset->url
-}`
-
-export interface DailyPack {
-  freeItems: SanityItem[]
-  subItems: SanityItem[]
-}
-
-export async function fetchTodaysPack(): Promise<DailyPack> {
-  const today = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
-  try {
-    const pack = await sanity.fetch(
-      `*[_type == "pack" && date == $today][0]{
-        "freeItems": freeParcel[]-> ${PACK_ITEM_FRAGMENT},
-        "subItems":  subParcel[]-> ${PACK_ITEM_FRAGMENT}
-      }`,
-      { today },
-    )
-    return {
-      freeItems: pack?.freeItems ?? [],
-      subItems: pack?.subItems ?? [],
-    }
-  } catch {
-    return { freeItems: [], subItems: [] }
-  }
-}
+// ─── Live shop catalogue ────────────────────────────────────────────────────────
+// New items simply appear here as they are published in Sanity — there is no
+// daily pack; the store is the single source of new content.
 
 const LIVE_ITEMS_QUERY = `*[_type == "item" && (!defined(publishAt) || publishAt <= now())] | order(category asc, name asc) {
   _id,

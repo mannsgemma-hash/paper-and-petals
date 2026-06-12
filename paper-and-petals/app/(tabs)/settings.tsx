@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   ScrollView,
@@ -14,7 +15,7 @@ import { SettingsRow } from '../../src/components/SettingsRow';
 import { StatusStamp } from '../../src/components/StatusStamp';
 import { Toggle } from '../../src/components/Toggle';
 import { theme } from '../../src/theme/theme';
-import { useAppStore } from '../../src/store/app';
+import { restorePurchases } from '../../src/lib/revenuecat';
 
 // SCR-23 Settings. Single-column scrollable page with grouped section cards:
 // Account & sync · Membership · Preferences · Notifications · Privacy & data ·
@@ -49,7 +50,6 @@ const Chevron = () => (
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const subscribed = useAppStore((s) => s.subscribed);
 
   const [prefs, setPrefs] = useState({
     sound: true,
@@ -117,43 +117,29 @@ export default function SettingsScreen() {
           )}
         </SectionCard>
 
-        {/* Membership */}
-        <SectionCard eyebrow="Membership">
+        {/* Purchases */}
+        <SectionCard eyebrow="Your collection">
           <SettingsRow
-            icon="award"
-            title={subscribed ? 'Paper & Petals premium' : 'Paper & Petals free'}
-            description={
-              subscribed
-                ? 'Renews monthly. Includes all seasonal packs and the premium daily delivery.'
-                : 'Subscribe to unlock seasonal packs and the richer premium daily delivery.'
-            }
-            trailing={
-              subscribed ? (
-                <StatusStamp tone="gold">Premium</StatusStamp>
-              ) : (
-                <StatusStamp tone="cream">Free</StatusStamp>
-              )
-            }
-          />
-          <SettingsRow
-            divider
-            icon={subscribed ? 'settings' : 'star'}
-            title={subscribed ? 'Manage subscription' : 'Start subscription'}
-            description={
-              subscribed
-                ? 'Change plan, pause, or cancel at any time. You keep everything you’ve collected.'
-                : 'A small monthly fee. Cancel any time — your items and journals are yours forever.'
-            }
-            trailing={<Chevron />}
-            onPress={() => router.push('/subscription')}
+            icon="package"
+            title="Buy once, keep forever"
+            description="Everything you add from the shop is yours to keep — no subscription, no expiry."
+            trailing={<StatusStamp tone="sage">Yours</StatusStamp>}
           />
           <SettingsRow
             divider
             icon="refresh-cw"
             title="Restore purchases"
-            description="Restore packs and subscriptions from your App Store account."
+            description="Restore items you’ve bought from your App Store account — handy on a new device."
             trailing={<Chevron />}
-            onPress={() => {}}
+            onPress={async () => {
+              const ok = await restorePurchases();
+              Alert.alert(
+                ok ? 'Purchases restored' : 'Nothing to restore',
+                ok
+                  ? 'Your previously bought items are back in your collection.'
+                  : 'We couldn’t find any past purchases for this account.',
+              );
+            }}
           />
         </SectionCard>
 
@@ -184,18 +170,18 @@ export default function SettingsScreen() {
         {/* Notifications */}
         <SectionCard eyebrow="Notifications">
           <SettingsRow
-            icon="bell"
-            title="Daily delivery reminder"
-            description="A soft nudge when your parcel of items is ready."
+            icon="gift"
+            title="New items in the shop"
+            description="A soft nudge when fresh papers, stickers, and treasures arrive."
             trailing={
               <Toggle on={prefs.notifyDelivery} onChange={setPref('notifyDelivery')} />
             }
           />
           <SettingsRow
             divider
-            icon="gift"
-            title="New seasonal packs"
-            description="Hear about new collections — about once a month."
+            icon="bell"
+            title="New seasonal collections"
+            description="Hear about larger themed collections — about once a month."
             trailing={
               <Toggle on={prefs.notifyPacks} onChange={setPref('notifyPacks')} />
             }
@@ -272,7 +258,7 @@ const LEGAL_COPY: Record<'terms' | 'privacy', { title: string; body: string }> =
   terms: {
     title: 'Terms of Service',
     body:
-      'Welcome to Paper & Petals. By using the app you agree to craft kindly: your journals are yours, your collected items are yours forever, and subscriptions can be cancelled at any time with no penalty.\n\nThe full terms — covering accounts, purchases, content rights, and acceptable use — live in cozy-craft-journal/ProjectDocumentation/Terms_of_Service.md and will be wired in with the backend phase.',
+      'Welcome to Paper & Petals. By using the app you agree to craft kindly: your journals are yours, and every item you buy from the shop is yours to keep forever.\n\nThe full terms — covering accounts, purchases, content rights, and acceptable use — live in cozy-craft-journal/ProjectDocumentation/Terms_of_Service.md and will be wired in with the backend phase.',
   },
   privacy: {
     title: 'Privacy Policy',

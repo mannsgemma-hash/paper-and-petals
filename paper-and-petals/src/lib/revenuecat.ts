@@ -18,32 +18,6 @@ export function initRevenueCat() {
   }
 }
 
-export async function getIsPremium(): Promise<boolean> {
-  if (!Purchases) return false
-  try {
-    const info = await Purchases.getCustomerInfo()
-    return info.entitlements.active['premium'] != null
-  } catch {
-    return false
-  }
-}
-
-export async function purchasePackage(packageType: 'monthly' | 'annual'): Promise<boolean> {
-  if (!Purchases) return false
-  try {
-    const offerings = await Purchases.getOfferings()
-    const pkg = packageType === 'monthly'
-      ? offerings.current?.monthly
-      : offerings.current?.annual
-    if (!pkg) return false
-    const { customerInfo } = await Purchases.purchasePackage(pkg)
-    return customerInfo.entitlements.active['premium'] != null
-  } catch (e: any) {
-    if (e?.userCancelled) return false
-    throw e
-  }
-}
-
 /**
  * Purchase a single item from the store.
  * Product identifiers must be created in App Store Connect / Google Play
@@ -62,11 +36,15 @@ export async function purchaseSingleItem(itemId: string): Promise<boolean> {
   )
 }
 
+/**
+ * Restore previously bought items. Returns true if the account has any past
+ * non-subscription purchases to restore.
+ */
 export async function restorePurchases(): Promise<boolean> {
   if (!Purchases) return false
   try {
     const info = await Purchases.restorePurchases()
-    return info.entitlements.active['premium'] != null
+    return (info.nonSubscriptionTransactions?.length ?? 0) > 0
   } catch {
     return false
   }

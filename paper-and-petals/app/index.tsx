@@ -56,9 +56,9 @@ export default function LoadingScreen() {
     screen('Loading');
   }, []);
 
-  // Real launch-state detection: 'new' until the welcome flow completes, then
-  // 'first-today' on the first open of each day (daily delivery), otherwise
-  // 'returning'. Resolves from persistent storage well before the bar fills.
+  // Real launch-state detection: 'new' until the welcome flow completes,
+  // otherwise 'returning'. Resolves from persistent storage well before the
+  // bar fills.
   useEffect(() => {
     let cancelled = false;
     resolveLaunchState().then((state) => {
@@ -115,7 +115,6 @@ export default function LoadingScreen() {
         useNativeDriver: true,
       }).start(() => {
         if (launchState === 'new') router.replace('/welcome');
-        else if (launchState === 'first-today') router.replace('/package');
         else router.replace('/(tabs)');
       });
     });

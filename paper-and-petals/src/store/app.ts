@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { SHOP_CATALOGUE, ShopItem } from '../data/shop';
 
 /** Launch state drives where SCR-01 routes after the bar fills. */
-export type LaunchState = 'new' | 'first-today' | 'returning';
+export type LaunchState = 'new' | 'returning';
 
 export interface Journal {
   id: string;
@@ -26,44 +26,28 @@ const SEED_JOURNALS: Journal[] = [
 
 interface AppState {
   launchState: LaunchState;
-  subscribed: boolean;
   journals: Journal[];
   ownedItems: Record<string, boolean>;
   shopItems: ShopItem[];
-  /** IDs of items unlocked via daily delivery (persists for the session). */
-  deliveredItemIds: string[];
+  /** Items just purchased and waiting to be "unwrapped" in the editor. */
+  pendingDelivery: ShopItem[];
   setLaunchState: (s: LaunchState) => void;
-  toggleSubscribed: () => void;
-  setPremium: (v: boolean) => void;
-  checkAndSyncPremium: () => Promise<void>;
   renameJournal: (id: string, name: string) => void;
   addJournal: () => Journal;
   purchaseItem: (id: string) => void;
   setShopItems: (items: ShopItem[]) => void;
   markItemOwned: (id: string) => void;
-  setDeliveredItemIds: (ids: string[]) => void;
+  queueDelivery: (item: ShopItem) => void;
+  clearPendingDelivery: () => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
   launchState: 'new',
-  subscribed: false,
   journals: SEED_JOURNALS,
   ownedItems: {},
-  deliveredItemIds: [],
+  pendingDelivery: [],
   shopItems: SHOP_CATALOGUE,
   setLaunchState: (launchState) => set({ launchState }),
-  toggleSubscribed: () => set((s) => ({ subscribed: !s.subscribed })),
-  setPremium: (v) => set({ subscribed: v }),
-  checkAndSyncPremium: async () => {
-    // Lazy import to avoid circular deps and native module issues at module load
-    try {
-      const { getIsPremium } = await import('../lib/revenuecat')
-      const isPremium = await getIsPremium()
-      set({ subscribed: isPremium })
-    } catch {
-      // Silently ignore — native module may not be available in dev/web
-    }
-  },
   renameJournal: (id, name) =>
     set((s) => ({
       journals: s.journals.map((j) => (j.id === id ? { ...j, name } : j)),
@@ -93,5 +77,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         it.id === id ? { ...it, owned: true } : it
       ),
     })),
-  setDeliveredItemIds: (ids) => set({ deliveredItemIds: ids }),
+  queueDelivery: (item) =>
+    set((s) => ({
+      pendingDelivery: s.pendingDelivery.some((p) => p.id === item.id)
+        ? s.pendingDelivery
+        : [...s.pendingDelivery, item],
+    })),
+  clearPendingDelivery: () => set({ pendingDelivery: [] }),
 }));
