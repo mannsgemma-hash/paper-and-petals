@@ -26,6 +26,8 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as Sharing from 'expo-sharing';
+import { captureRef } from 'react-native-view-shot';
 import Svg, { Polyline } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
@@ -1231,7 +1233,9 @@ export default function EditorScreen() {
   const [clipboard, setClipboard] = useState<PlacedItem | null>(null);
   const [textEditorId, setTextEditorId] = useState<string | null>(null);
   const [penMode, setPenMode] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const tapeToneIdx = useRef(0);
+  const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
@@ -1569,6 +1573,41 @@ export default function EditorScreen() {
     track('doodle_added');
   }
 
+  // ── Export & share ────────────────────────────────────────────────────────
+  async function exportSpread() {
+    if (exporting) return;
+    setExporting(true);
+    // Hide selection chrome before the snapshot.
+    setSelectedId(null);
+    setLayerPanelOpen(false);
+    await new Promise((r) => setTimeout(r, 120));
+    try {
+      const uri = await captureRef(spreadShotRef, {
+        format: 'png',
+        quality: 1,
+        result: 'tmpfile',
+        width: SPREAD_W * 2,
+        height: SPREAD_H * 2,
+      });
+      if (Platform.OS === 'web') {
+        const a = document.createElement('a');
+        a.href = uri;
+        a.download = `${(journal?.name ?? 'journal').replace(/\s+/g, '-').toLowerCase()}-page-${activePage}.png`;
+        a.click();
+      } else if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(uri, {
+          mimeType: 'image/png',
+          dialogTitle: 'Share your spread',
+        });
+      }
+      track('spread_exported', { journalId, page: activePage });
+    } catch (e) {
+      Alert.alert('Export failed', 'We couldn’t capture this page — please try again.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
   // ── Shadow toggle ─────────────────────────────────────────────────────────
   function handleToggleShadow(id: string) {
     const newPages = pages.map((p, i) =>
@@ -1807,6 +1846,14 @@ export default function EditorScreen() {
               <Feather name="layers" size={16} color={theme.color.fg1} />
               <Text style={styles.layersText}>{currentPageItems.length}</Text>
             </Pressable>
+            {/* Share / export */}
+            <Pressable
+              style={[styles.iconBtn, exporting && styles.dimmed]}
+              onPress={exportSpread}
+              disabled={exporting}
+            >
+              <Feather name="share" size={18} color={theme.color.fg1} />
+            </Pressable>
           </View>
         </View>
 
@@ -1865,6 +1912,8 @@ export default function EditorScreen() {
                   {/* The spread, laid out at full size and scaled in place around
                       its center — exactly filling the zoom-sized wrapper. */}
                   <View
+                    ref={spreadShotRef}
+                    collapsable={false}
                     style={[
                       styles.spreadScaled,
                       { width: SPREAD_W, height: SPREAD_H, transform: [{ scale: spreadScale }] },
