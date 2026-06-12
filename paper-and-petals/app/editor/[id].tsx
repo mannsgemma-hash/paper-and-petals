@@ -26,6 +26,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import Svg, { Polyline } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { Button } from '../../src/components/Button';
@@ -57,6 +58,30 @@ const FLIP_EASING = Easing.bezier(0.32, 0.72, 0.32, 1);
 const TEXT_FILL = 0.55;
 const NEW_TEXT_W = 240;
 const NEW_TEXT_H = 72;
+// Washi tape — a stretchy strip; corner handles resize length and width
+// independently (unlike the proportional scale used by every other kind).
+const TAPE_W = 200;
+const TAPE_H = 32;
+const TAPE_MIN_W = 40;
+const TAPE_MAX_W = SPREAD_W;
+const TAPE_MIN_H = 14;
+const TAPE_MAX_H = 90;
+/** Tape tones cycled by the tape tool, in placement order. */
+const TAPE_TONES: (keyof typeof SHOP_TONES)[] = ['sage', 'rose', 'amber', 'blue', 'mauve', 'cream'];
+
+// Doodle pen
+const DOODLE_STROKE = 3;
+const DOODLE_MIN_BOX = 24;
+
+/** Soft paper lift behind items when their shadow toggle is on. */
+const ITEM_SHADOW = {
+  shadowColor: '#4B4038',
+  shadowOpacity: 0.32,
+  shadowRadius: 7,
+  shadowOffset: { width: 0, height: 5 },
+  elevation: 6,
+} as const;
+
 /** Warm ink colours offered by the text editor, drawn from the brand palette. */
 const TEXT_COLORS = [
   theme.palette.charcoal,
@@ -98,8 +123,8 @@ function noop() {}
 interface PlacedItem {
   id: string;
   itemId: string;
-  /** 'item' (shop art / glyph), 'text' (live lettering), or 'photo' (user image). */
-  kind?: 'item' | 'text' | 'photo';
+  /** 'item' (shop art / glyph), 'text', 'photo', 'tape' (washi strip), 'doodle' (pen stroke). */
+  kind?: 'item' | 'text' | 'photo' | 'tape' | 'doodle';
   glyph: string;
   tone: string;
   flowerAsset?: number | { uri: string };
@@ -107,6 +132,12 @@ interface PlacedItem {
   text?: string;
   fontKey?: string;
   color?: string;
+  // Doodle fields (kind === 'doodle'): stroke points in [0..srcW]×[0..srcH]
+  points?: { x: number; y: number }[];
+  srcW?: number;
+  srcH?: number;
+  /** Paper-lift drop shadow toggle. */
+  shadow?: boolean;
   x: number;
   y: number;
   w: number;
@@ -327,8 +358,12 @@ function PlacedItemView({
   const startVX = useSharedValue(0);
   const startVY = useSharedValue(0);
 
-  /** Corner resize handle: proportional scale from the item center. */
+  /**
+   * Corner resize handle: proportional scale from the item center — except
+   * washi tape, which stretches length and width independently.
+   */
   function makeCornerGesture(hx: number, hy: number) {
+    const isTape = item.kind === 'tape';
     return Gesture.Pan()
       .onBegin(() => {
         startW.value = itemW.value;
@@ -341,6 +376,15 @@ function PlacedItemView({
         startVY.value = (lx * Math.sin(rad) + ly * Math.cos(rad)) * spreadScale;
       })
       .onUpdate((e) => {
+        if (isTape) {
+          // Free stretch: rotate the screen-space drag into item-local axes.
+          const rad = (rot.value * Math.PI) / 180;
+          const ldx = (e.translationX * Math.cos(rad) + e.translationY * Math.sin(rad)) / spreadScale;
+          const ldy = (-e.translationX * Math.sin(rad) + e.translationY * Math.cos(rad)) / spreadScale;
+          itemW.value = Math.max(TAPE_MIN_W, Math.min(TAPE_MAX_W, startW.value + 2 * hx * ldx));
+          itemH.value = Math.max(TAPE_MIN_H, Math.min(TAPE_MAX_H, startH.value + 2 * hy * ldy));
+          return;
+        }
         const d0 = Math.sqrt(startVX.value * startVX.value + startVY.value * startVY.value);
         if (d0 < 1) return;
         const vx = startVX.value + e.translationX;
@@ -399,6 +443,9 @@ function PlacedItemView({
   const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
   const isText = item.kind === 'text';
   const isPhoto = item.kind === 'photo';
+  const isTape = item.kind === 'tape';
+  const isDoodle = item.kind === 'doodle';
+  const liftShadow = item.shadow ? ITEM_SHADOW : undefined;
 
   const CORNERS = [
     { hx: -1, hy: -1 },
@@ -427,11 +474,33 @@ function PlacedItemView({
               </Animated.Text>
             </View>
           ) : isPhoto ? (
-            <View style={styles.photoInner}>
+            <View style={[styles.photoInner, liftShadow]}>
               <Image source={item.flowerAsset as any} style={styles.photoImage} resizeMode="cover" />
             </View>
+          ) : isTape ? (
+            <View style={[styles.tapeInner, { backgroundColor: bg }, liftShadow]}>
+              {/* Torn-looking ends: lighter notches biting into each end */}
+              <View style={[styles.tapeNotch, { left: -5 }]} />
+              <View style={[styles.tapeNotch, { right: -5 }]} />
+            </View>
+          ) : isDoodle ? (
+            <Svg
+              width="100%"
+              height="100%"
+              viewBox={`0 0 ${item.srcW ?? 1} ${item.srcH ?? 1}`}
+              preserveAspectRatio="none"
+            >
+              <Polyline
+                points={(item.points ?? []).map((p) => `${p.x},${p.y}`).join(' ')}
+                fill="none"
+                stroke={item.color ?? theme.palette.charcoal}
+                strokeWidth={DOODLE_STROKE}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </Svg>
           ) : (
-            <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }]}>
+            <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }, liftShadow]}>
               {item.flowerAsset ? (
                 <Image source={item.flowerAsset as any} style={styles.itemImage} resizeMode="contain" />
               ) : (
@@ -509,15 +578,38 @@ interface ItemToolbarProps {
   onSendBack: () => void;
   onDelete: () => void;
   onEditText?: () => void;
+  onToggleShadow?: () => void;
+  shadowOn?: boolean;
 }
 
-function ItemToolbar({ left, top, onBringForward, onSendBack, onDelete, onEditText }: ItemToolbarProps) {
+function ItemToolbar({
+  left,
+  top,
+  onBringForward,
+  onSendBack,
+  onDelete,
+  onEditText,
+  onToggleShadow,
+  shadowOn,
+}: ItemToolbarProps) {
   return (
     <View style={[styles.toolbar, { left, top }]}>
       {onEditText && (
         <>
           <Pressable style={styles.toolBtn} onPress={onEditText} hitSlop={4}>
             <Feather name="edit-2" size={16} color={theme.palette.forest} />
+          </Pressable>
+          <View style={styles.toolDivider} />
+        </>
+      )}
+      {onToggleShadow && (
+        <>
+          <Pressable
+            style={[styles.toolBtn, shadowOn && styles.toolBtnActive]}
+            onPress={onToggleShadow}
+            hitSlop={4}
+          >
+            <Feather name="sun" size={16} color={shadowOn ? theme.palette.forest : theme.color.fg1} />
           </Pressable>
           <View style={styles.toolDivider} />
         </>
@@ -921,6 +1013,76 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
   );
 }
 
+// ─── DoodleCanvas ─────────────────────────────────────────────────────────────
+
+/**
+ * Full-canvas capture layer while the pen tool is active. Points arrive in
+ * container (zoomed) coordinates and are divided by spreadScale on commit so
+ * strokes land in spread coordinates regardless of zoom.
+ */
+function DoodleCanvas({
+  spreadScale,
+  color,
+  onStroke,
+}: {
+  spreadScale: number;
+  color: string;
+  onStroke: (points: { x: number; y: number }[]) => void;
+}) {
+  const [livePoints, setLivePoints] = useState<{ x: number; y: number }[]>([]);
+  const pointsRef = useRef<{ x: number; y: number }[]>([]);
+
+  const addPoint = (x: number, y: number) => {
+    pointsRef.current = [...pointsRef.current, { x, y }];
+    setLivePoints(pointsRef.current);
+  };
+
+  const commit = () => {
+    const pts = pointsRef.current;
+    pointsRef.current = [];
+    setLivePoints([]);
+    if (pts.length > 1) {
+      onStroke(pts.map((p) => ({ x: p.x / spreadScale, y: p.y / spreadScale })));
+    }
+  };
+
+  const pan = Gesture.Pan()
+    .minDistance(0)
+    .runOnJS(true)
+    .onBegin((e) => {
+      pointsRef.current = [{ x: e.x, y: e.y }];
+      setLivePoints(pointsRef.current);
+    })
+    .onUpdate((e) => {
+      addPoint(e.x, e.y);
+    })
+    .onEnd(() => {
+      commit();
+    })
+    .onFinalize(() => {
+      commit();
+    });
+
+  return (
+    <GestureDetector gesture={pan}>
+      <View style={StyleSheet.absoluteFill}>
+        {livePoints.length > 1 && (
+          <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
+            <Polyline
+              points={livePoints.map((p) => `${p.x},${p.y}`).join(' ')}
+              fill="none"
+              stroke={color}
+              strokeWidth={DOODLE_STROKE * spreadScale}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </Svg>
+        )}
+      </View>
+    </GestureDetector>
+  );
+}
+
 // ─── DeliveryOverlay ──────────────────────────────────────────────────────────
 
 /**
@@ -1068,6 +1230,8 @@ export default function EditorScreen() {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [clipboard, setClipboard] = useState<PlacedItem | null>(null);
   const [textEditorId, setTextEditorId] = useState<string | null>(null);
+  const [penMode, setPenMode] = useState(false);
+  const tapeToneIdx = useRef(0);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
@@ -1337,6 +1501,83 @@ export default function EditorScreen() {
       setPages(newPages);
     }
     setTextEditorId(null);
+  }
+
+  // ── Washi tape ────────────────────────────────────────────────────────────
+  function addTape() {
+    const currentItems = pages[activePage - 1].items;
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+    const tone = TAPE_TONES[tapeToneIdx.current % TAPE_TONES.length];
+    tapeToneIdx.current += 1;
+    const newItem: PlacedItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      itemId: 'tape',
+      kind: 'tape',
+      glyph: 'minus',
+      tone,
+      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
+      y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
+      w: TAPE_W,
+      h: TAPE_H,
+      rotate: (Math.random() - 0.5) * 30,
+      z: maxZ + 1,
+    };
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    setSelectedId(newItem.id);
+    track('tape_added');
+  }
+
+  // ── Doodle pen ────────────────────────────────────────────────────────────
+  function addDoodle(points: { x: number; y: number }[]) {
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const pad = DOODLE_STROKE;
+    const minX = Math.min(...xs) - pad;
+    const minY = Math.min(...ys) - pad;
+    const maxX = Math.max(...xs) + pad;
+    const maxY = Math.max(...ys) + pad;
+    const w = Math.max(DOODLE_MIN_BOX, maxX - minX);
+    const h = Math.max(DOODLE_MIN_BOX, maxY - minY);
+    const currentItems = pages[activePage - 1].items;
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+    const newItem: PlacedItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      itemId: 'doodle',
+      kind: 'doodle',
+      glyph: 'edit-3',
+      tone: 'sage',
+      color: theme.palette.charcoal,
+      points: points.map((p) => ({ x: p.x - minX, y: p.y - minY })),
+      srcW: w,
+      srcH: h,
+      x: minX + w / 2,
+      y: minY + h / 2,
+      w,
+      h,
+      rotate: 0,
+      z: maxZ + 1,
+    };
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    track('doodle_added');
+  }
+
+  // ── Shadow toggle ─────────────────────────────────────────────────────────
+  function handleToggleShadow(id: string) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, shadow: !it.shadow } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
   }
 
   // ── Photo import ──────────────────────────────────────────────────────────
@@ -1670,6 +1911,18 @@ export default function EditorScreen() {
                     )}
                   </View>
 
+                  {/* Doodle capture layer — container coords, converted to spread
+                      coords on commit. Sits above items while the pen is active. */}
+                  {penMode && !flipState && (
+                    <View style={[StyleSheet.absoluteFill, styles.penLayer]}>
+                      <DoodleCanvas
+                        spreadScale={spreadScale}
+                        color={theme.palette.charcoal}
+                        onStroke={addDoodle}
+                      />
+                    </View>
+                  )}
+
                   {/* Item toolbar — OUTSIDE the scaled spread (canvas coords) so it
                       keeps its size at any zoom and stays clickable on top. */}
                   {selectedItem && !flipState && (
@@ -1685,6 +1938,12 @@ export default function EditorScreen() {
                             ? () => setTextEditorId(selectedItem.id)
                             : undefined
                         }
+                        onToggleShadow={
+                          selectedItem.kind !== 'text' && selectedItem.kind !== 'doodle'
+                            ? () => handleToggleShadow(selectedItem.id)
+                            : undefined
+                        }
+                        shadowOn={!!selectedItem.shadow}
                       />
                     </View>
                   )}
@@ -1720,6 +1979,26 @@ export default function EditorScreen() {
             <Pressable style={[styles.miniFab, { top: 134 }]} onPress={addPhoto}>
               <Feather name="image" size={20} color={theme.palette.forest} />
             </Pressable>
+
+            {/* Washi tape */}
+            <Pressable style={[styles.miniFab, { top: 184 }]} onPress={addTape}>
+              <Feather name="minus" size={20} color={theme.palette.forest} />
+            </Pressable>
+
+            {/* Doodle pen — toggles draw mode */}
+            <Pressable
+              style={[styles.miniFab, { top: 234 }, penMode && styles.miniFabActive]}
+              onPress={() => { setPenMode((m) => !m); setSelectedId(null); }}
+            >
+              <Feather name="edit-3" size={20} color={penMode ? theme.palette.cream : theme.palette.forest} />
+            </Pressable>
+
+            {/* Pen-mode hint */}
+            {penMode && (
+              <View style={styles.penHint} pointerEvents="none">
+                <Text style={styles.penHintText}>Draw on the page · tap the pen again to finish</Text>
+              </View>
+            )}
 
             {/* Delete page — quiet affordance at the canvas bottom */}
             {!isCoverSpread && (
@@ -1764,7 +2043,11 @@ export default function EditorScreen() {
                       ? (item.text || 'Text').trim() || 'Text'
                       : item.kind === 'photo'
                         ? 'Photo'
-                        : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
+                        : item.kind === 'tape'
+                          ? 'Washi tape'
+                          : item.kind === 'doodle'
+                            ? 'Doodle'
+                            : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
                   return (
                     <Pressable
                       key={item.id}
@@ -2565,7 +2848,7 @@ const styles = StyleSheet.create({
     height: '100%',
   },
 
-  // Mini floating tools (text / photo) stacked under the FAB
+  // Mini floating tools (text / photo / tape / pen) stacked under the FAB
   miniFab: {
     position: 'absolute',
     right: 23,
@@ -2578,6 +2861,47 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     ...theme.shadow.card,
+  },
+  miniFabActive: {
+    backgroundColor: theme.palette.forest,
+    borderColor: theme.palette.forestDeep,
+  },
+  penLayer: {
+    zIndex: 120,
+    elevation: 12,
+  },
+  penHint: {
+    position: 'absolute',
+    bottom: 52,
+    alignSelf: 'center',
+    backgroundColor: 'rgba(43,42,40,0.78)',
+    borderRadius: theme.radius.pill,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+  },
+  penHintText: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.palette.cream,
+  },
+  toolBtnActive: {
+    backgroundColor: 'rgba(78,102,82,0.12)',
+  },
+
+  // Washi tape
+  tapeInner: {
+    flex: 1,
+    opacity: 0.82,
+    borderRadius: 1,
+    overflow: 'hidden',
+  },
+  tapeNotch: {
+    position: 'absolute',
+    top: '20%',
+    bottom: '20%',
+    width: 10,
+    backgroundColor: 'rgba(246,238,221,0.55)',
+    transform: [{ rotate: '12deg' }],
   },
 
   // Text editor modal
