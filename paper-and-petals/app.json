@@ -28,7 +28,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Paper & Petals needs access to your photos so you can add your own pictures to your journals."
+        }
+      ]
     ]
   }
 }

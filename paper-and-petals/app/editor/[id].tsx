@@ -22,10 +22,12 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { Button } from '../../src/components/Button';
 import { theme } from '../../src/theme/theme';
+import { JOURNAL_FONTS, familyForFontKey } from '../../src/theme/fonts';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem } from '../../src/data/shop';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
@@ -46,6 +48,25 @@ const MAX_ITEM_SIZE = 380;
 const ROTATE_HANDLE_DIST = 14 + 13;
 const FLIP_DURATION = 310; // per half-turn — 620ms total
 const FLIP_EASING = Easing.bezier(0.32, 0.72, 0.32, 1);
+
+// Text tool — rendered font size tracks the box height so resize handles scale
+// the lettering for free; tune TEXT_FILL to taste.
+const TEXT_FILL = 0.55;
+const NEW_TEXT_W = 240;
+const NEW_TEXT_H = 72;
+/** Warm ink colours offered by the text editor, drawn from the brand palette. */
+const TEXT_COLORS = [
+  theme.palette.charcoal,
+  theme.palette.espresso,
+  theme.palette.forest,
+  theme.palette.terracotta,
+  theme.palette.mauve,
+  theme.palette.dustyBlue,
+  theme.palette.antiqueGold,
+  theme.palette.danger,
+  theme.palette.mutedOlive,
+  theme.palette.cream,
+];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -74,9 +95,15 @@ function noop() {}
 interface PlacedItem {
   id: string;
   itemId: string;
+  /** 'item' (shop art / glyph), 'text' (live lettering), or 'photo' (user image). */
+  kind?: 'item' | 'text' | 'photo';
   glyph: string;
   tone: string;
   flowerAsset?: number | { uri: string };
+  // Text-tool fields (kind === 'text')
+  text?: string;
+  fontKey?: string;
+  color?: string;
   x: number;
   y: number;
   w: number;
@@ -167,6 +194,7 @@ interface PlacedItemViewProps {
   onMoveEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, w: number, h: number) => void;
   onRotateEnd: (id: string, rotate: number) => void;
+  onRequestEdit: (id: string) => void;
 }
 
 function PlacedItemView({
@@ -177,6 +205,7 @@ function PlacedItemView({
   onMoveEnd,
   onResizeEnd,
   onRotateEnd,
+  onRequestEdit,
 }: PlacedItemViewProps) {
   const tx = useSharedValue(item.x);
   const ty = useSharedValue(item.y);
@@ -230,6 +259,17 @@ function PlacedItemView({
       onSelect(item.id);
     });
 
+  // Double-tap opens the text editor for text items (Canva-style).
+  const doubleTapGesture = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDeltaX(8)
+    .maxDeltaY(8)
+    .runOnJS(true)
+    .onEnd(() => {
+      if (item.kind === 'text') onRequestEdit(item.id);
+      else onSelect(item.id);
+    });
+
   const panGesture = Gesture.Pan()
     .minDistance(6)
     .onBegin(() => {
@@ -276,7 +316,7 @@ function PlacedItemView({
 
   const composed = Gesture.Race(
     Gesture.Simultaneous(pinchGesture, rotationGesture),
-    Gesture.Simultaneous(tapGesture, panGesture),
+    Gesture.Simultaneous(Gesture.Exclusive(doubleTapGesture, tapGesture), panGesture),
   );
 
   // ── Handle drag state (one drag at a time, so one pair is enough) ──────────
@@ -346,8 +386,16 @@ function PlacedItemView({
     zIndex: isSelected ? 9999 : item.z,
   }));
 
+  // Live font sizing for text items: the lettering tracks the box height so the
+  // corner resize handles scale text for free.
+  const textAnimStyle = useAnimatedStyle(() => ({
+    fontSize: Math.max(8, itemH.value * TEXT_FILL),
+  }));
+
   const toneKey = item.tone as keyof typeof SHOP_TONES;
   const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
+  const isText = item.kind === 'text';
+  const isPhoto = item.kind === 'photo';
 
   const CORNERS = [
     { hx: -1, hy: -1 },
@@ -363,13 +411,31 @@ function PlacedItemView({
     <Animated.View style={animStyle}>
       <GestureDetector gesture={composed}>
         <Animated.View style={styles.itemFill}>
-          <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }]}>
-            {item.flowerAsset ? (
-              <Image source={item.flowerAsset as any} style={styles.itemImage} resizeMode="contain" />
-            ) : (
-              <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
-            )}
-          </View>
+          {isText ? (
+            <View style={styles.textItemInner}>
+              <Animated.Text
+                style={[
+                  styles.textItem,
+                  { fontFamily: familyForFontKey(item.fontKey), color: item.color ?? theme.palette.charcoal },
+                  textAnimStyle,
+                ]}
+              >
+                {item.text || ' '}
+              </Animated.Text>
+            </View>
+          ) : isPhoto ? (
+            <View style={styles.photoInner}>
+              <Image source={item.flowerAsset as any} style={styles.photoImage} resizeMode="cover" />
+            </View>
+          ) : (
+            <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }]}>
+              {item.flowerAsset ? (
+                <Image source={item.flowerAsset as any} style={styles.itemImage} resizeMode="contain" />
+              ) : (
+                <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
+              )}
+            </View>
+          )}
         </Animated.View>
       </GestureDetector>
 
@@ -439,11 +505,20 @@ interface ItemToolbarProps {
   onBringForward: () => void;
   onSendBack: () => void;
   onDelete: () => void;
+  onEditText?: () => void;
 }
 
-function ItemToolbar({ left, top, onBringForward, onSendBack, onDelete }: ItemToolbarProps) {
+function ItemToolbar({ left, top, onBringForward, onSendBack, onDelete, onEditText }: ItemToolbarProps) {
   return (
     <View style={[styles.toolbar, { left, top }]}>
+      {onEditText && (
+        <>
+          <Pressable style={styles.toolBtn} onPress={onEditText} hitSlop={4}>
+            <Feather name="edit-2" size={16} color={theme.palette.forest} />
+          </Pressable>
+          <View style={styles.toolDivider} />
+        </>
+      )}
       <Pressable style={styles.toolBtn} onPress={onBringForward} hitSlop={4}>
         <Feather name="chevrons-up" size={16} color={theme.color.fg1} />
       </Pressable>
@@ -647,6 +722,7 @@ function SpreadHalf({ pages, page, side }: { pages: PageState[]; page: number; s
           onMoveEnd={noop}
           onResizeEnd={noop}
           onRotateEnd={noop}
+          onRequestEdit={noop}
         />
       </View>
     </View>
@@ -705,6 +781,7 @@ interface SpreadViewProps {
   onMoveEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, w: number, h: number) => void;
   onRotateEnd: (id: string, rotate: number) => void;
+  onRequestEdit: (id: string) => void;
 }
 
 function SpreadView({
@@ -717,6 +794,7 @@ function SpreadView({
   onMoveEnd,
   onResizeEnd,
   onRotateEnd,
+  onRequestEdit,
 }: SpreadViewProps) {
   const isFirstPage = activePage === 1;
   const isLastPage = activePage === pages.length;
@@ -756,8 +834,89 @@ function SpreadView({
             onMoveEnd={onMoveEnd}
             onResizeEnd={onResizeEnd}
             onRotateEnd={onRotateEnd}
+            onRequestEdit={onRequestEdit}
           />
         ))}
+      </View>
+    </View>
+  );
+}
+
+// ─── TextEditorModal ──────────────────────────────────────────────────────────
+
+interface TextEditorModalProps {
+  item: PlacedItem;
+  onChange: (patch: Partial<Pick<PlacedItem, 'text' | 'fontKey' | 'color'>>) => void;
+  onClose: () => void;
+}
+
+function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
+  const [text, setText] = useState(item.text ?? '');
+  const fontKey = item.fontKey ?? JOURNAL_FONTS[0].key;
+  const color = item.color ?? theme.palette.charcoal;
+
+  return (
+    <View style={styles.textModalScrim}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.textModalCard}>
+        <Text style={styles.textModalTitle}>Write something</Text>
+
+        <TextInput
+          style={[styles.textModalInput, { fontFamily: familyForFontKey(fontKey), color }]}
+          value={text}
+          onChangeText={(t) => {
+            setText(t);
+            onChange({ text: t });
+          }}
+          placeholder="Type your words…"
+          placeholderTextColor={theme.color.fg4}
+          multiline
+          autoFocus
+        />
+
+        {/* Font picker */}
+        <Text style={styles.textModalLabel}>FONT</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.fontRow}>
+          {JOURNAL_FONTS.map((f) => {
+            const active = f.key === fontKey;
+            return (
+              <Pressable
+                key={f.key}
+                style={[styles.fontChip, active && styles.fontChipActive]}
+                onPress={() => onChange({ fontKey: f.key })}
+              >
+                <Text style={[styles.fontChipSample, { fontFamily: f.family }]} numberOfLines={1}>
+                  Ag
+                </Text>
+                <Text style={[styles.fontChipLabel, active && styles.fontChipLabelActive]}>{f.label}</Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+
+        {/* Colour picker */}
+        <Text style={styles.textModalLabel}>COLOUR</Text>
+        <View style={styles.colorRow}>
+          {TEXT_COLORS.map((c) => {
+            const active = c === color;
+            return (
+              <Pressable
+                key={c}
+                style={[
+                  styles.colorSwatch,
+                  { backgroundColor: c },
+                  c === theme.palette.cream && styles.colorSwatchLight,
+                  active && styles.colorSwatchActive,
+                ]}
+                onPress={() => onChange({ color: c })}
+              />
+            );
+          })}
+        </View>
+
+        <View style={styles.textModalActions}>
+          <Button title="Done" onPress={onClose} />
+        </View>
       </View>
     </View>
   );
@@ -798,6 +957,7 @@ export default function EditorScreen() {
   const [hoveredCategory, setHoveredCategory] = useState<string | null>(null);
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [clipboard, setClipboard] = useState<PlacedItem | null>(null);
+  const [textEditorId, setTextEditorId] = useState<string | null>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
   const [journalName, setJournalName] = useState(journal?.name ?? 'My Journal');
@@ -1017,6 +1177,103 @@ export default function EditorScreen() {
     return () => window.removeEventListener('keydown', onKey);
   }, [selectedId, clipboard, pages, activePage]);
 
+  // ── Text tool ─────────────────────────────────────────────────────────────
+  function addText() {
+    const currentItems = pages[activePage - 1].items;
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+    const newItem: PlacedItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      itemId: 'text',
+      kind: 'text',
+      glyph: 'type',
+      tone: 'sage',
+      text: '',
+      fontKey: JOURNAL_FONTS[0].key,
+      color: theme.palette.charcoal,
+      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
+      y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
+      w: NEW_TEXT_W,
+      h: NEW_TEXT_H,
+      rotate: (Math.random() - 0.5) * 8,
+      z: maxZ + 1,
+    };
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+    );
+    pushHistory(newPages);
+    setSelectedId(newItem.id);
+    setTextEditorId(newItem.id);
+    track('text_added');
+  }
+
+  function updateTextItem(id: string, patch: Partial<Pick<PlacedItem, 'text' | 'fontKey' | 'color'>>) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, ...patch } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function closeTextEditor() {
+    // Drop a text item that was never given any words.
+    const item = pages[activePage - 1]?.items.find((it) => it.id === textEditorId);
+    if (item && item.kind === 'text' && !(item.text ?? '').trim()) {
+      const newPages = pages.map((p, i) =>
+        i === activePage - 1 ? { ...p, items: p.items.filter((it) => it.id !== textEditorId) } : p,
+      );
+      setSelectedId(null);
+      setPages(newPages);
+    }
+    setTextEditorId(null);
+  }
+
+  // ── Photo import ──────────────────────────────────────────────────────────
+  async function addPhoto() {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Photos access needed', 'Allow photo access in Settings to add your own pictures.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const aspect = asset.width && asset.height ? asset.width / asset.height : 1;
+      const h = 180;
+      const w = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, h * aspect));
+      const currentItems = pages[activePage - 1].items;
+      const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+      const newItem: PlacedItem = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        itemId: 'photo',
+        kind: 'photo',
+        glyph: 'image',
+        tone: 'cream',
+        flowerAsset: { uri: asset.uri },
+        x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
+        y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
+        w,
+        h,
+        rotate: (Math.random() - 0.5) * 8,
+        z: maxZ + 1,
+      };
+      const newPages = pages.map((p, i) =>
+        i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+      );
+      pushHistory(newPages);
+      scheduleSave(newPages);
+      setSelectedId(newItem.id);
+      track('photo_added');
+    } catch (e) {
+      Alert.alert('Could not add photo', 'Something went wrong picking that image.');
+    }
+  }
+
   // ── Page navigation ───────────────────────────────────────────────────────
   function finishFlip(to: number) {
     setActivePage(to);
@@ -1084,6 +1341,7 @@ export default function EditorScreen() {
   // ── Derived ───────────────────────────────────────────────────────────────
   const currentPageItems = pages[activePage - 1]?.items ?? [];
   const selectedItem = selectedId ? currentPageItems.find((it) => it.id === selectedId) : null;
+  const editingTextItem = textEditorId ? currentPageItems.find((it) => it.id === textEditorId) : null;
   const canUndo = historyIdx > 0;
   const canRedo = historyIdx < history.length - 1;
   const isPhone = screenW < theme.layout.phoneBreakpoint;
@@ -1297,6 +1555,7 @@ export default function EditorScreen() {
                         onMoveEnd={handleMoveEnd}
                         onResizeEnd={handleResizeEnd}
                         onRotateEnd={handleRotateEnd}
+                        onRequestEdit={(id) => { setSelectedId(id); setTextEditorId(id); }}
                       />
                     )}
                   </View>
@@ -1311,6 +1570,11 @@ export default function EditorScreen() {
                         onBringForward={() => handleBringForward(selectedItem.id)}
                         onSendBack={() => handleSendBack(selectedItem.id)}
                         onDelete={handleDeleteSelected}
+                        onEditText={
+                          selectedItem.kind === 'text'
+                            ? () => setTextEditorId(selectedItem.id)
+                            : undefined
+                        }
                       />
                     </View>
                   )}
@@ -1335,6 +1599,16 @@ export default function EditorScreen() {
             {/* Floating add button */}
             <Pressable style={styles.fab} onPress={() => toggleDrawer(true)}>
               <Feather name="plus" size={26} color={theme.palette.cream} />
+            </Pressable>
+
+            {/* Add text */}
+            <Pressable style={[styles.miniFab, { top: 84 }]} onPress={addText}>
+              <Feather name="type" size={20} color={theme.palette.forest} />
+            </Pressable>
+
+            {/* Add photo */}
+            <Pressable style={[styles.miniFab, { top: 134 }]} onPress={addPhoto}>
+              <Feather name="image" size={20} color={theme.palette.forest} />
             </Pressable>
 
             {/* Delete page — quiet affordance at the canvas bottom */}
@@ -1375,7 +1649,12 @@ export default function EditorScreen() {
                   const toneKey = item.tone as keyof typeof SHOP_TONES;
                   const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
                   const isSelected = item.id === selectedId;
-                  const itemName = shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
+                  const itemName =
+                    item.kind === 'text'
+                      ? (item.text || 'Text').trim() || 'Text'
+                      : item.kind === 'photo'
+                        ? 'Photo'
+                        : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
                   return (
                     <Pressable
                       key={item.id}
@@ -1465,6 +1744,15 @@ export default function EditorScreen() {
             />
           </View>
         </Animated.View>
+
+        {/* ── Text editor ───────────────────────────────────────────── */}
+        {editingTextItem && (
+          <TextEditorModal
+            item={editingTextItem}
+            onChange={(patch) => updateTextItem(editingTextItem.id, patch)}
+            onClose={closeTextEditor}
+          />
+        )}
       </Screen>
     </GestureHandlerRootView>
   );
@@ -2128,5 +2416,140 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: theme.palette.hairlineSoft,
     backgroundColor: theme.color.surface,
+  },
+
+  // Text items
+  textItemInner: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textItem: {
+    textAlign: 'center',
+    width: '100%',
+  },
+
+  // Photo items
+  photoInner: {
+    flex: 1,
+    borderRadius: theme.radius.xs,
+    overflow: 'hidden',
+    backgroundColor: theme.palette.cream,
+  },
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  // Mini floating tools (text / photo) stacked under the FAB
+  miniFab: {
+    position: 'absolute',
+    right: 23,
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadow.card,
+  },
+
+  // Text editor modal
+  textModalScrim: {
+    ...StyleSheet.absoluteFill,
+    backgroundColor: 'rgba(43,42,40,0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 300,
+    elevation: 20,
+  },
+  textModalCard: {
+    width: 380,
+    maxWidth: '90%',
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.lg,
+    padding: 20,
+    gap: 10,
+    ...theme.shadow.lift,
+  },
+  textModalTitle: {
+    fontFamily: theme.font.display,
+    fontSize: 20,
+    color: theme.color.fg1,
+  },
+  textModalInput: {
+    minHeight: 64,
+    maxHeight: 160,
+    fontSize: 24,
+    textAlignVertical: 'top',
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.bg1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  textModalLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 9,
+    letterSpacing: 2,
+    fontWeight: '600',
+    color: theme.color.fg3,
+    marginTop: 4,
+  },
+  fontRow: {
+    gap: 8,
+    paddingVertical: 2,
+  },
+  fontChip: {
+    width: 64,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    backgroundColor: theme.color.bg1,
+    alignItems: 'center',
+    gap: 2,
+  },
+  fontChipActive: {
+    borderColor: theme.palette.forest,
+    backgroundColor: 'rgba(78,102,82,0.10)',
+  },
+  fontChipSample: {
+    fontSize: 22,
+    color: theme.color.fg1,
+    lineHeight: 26,
+  },
+  fontChipLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 10,
+    color: theme.color.fg3,
+  },
+  fontChipLabelActive: {
+    color: theme.palette.forest,
+    fontWeight: '700',
+  },
+  colorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  colorSwatch: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  colorSwatchLight: {
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+  },
+  colorSwatchActive: {
+    borderWidth: 3,
+    borderColor: theme.palette.forest,
+  },
+  textModalActions: {
+    marginTop: 8,
   },
 });
