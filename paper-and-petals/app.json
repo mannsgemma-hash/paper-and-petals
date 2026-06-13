@@ -12,7 +12,8 @@
       "requireFullScreen": false,
       "bundleIdentifier": "com.paperandpetals.app",
       "infoPlist": {
-        "UIBackgroundModes": ["audio"]
+        "UIBackgroundModes": ["audio"],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
