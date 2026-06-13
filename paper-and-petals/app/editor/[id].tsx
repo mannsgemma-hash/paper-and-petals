@@ -35,7 +35,7 @@ import { Button } from '../../src/components/Button';
 import { theme } from '../../src/theme/theme';
 import { JOURNAL_FONTS, familyForFontKey } from '../../src/theme/fonts';
 import { useAppStore } from '../../src/store/app';
-import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem } from '../../src/data/shop';
+import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../src/data/shop';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
@@ -652,10 +652,12 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const ownedItems = useAppStore((s) => s.ownedItems);
+  const hasStudio = useAppStore((s) => s.hasStudio);
   const recentItemIds = useAppStore((s) => s.recentItemIds);
 
-  const isOwned = (item: ShopItem) =>
-    item.price === 0 || item.owned || !!ownedItems[item.id];
+  // Only items the player can actually use show in the drawer: free, owned
+  // keepsake packs, or everything when subscribed to Studio.
+  const isOwned = (item: ShopItem) => isItemUnlocked(item, ownedItems, hasStudio);
 
   // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
   const itemsByCategory: Record<string, ShopItem[]> = shopItems.length > 0
@@ -675,6 +677,7 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
             category: cat,
             name: it.id,
             price: 0,
+            tier: 'free' as const,
             tone: it.tone as ShopItem['tone'],
             glyph: it.glyph as ShopItem['glyph'],
             flowerAsset: it.flowerAsset,

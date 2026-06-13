@@ -28,6 +28,8 @@ interface AppState {
   launchState: LaunchState;
   journals: Journal[];
   ownedItems: Record<string, boolean>;
+  /** True while the player has an active Studio subscription. */
+  hasStudio: boolean;
   shopItems: ShopItem[];
   /** Items just purchased and waiting to be "unwrapped" in the editor. */
   pendingDelivery: ShopItem[];
@@ -39,6 +41,9 @@ interface AppState {
   purchaseItem: (id: string) => void;
   setShopItems: (items: ShopItem[]) => void;
   markItemOwned: (id: string) => void;
+  setHasStudio: (v: boolean) => void;
+  /** Mark several packs owned at once (used by restore / boot sync). */
+  setOwnedItemIds: (ids: string[]) => void;
   queueDelivery: (item: ShopItem) => void;
   clearPendingDelivery: () => void;
   noteRecentItem: (id: string) => void;
@@ -48,6 +53,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   launchState: 'new',
   journals: SEED_JOURNALS,
   ownedItems: {},
+  hasStudio: false,
   pendingDelivery: [],
   recentItemIds: [],
   shopItems: SHOP_CATALOGUE,
@@ -81,6 +87,21 @@ export const useAppStore = create<AppState>((set, get) => ({
         it.id === id ? { ...it, owned: true } : it
       ),
     })),
+  setHasStudio: (hasStudio) => set({ hasStudio }),
+  setOwnedItemIds: (ids) =>
+    set((s) => {
+      const owned = { ...s.ownedItems };
+      ids.forEach((id) => {
+        owned[id] = true;
+      });
+      const idSet = new Set(ids);
+      return {
+        ownedItems: owned,
+        shopItems: s.shopItems.map((it) =>
+          idSet.has(it.id) ? { ...it, owned: true } : it
+        ),
+      };
+    }),
   queueDelivery: (item) =>
     set((s) => ({
       pendingDelivery: s.pendingDelivery.some((p) => p.id === item.id)

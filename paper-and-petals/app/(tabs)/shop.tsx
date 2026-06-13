@@ -19,6 +19,7 @@ import { useAppStore } from '../../src/store/app';
 import {
   SHOP_CATEGORIES,
   SHOP_TONES,
+  isItemUnlocked,
   type ShopItem,
 } from '../../src/data/shop';
 import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
@@ -35,6 +36,7 @@ const logoSage = require('../../assets/logos/logo_sage.png');
 export default function ShopScreen() {
   const router = useRouter();
   const ownedItems = useAppStore((s) => s.ownedItems);
+  const hasStudio = useAppStore((s) => s.hasStudio);
   const markItemOwned = useAppStore((s) => s.markItemOwned);
   const queueDelivery = useAppStore((s) => s.queueDelivery);
   const shopItems = useAppStore((s) => s.shopItems);
@@ -57,7 +59,11 @@ export default function ShopScreen() {
   const { width } = useWindowDimensions();
   const columns = width >= 900 ? 4 : width >= 640 ? 3 : 2;
 
-  const isOwned = (it: ShopItem) => it.owned || !!ownedItems[it.id];
+  // Unlocked = can place it (free, owned, or via Studio). Owned = theirs to keep
+  // regardless of subscription (free items + purchased keepsake packs).
+  const isUnlocked = (it: ShopItem) => isItemUnlocked(it, ownedItems, hasStudio);
+  const isOwnedOutright = (it: ShopItem) =>
+    it.tier === 'free' || it.price === 0 || !!ownedItems[it.id];
 
   const filtered = useMemo(
     () =>
@@ -96,6 +102,34 @@ export default function ShopScreen() {
         <Text style={styles.heroSub}>
           A little library of papers, stickers, and treasures.
         </Text>
+
+        {/* Studio banner — the route to the whole catalogue */}
+        {!hasStudio ? (
+          <Pressable style={styles.studioBanner} onPress={() => router.push('/studio')}>
+            <View style={styles.studioBannerIcon}>
+              <Feather name="package" size={20} color={theme.palette.cream} />
+            </View>
+            <View style={styles.studioBannerText}>
+              <Text style={styles.studioBannerTitle}>Unlock everything with Studio</Text>
+              <Text style={styles.studioBannerSub}>
+                The whole living library + new items every week. 7 days free.
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color={theme.palette.forest} />
+          </Pressable>
+        ) : (
+          <View style={[styles.studioBanner, styles.studioBannerActive]}>
+            <View style={styles.studioBannerIcon}>
+              <Feather name="check" size={20} color={theme.palette.cream} />
+            </View>
+            <View style={styles.studioBannerText}>
+              <Text style={styles.studioBannerTitle}>Studio is active</Text>
+              <Text style={styles.studioBannerSub}>
+                Every item below is unlocked — place anything you like.
+              </Text>
+            </View>
+          </View>
+        )}
 
         {/* Search */}
         <View style={styles.search}>
@@ -156,7 +190,8 @@ export default function ShopScreen() {
               <View key={it.id} style={{ width: `${100 / columns}%` as const, padding: 7 }}>
                 <ItemCard
                   item={it}
-                  owned={isOwned(it)}
+                  unlocked={isUnlocked(it)}
+                  ownedOutright={isOwnedOutright(it)}
                   onOpen={() => setOpenItem(it)}
                 />
               </View>
@@ -168,16 +203,22 @@ export default function ShopScreen() {
       {/* Detail modal */}
       <ItemDetail
         item={openItem}
-        owned={openItem ? isOwned(openItem) : false}
+        unlocked={openItem ? isUnlocked(openItem) : false}
+        ownedOutright={openItem ? isOwnedOutright(openItem) : false}
+        hasStudio={hasStudio}
         purchasing={purchasing}
         onClose={() => setOpenItem(null)}
+        onUnlockStudio={() => {
+          setOpenItem(null);
+          router.push('/studio');
+        }}
         onPurchase={async (it) => {
           Alert.alert(
             it.name,
-            `£${it.price.toFixed(2)} · ${it.items} pieces`,
+            `$${it.price.toFixed(2)} · ${it.items} pieces`,
             [
               {
-                text: `Buy for £${it.price.toFixed(2)}`,
+                text: `Buy for $${it.price.toFixed(2)}`,
                 onPress: async () => {
                   setPurchasing(true);
                   try {
@@ -228,8 +269,25 @@ function ItemArt({ item, large }: { item: ShopItem; large?: boolean }) {
   );
 }
 
-function PriceTag({ price, owned }: { price: number; owned: boolean }) {
-  if (owned) {
+/** A small status pill: Free / Owned / Studio / one-time price. */
+function StatusTag({
+  item,
+  unlocked,
+  ownedOutright,
+}: {
+  item: ShopItem;
+  unlocked: boolean;
+  ownedOutright: boolean;
+}) {
+  if (item.tier === 'free' || item.price === 0) {
+    return (
+      <View style={styles.freeTag}>
+        <Text style={styles.freeText}>FREE</Text>
+      </View>
+    );
+  }
+  // Bought outright (or free) — truly theirs to keep.
+  if (ownedOutright) {
     return (
       <View style={styles.ownedTag}>
         <Feather name="check" size={12} color={theme.palette.forest} />
@@ -237,23 +295,35 @@ function PriceTag({ price, owned }: { price: number; owned: boolean }) {
       </View>
     );
   }
+  // Unlocked only because Studio is active, or simply gated behind it.
+  if (unlocked || item.tier === 'catalogue') {
+    return (
+      <View style={styles.studioTag}>
+        <Feather name={unlocked ? 'check' : 'package'} size={11} color={theme.palette.forest} />
+        <Text style={styles.studioTagText}>STUDIO</Text>
+      </View>
+    );
+  }
+  // pack — one-time purchase
   return (
     <View style={styles.priceTag}>
-      <Text style={styles.priceText}>${price.toFixed(2)}</Text>
+      <Text style={styles.priceText}>${item.price.toFixed(2)}</Text>
     </View>
   );
 }
 
 function ItemCard({
   item,
-  owned,
+  unlocked,
+  ownedOutright,
   onOpen,
 }: {
   item: ShopItem;
-  owned: boolean;
+  unlocked: boolean;
+  ownedOutright: boolean;
   onOpen: () => void;
 }) {
-  const showLock = item.price > 0 && !owned;
+  const showLock = !unlocked;
   return (
     <Pressable
       onPress={onOpen}
@@ -277,7 +347,7 @@ function ItemCard({
           {item.name}
         </Text>
         <View style={styles.cardFoot}>
-          <PriceTag price={item.price} owned={owned} />
+          <StatusTag item={item} unlocked={unlocked} ownedOutright={ownedOutright} />
           <Text style={styles.pcs}>{item.items} PCS</Text>
         </View>
       </View>
@@ -287,16 +357,22 @@ function ItemCard({
 
 function ItemDetail({
   item,
-  owned,
+  unlocked,
+  ownedOutright,
+  hasStudio,
   purchasing,
   onClose,
   onPurchase,
+  onUnlockStudio,
 }: {
   item: ShopItem | null;
-  owned: boolean;
+  unlocked: boolean;
+  ownedOutright: boolean;
+  hasStudio: boolean;
   purchasing: boolean;
   onClose: () => void;
   onPurchase: (it: ShopItem) => void;
+  onUnlockStudio: () => void;
 }) {
   const categoryLabel = item
     ? SHOP_CATEGORIES.find((c) => c.id === item.category)?.label
@@ -317,23 +393,47 @@ function ItemDetail({
                 <Text style={styles.detailTitle}>{item.name}</Text>
                 <Text style={styles.detailDesc}>{item.desc}</Text>
                 <Text style={styles.detailPcs}>{item.items} pieces in this set</Text>
+                {/* Why it's locked, when relevant */}
+                {!unlocked && item.tier === 'catalogue' && (
+                  <Text style={styles.detailNote}>
+                    Part of the Studio library — unlock it along with everything else.
+                  </Text>
+                )}
+                {!unlocked && item.tier === 'pack' && (
+                  <Text style={styles.detailNote}>
+                    Buy once and it’s yours forever — or unlock it free with Studio.
+                  </Text>
+                )}
                 <View style={styles.detailFooter}>
-                  <PriceTag price={item.price} owned={owned} />
-                  {owned ? (
+                  <StatusTag item={item} unlocked={unlocked} ownedOutright={ownedOutright} />
+                  {unlocked ? (
                     <Pressable style={styles.useBtn} onPress={onClose}>
                       <Text style={styles.useBtnText}>Use in editor</Text>
                     </Pressable>
-                  ) : (
-                    <Pressable
-                      style={[styles.buyBtn, purchasing && { opacity: 0.6 }]}
-                      onPress={() => onPurchase(item)}
-                      disabled={purchasing}
-                    >
-                      <Feather name="star" size={14} color={theme.palette.cream} />
-                      <Text style={styles.buyBtnText}>
-                        {purchasing ? 'Adding…' : 'Add to your collection'}
-                      </Text>
+                  ) : item.tier === 'catalogue' ? (
+                    <Pressable style={styles.buyBtn} onPress={onUnlockStudio}>
+                      <Feather name="package" size={14} color={theme.palette.cream} />
+                      <Text style={styles.buyBtnText}>Unlock with Studio</Text>
                     </Pressable>
+                  ) : (
+                    // pack, not owned
+                    <View style={styles.detailCtaCol}>
+                      <Pressable
+                        style={[styles.buyBtn, purchasing && { opacity: 0.6 }]}
+                        onPress={() => onPurchase(item)}
+                        disabled={purchasing}
+                      >
+                        <Feather name="star" size={14} color={theme.palette.cream} />
+                        <Text style={styles.buyBtnText}>
+                          {purchasing ? 'Adding…' : `Buy $${item.price.toFixed(2)}`}
+                        </Text>
+                      </Pressable>
+                      {!hasStudio && (
+                        <Pressable onPress={onUnlockStudio} hitSlop={6}>
+                          <Text style={styles.orStudio}>or unlock with Studio</Text>
+                        </Pressable>
+                      )}
+                    </View>
                   )}
                 </View>
               </View>
@@ -587,6 +687,81 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.palette.forest,
   },
+  freeTag: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(143,163,184,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(143,163,184,0.5)',
+    borderRadius: theme.radius.pill,
+  },
+  freeText: {
+    fontFamily: theme.font.ui,
+    fontSize: 10,
+    letterSpacing: 1.8,
+    fontWeight: '700',
+    color: theme.palette.dustyBlue,
+  },
+  studioTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    backgroundColor: 'rgba(78,102,82,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(78,102,82,0.4)',
+    borderRadius: theme.radius.pill,
+  },
+  studioTagText: {
+    fontFamily: theme.font.ui,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    fontWeight: '700',
+    color: theme.palette.forest,
+  },
+
+  // Studio banner
+  studioBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 14,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1.5,
+    borderColor: theme.palette.forest,
+    borderRadius: theme.radius.lg,
+    padding: 16,
+    marginBottom: 20,
+    maxWidth: 560,
+    width: '100%',
+    alignSelf: 'center',
+    ...theme.shadow.paper,
+  },
+  studioBannerActive: {
+    borderColor: 'rgba(78,102,82,0.4)',
+    backgroundColor: 'rgba(78,102,82,0.06)',
+  },
+  studioBannerIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: theme.palette.forest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  studioBannerText: { flex: 1 },
+  studioBannerTitle: {
+    fontFamily: theme.font.ui,
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.color.fg1,
+  },
+  studioBannerSub: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    color: theme.color.fg3,
+    marginTop: 2,
+  },
 
   // Detail modal
   scrim: {
@@ -633,6 +808,20 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
     fontSize: 14,
     color: theme.color.fg3,
+  },
+  detailNote: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    lineHeight: 19,
+    color: theme.color.fg3,
+    marginTop: 4,
+  },
+  detailCtaCol: { alignItems: 'flex-end', gap: 6 },
+  orStudio: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.palette.forest,
   },
   detailFooter: {
     marginTop: 'auto',

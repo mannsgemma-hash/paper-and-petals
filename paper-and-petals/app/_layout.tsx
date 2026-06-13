@@ -3,9 +3,10 @@ import { Stack, SplashScreen } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { usePPFonts } from '../src/theme/fonts';
 import { theme } from '../src/theme/theme';
-import { initRevenueCat } from '../src/lib/revenuecat';
+import { initRevenueCat, syncEntitlements } from '../src/lib/revenuecat';
 import { initAnalytics } from '../src/lib/analytics';
 import { initNotifications } from '../src/lib/notifications';
+import { useAppStore } from '../src/store/app';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -20,6 +21,11 @@ export default function RootLayout() {
     initRevenueCat();
     initAnalytics();
     initNotifications();
+    // Sync subscription + owned packs from RevenueCat into the store.
+    syncEntitlements().then(({ studio, ownedPackIds }) => {
+      useAppStore.getState().setHasStudio(studio);
+      if (ownedPackIds.length) useAppStore.getState().setOwnedItemIds(ownedPackIds);
+    });
   }, []);
 
   if (!fontsLoaded) return null;
@@ -38,6 +44,7 @@ export default function RootLayout() {
         <Stack.Screen name="welcome" />
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="editor/[id]" />
+        <Stack.Screen name="studio" options={{ presentation: 'modal' }} />
         <Stack.Screen name="feedback" />
       </Stack>
     </>

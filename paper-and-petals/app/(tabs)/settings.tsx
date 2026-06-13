@@ -16,6 +16,7 @@ import { StatusStamp } from '../../src/components/StatusStamp';
 import { Toggle } from '../../src/components/Toggle';
 import { theme } from '../../src/theme/theme';
 import { restorePurchases } from '../../src/lib/revenuecat';
+import { useAppStore } from '../../src/store/app';
 
 // SCR-23 Settings. Single-column scrollable page with grouped section cards:
 // Account & sync · Membership · Preferences · Notifications · Privacy & data ·
@@ -50,6 +51,9 @@ const Chevron = () => (
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const hasStudio = useAppStore((s) => s.hasStudio);
+  const setHasStudio = useAppStore((s) => s.setHasStudio);
+  const setOwnedItemIds = useAppStore((s) => s.setOwnedItemIds);
 
   const [prefs, setPrefs] = useState({
     sound: true,
@@ -117,26 +121,46 @@ export default function SettingsScreen() {
           )}
         </SectionCard>
 
-        {/* Purchases */}
-        <SectionCard eyebrow="Your collection">
+        {/* Studio & collection */}
+        <SectionCard eyebrow="Studio & collection">
+          {hasStudio ? (
+            <SettingsRow
+              icon="package"
+              title="Studio is active"
+              description="The whole living library is unlocked. Manage or cancel in your App Store account."
+              trailing={<StatusStamp tone="sage">Active</StatusStamp>}
+            />
+          ) : (
+            <SettingsRow
+              icon="package"
+              title="Unlock everything with Studio"
+              description="The full catalogue plus new items every week. 7 days free, cancel anytime."
+              trailing={<Chevron />}
+              onPress={() => router.push('/studio')}
+            />
+          )}
           <SettingsRow
-            icon="package"
-            title="Buy once, keep forever"
-            description="Everything you add from the shop is yours to keep — no subscription, no expiry."
-            trailing={<StatusStamp tone="sage">Yours</StatusStamp>}
+            divider
+            icon="heart"
+            title="Keepsake packs are yours forever"
+            description="Anything you buy once — or place in a journal — stays with you, subscription or not."
+            trailing={<StatusStamp tone="cream">Yours</StatusStamp>}
           />
           <SettingsRow
             divider
             icon="refresh-cw"
             title="Restore purchases"
-            description="Restore items you’ve bought from your App Store account — handy on a new device."
+            description="Restore your subscription and bought packs from your App Store account — handy on a new device."
             trailing={<Chevron />}
             onPress={async () => {
-              const ok = await restorePurchases();
+              const { studio, ownedPackIds } = await restorePurchases();
+              setHasStudio(studio);
+              if (ownedPackIds.length) setOwnedItemIds(ownedPackIds);
+              const restored = studio || ownedPackIds.length > 0;
               Alert.alert(
-                ok ? 'Purchases restored' : 'Nothing to restore',
-                ok
-                  ? 'Your previously bought items are back in your collection.'
+                restored ? 'Purchases restored' : 'Nothing to restore',
+                restored
+                  ? 'Your subscription and bought packs are back in your collection.'
                   : 'We couldn’t find any past purchases for this account.',
               );
             }}

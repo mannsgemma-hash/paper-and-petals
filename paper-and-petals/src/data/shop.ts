@@ -45,11 +45,20 @@ export const SHOP_TONES = {
 
 export type ShopTone = keyof typeof SHOP_TONES;
 
+/**
+ * Monetisation tier for a shop item (a "pack" of ≥10 pieces).
+ * - `free`      — in everyone's starter collection, no charge.
+ * - `pack`      — a one-time "keepsake" purchase; owned forever once bought.
+ * - `catalogue` — part of the living library, unlocked while subscribed to Studio.
+ */
+export type ItemTier = 'free' | 'pack' | 'catalogue';
+
 export interface ShopItem {
   id: string;
   category: string;
   name: string;
   price: number;
+  tier: ItemTier;
   tone: ShopTone;
   glyph: FeatherName;
   /** Real artwork — local require() number or Sanity URL { uri: string }. */
@@ -58,6 +67,26 @@ export interface ShopItem {
   items: number;
   owned: boolean;
   isNew: boolean;
+}
+
+/**
+ * The one place that decides whether an item can be placed in a journal.
+ * - free items are always available;
+ * - a one-time purchased pack is yours forever (in `ownedItems`);
+ * - a Studio subscription unlocks the whole catalogue *and* every keepsake pack.
+ *
+ * Note: items already placed in a saved spread snapshot their artwork, so they
+ * keep rendering even if a subscription later lapses — this gate only governs
+ * placing *new* items from the drawer/shop.
+ */
+export function isItemUnlocked(
+  item: Pick<ShopItem, 'id' | 'tier' | 'price'>,
+  ownedItems: Record<string, boolean>,
+  hasStudio: boolean,
+): boolean {
+  if (item.tier === 'free' || item.price === 0) return true;
+  if (ownedItems[item.id]) return true;
+  return hasStudio;
 }
 
 const FLOWERS = {
@@ -69,7 +98,37 @@ const FLOWERS = {
   zinnia: require('../../assets/flowers/06-zinnia-crimson.png'),
 };
 
-export const SHOP_CATALOGUE: ShopItem[] = [
+type RawShopItem = Omit<ShopItem, 'tier'>;
+
+/**
+ * Tier assignment by id. Everything not listed here defaults to `catalogue`
+ * (i.e. unlocked by a Studio subscription). Eventually Sanity drives this.
+ */
+const FREE_IDS = new Set([
+  'pap-linen', 'pap-grid', 'pap-dots',
+  'stk-checks', 'stk-hearts', 'stk-stars',
+  'tap-washi', 'tap-twine',
+  'eph-tickets', 'eph-cards',
+  'flo-blossom', 'flo-cosmos',
+  'frm-corner', 'typ-num',
+  'pnt-strokes', 'pnt-pencil',
+  'fab-stitch', 'pho-vellum',
+  'dec-doily', 'dec-bow',
+]);
+// Premium one-time "keepsake" packs — the curated collections plus a few
+// designer sets. Owned forever once bought; also included with Studio.
+const PACK_IDS = new Set([
+  'col-spring', 'col-romance', 'col-coastal', 'col-autumn',
+  'flo-press', 'fab-lace', 'eph-letters',
+]);
+
+function tierFor(id: string): ItemTier {
+  if (FREE_IDS.has(id)) return 'free';
+  if (PACK_IDS.has(id)) return 'pack';
+  return 'catalogue';
+}
+
+const RAW_CATALOGUE: RawShopItem[] = [
   // Curated collections
   { id: 'col-spring', category: 'collections', name: 'Spring meadow', price: 5.99, tone: 'sage', glyph: 'feather', desc: 'A 32-piece collection of pressed wildflowers, soft botanical papers, and hand-painted ribbon, made for cottagecore spreads.', items: 32, owned: false, isNew: true },
   { id: 'col-romance', category: 'collections', name: 'Old romance', price: 6.49, tone: 'rose', glyph: 'heart', desc: '24 pieces drawing from love letters, cherry blossoms, and lace handkerchiefs.', items: 24, owned: true, isNew: false },
@@ -138,6 +197,23 @@ export const SHOP_CATALOGUE: ShopItem[] = [
   { id: 'dec-ribbon', category: 'details', name: 'Velvet ribbons', price: 2.49, tone: 'oxblood', glyph: 'gift', desc: 'Eight velvet ribbon ends.', items: 8, owned: false, isNew: false },
   { id: 'dec-bow', category: 'details', name: 'Tiny paper bows', price: 1.49, tone: 'rose', glyph: 'gift', desc: 'Twelve tiny tied paper bows.', items: 12, owned: false, isNew: true },
 ];
+
+// Inject the monetisation tier, and zero the price of free items so the UI
+// reads "Free" rather than a leftover placeholder price.
+export const SHOP_CATALOGUE: ShopItem[] = RAW_CATALOGUE.map((it) => {
+  const tier = tierFor(it.id);
+  return { ...it, tier, price: tier === 'free' ? 0 : it.price, owned: false };
+});
+
+/**
+ * Display pricing for Studio. These must match the prices you configure in
+ * App Store Connect / Google Play (RevenueCat charges the store price, this is
+ * only what we render). Annual works out at $3.33/mo — a 44% saving.
+ */
+export const STUDIO_PRICING = {
+  monthly: { price: '$5.99', period: 'month' },
+  annual: { price: '$39.99', period: 'year', perMonth: '$3.33', saving: '44%' },
+} as const;
 
 /** Editor drawer categories — match the store taxonomy (minus "all"). */
 export const DRAWER_CATEGORIES = SHOP_CATEGORIES.filter((c) => c.id !== 'all');
