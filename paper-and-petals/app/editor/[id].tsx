@@ -2144,7 +2144,7 @@ export default function EditorScreen() {
               <Feather name="chevron-left" size={24} color={theme.color.fg2} />
             </Pressable>
             <Pressable
-              style={[styles.pageNav, { right: 8 }, activePage >= pages.length && styles.hidden]}
+              style={[styles.pageNav, { right: 80 }, activePage >= pages.length && styles.hidden]}
               onPress={() => goToPage(activePage + 1)}
             >
               <Feather name="chevron-right" size={24} color={theme.color.fg2} />
