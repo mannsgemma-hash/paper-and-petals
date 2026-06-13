@@ -10,7 +10,10 @@
     "ios": {
       "supportsTablet": true,
       "requireFullScreen": false,
-      "bundleIdentifier": "com.paperandpetals.app"
+      "bundleIdentifier": "com.paperandpetals.app",
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      }
     },
     "android": {
       "package": "com.paperandpetals.app",
@@ -29,6 +32,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-audio",
       [
         "expo-image-picker",
         {

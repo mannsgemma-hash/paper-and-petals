@@ -41,6 +41,8 @@ import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content
 import { supabase } from '../../src/lib/supabase';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
 import { screen, track } from '../../src/lib/analytics';
+import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import { SOUNDSCAPES, type SoundscapeId } from '../../src/lib/soundscapes';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -1303,6 +1305,7 @@ export default function EditorScreen() {
   const [exporting, setExporting] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [showTips, setShowTips] = useState(false);
+  const [showSoundPanel, setShowSoundPanel] = useState(false);
   const tapeToneIdx = useRef(0);
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
@@ -2180,6 +2183,14 @@ export default function EditorScreen() {
               <Feather name="grid" size={20} color={theme.palette.forest} />
             </Pressable>
 
+            {/* Ambient soundscapes */}
+            <Pressable
+              style={[styles.miniFab, { top: 334 }, showSoundPanel && styles.miniFabActive]}
+              onPress={() => setShowSoundPanel((v) => !v)}
+            >
+              <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
+            </Pressable>
+
             {/* Pen-mode hint */}
             {penMode && (
               <View style={styles.penHint} pointerEvents="none">
@@ -2369,6 +2380,9 @@ export default function EditorScreen() {
           </View>
         )}
 
+        {/* ── Soundscape player ────────────────────────────────────── */}
+        <SoundscapeBar visible={showSoundPanel} onClose={() => setShowSoundPanel(false)} />
+
         {/* ── First-run tips ────────────────────────────────────────── */}
         {showTips && (
           <View style={styles.textModalScrim}>
@@ -2416,6 +2430,140 @@ export default function EditorScreen() {
     </GestureHandlerRootView>
   );
 }
+
+// ─── Soundscape bar ───────────────────────────────────────────────────────────
+
+function SoundscapeBar({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+  const [activeId, setActiveId] = useState<SoundscapeId | null>(null);
+  const player = useAudioPlayer(null);
+
+  useEffect(() => {
+    setAudioModeAsync({ playsInSilentMode: true, shouldPlayInBackground: true }).catch(() => {});
+  }, []);
+
+  const pick = (id: SoundscapeId) => {
+    const sc = SOUNDSCAPES.find((s) => s.id === id);
+    if (!sc) return;
+    if (activeId === id) {
+      player.pause();
+      setActiveId(null);
+    } else {
+      player.replace(sc.src);
+      player.loop = true;
+      player.play();
+      setActiveId(id);
+    }
+  };
+
+  const stop = () => {
+    player.pause();
+    setActiveId(null);
+  };
+
+  return (
+    <View style={[soundStyles.wrap, !visible && { display: 'none' }]} pointerEvents={visible ? 'box-none' : 'none'}>
+      <View style={soundStyles.bar}>
+        <Text style={soundStyles.label}>Ambience</Text>
+        <View style={soundStyles.buttons}>
+          {SOUNDSCAPES.map((sc) => {
+            const isActive = activeId === sc.id;
+            return (
+              <Pressable
+                key={sc.id}
+                style={[soundStyles.chip, isActive && soundStyles.chipActive]}
+                onPress={() => pick(sc.id)}
+              >
+                <Feather name={sc.icon as any} size={15} color={isActive ? theme.palette.cream : theme.palette.forest} />
+                <Text style={[soundStyles.chipLabel, isActive && soundStyles.chipLabelActive]}>{sc.label}</Text>
+              </Pressable>
+            );
+          })}
+          {activeId && (
+            <Pressable style={soundStyles.stopBtn} onPress={stop}>
+              <Feather name="volume-x" size={15} color={theme.palette.terracotta} />
+            </Pressable>
+          )}
+        </View>
+        <Pressable style={soundStyles.closeBtn} onPress={onClose}>
+          <Feather name="x" size={14} color={theme.color.fg3} />
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const soundStyles = StyleSheet.create({
+  wrap: {
+    position: 'absolute',
+    bottom: 72,
+    left: 64,
+    right: 16,
+    zIndex: 50,
+    alignItems: 'center',
+    pointerEvents: 'box-none',
+  },
+  bar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.pill,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    ...theme.shadow.lift,
+  },
+  label: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 1.4,
+    color: theme.color.fg3,
+    textTransform: 'uppercase',
+    marginRight: 4,
+  },
+  buttons: { flexDirection: 'row', gap: 8, flex: 1 },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.color.bg2,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+  },
+  chipActive: {
+    backgroundColor: theme.palette.forest,
+    borderColor: theme.palette.forest,
+  },
+  chipLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    fontWeight: '500',
+    color: theme.palette.forest,
+  },
+  chipLabelActive: { color: theme.palette.cream },
+  stopBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: theme.color.bg2,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+});
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
 
