@@ -88,6 +88,19 @@ const ITEM_SHADOW = {
   elevation: 6,
 } as const;
 
+/**
+ * Shadow for cut-out artwork (transparent PNGs). Applied directly to the
+ * <Image> so iOS casts the shadow from the image's alpha — it hugs the petal
+ * shape instead of the square container. No `elevation`: Android only does
+ * rectangular box shadows, which would look wrong behind a cut-out.
+ */
+const ITEM_IMG_SHADOW = {
+  shadowColor: '#4B4038',
+  shadowOpacity: 0.34,
+  shadowRadius: 6,
+  shadowOffset: { width: 0, height: 4 },
+} as const;
+
 /** Warm ink colours offered by the text editor, drawn from the brand palette. */
 const TEXT_COLORS = [
   theme.palette.charcoal,
@@ -506,9 +519,14 @@ function PlacedItemView({
               />
             </Svg>
           ) : (
-            <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }, liftShadow]}>
+            <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }, !item.flowerAsset && liftShadow]}>
               {item.flowerAsset ? (
-                <Image source={item.flowerAsset as any} style={styles.itemImage} resizeMode="contain" />
+                // Shadow on the image itself so iOS shapes it to the cut-out art.
+                <Image
+                  source={item.flowerAsset as any}
+                  style={[styles.itemImage, item.shadow && ITEM_IMG_SHADOW]}
+                  resizeMode="contain"
+                />
               ) : (
                 <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />
               )}
