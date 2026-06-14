@@ -829,11 +829,11 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
         const idx = EDITOR_CATEGORIES.findIndex(c => c.id === hoveredCategory);
         const label = EDITOR_CATEGORIES[idx]?.label;
         if (!label) return null;
-        // top relative to drawerBody: 8px tabRail paddingTop + idx * 44 (tab 40 + gap 4) + 20 (half tab)
-        const topOffset = 8 + idx * 44 + 20;
+        // top relative to drawerBody: 8px tabRail paddingTop + idx * 38 (tab 36 + gap 2) + 18 (half tab)
+        const topOffset = 8 + idx * 38 + 18;
         return (
           <View
-            style={[styles.catTooltip, { top: topOffset, right: 52 }]}
+            style={[styles.catTooltip, { top: topOffset, right: 44 }]}
             pointerEvents="none"
           >
             <Text style={styles.tooltipText}>{label}</Text>
@@ -1327,14 +1327,14 @@ export default function EditorScreen() {
   const flipRot = useSharedValue(0);
 
   // ── Drawer animation ──────────────────────────────────────────────────────
-  const drawerX = useSharedValue(360);
+  const drawerX = useSharedValue(420);
   const drawerAnimStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: drawerX.value }],
   }));
 
   const toggleDrawer = (open: boolean) => {
     setDrawerOpen(open);
-    drawerX.value = withTiming(open ? 0 : 360, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
+    drawerX.value = withTiming(open ? 0 : 420, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
   };
 
   // ── Load + save ─────────────────────────────────────────────────────────────
@@ -3074,13 +3074,13 @@ const styles = StyleSheet.create({
     top: 0,
     right: 0,
     bottom: 0,
-    width: 360,
+    width: 408,
     backgroundColor: theme.color.surface,
     borderLeftWidth: 1,
     borderLeftColor: theme.palette.hairline,
     ...theme.shadow.lift,
   },
-  drawerCompact: { width: 300 },
+  drawerCompact: { width: 340 },
   drawerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3102,8 +3102,8 @@ const styles = StyleSheet.create({
     color: theme.color.fg1,
     marginTop: 2,
   },
-  drawerBody: { flex: 1, flexDirection: 'row' },
-  drawerLeft: { flex: 1 },
+  drawerBody: { flex: 1, flexDirection: 'row', alignItems: 'stretch' },
+  drawerLeft: { flex: 1, minWidth: 0 },
   drawerSearch: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3197,19 +3197,21 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   tabRail: {
-    width: 52,
+    width: 44,
+    flexGrow: 0,
+    flexShrink: 0,
     borderLeftWidth: 1,
     borderLeftColor: theme.palette.hairlineSoft,
   },
-  tabRailContent: { paddingVertical: 8, alignItems: 'center', gap: 4 },
+  tabRailContent: { paddingVertical: 8, alignItems: 'center', gap: 2 },
   tabWrapper: {
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
   },
   tab: {
-    width: 40,
-    height: 40,
+    width: 36,
+    height: 36,
     borderRadius: theme.radius.sm,
     alignItems: 'center',
     justifyContent: 'center',
@@ -3222,7 +3224,7 @@ const styles = StyleSheet.create({
   // Category tooltip (appears to the LEFT of the tab rail icon)
   catTooltip: {
     position: 'absolute',
-    right: 48,
+    right: 40,
     top: '50%',
     marginTop: -13,
     backgroundColor: theme.color.surface,
