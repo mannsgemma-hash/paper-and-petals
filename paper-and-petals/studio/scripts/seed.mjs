@@ -3,6 +3,26 @@ const PROJECT_ID = 'cv53e819'
 const DATASET = 'production'
 const TOKEN = 'skXRiSU5BuCfRmzApfZW85xDiLViqUQYviGIpqVV06DeOPd7rXe8Zp1GFrCgjXjVyFzELC8wcS5VHzygByzVNwJHYSSiSnPfr2P088NBSbgsQudB7R1e7ngAhOjeQ5Tk8gZyNO3o3SBAUX4WajSVCZ6nQs3ReTnXbjVcVM6eTmjt2wqlcfAu'
 
+// Monetisation tiers — keep in sync with src/data/shop.ts.
+// Anything not listed is 'catalogue' (unlocked by the Studio subscription).
+const FREE_IDS = new Set([
+  'pap-linen', 'pap-grid', 'pap-dots',
+  'stk-checks', 'stk-hearts', 'stk-stars',
+  'tap-washi', 'tap-twine',
+  'eph-tickets', 'eph-cards',
+  'flo-blossom', 'flo-cosmos',
+  'frm-corner', 'typ-num',
+  'pnt-strokes', 'pnt-pencil',
+  'fab-stitch', 'pho-vellum',
+  'dec-doily', 'dec-bow',
+])
+const PACK_IDS = new Set([
+  'col-spring', 'col-romance', 'col-coastal', 'col-autumn',
+  'flo-press', 'fab-lace', 'eph-letters',
+])
+const tierFor = (id) =>
+  FREE_IDS.has(id) ? 'free' : PACK_IDS.has(id) ? 'pack' : 'catalogue'
+
 const SHOP_ITEMS = [
   // Curated collections
   { id: 'col-spring', category: 'collections', name: 'Spring meadow', price: 5.99, tone: 'sage', glyph: 'feather', desc: 'A 32-piece collection of pressed wildflowers, soft botanical papers, and hand-painted ribbon, made for cottagecore spreads.', items: 32 },
@@ -73,21 +93,24 @@ const SHOP_ITEMS = [
   { id: 'dec-bow', category: 'details', name: 'Tiny paper bows', price: 1.49, tone: 'rose', glyph: 'gift', desc: 'Twelve tiny tied paper bows.', items: 12 },
 ]
 
-const mutations = SHOP_ITEMS.map(item => ({
-  createOrReplace: {
-    _type: 'item',
-    _id: `item-${item.id}`,
-    name: item.name,
-    category: item.category,
-    tier: item.price > 0 ? 'paid' : 'free',
-    price: item.price,
-    publishAt: new Date().toISOString(),
-    description: item.desc,
-    glyphFallback: item.glyph,
-    tone: item.tone,
-    itemCount: item.items,
+const mutations = SHOP_ITEMS.map(item => {
+  const tier = tierFor(item.id)
+  return {
+    createOrReplace: {
+      _type: 'item',
+      _id: `item-${item.id}`,
+      name: item.name,
+      category: item.category,
+      tier,
+      price: tier === 'free' ? 0 : item.price,
+      publishAt: new Date().toISOString(),
+      description: item.desc,
+      glyphFallback: item.glyph,
+      tone: item.tone,
+      itemCount: item.items,
+    }
   }
-}))
+})
 
 const res = await fetch(
   `https://${PROJECT_ID}.api.sanity.io/v2021-10-21/data/mutate/${DATASET}`,
