@@ -53,7 +53,11 @@ const MIN_VIS = 30;
 const PAGE_W = SPREAD_W / 2;
 const DEFAULT_ITEM_SIZE = 120;
 const MIN_ITEM_SIZE = 60;
-const MAX_ITEM_SIZE = 380;
+// No practical upper bound: items may be sized larger than a page, in which
+// case the parts that fall outside the spread are clipped (spreadInner has
+// overflow: 'hidden'). The ceiling is just a sanity guard against runaway
+// gestures — twice the spread is far bigger than the visible page.
+const MAX_ITEM_SIZE = SPREAD_W * 2;
 // Rotate handle sits below the selection frame: 14px stem + half of the 26px knob.
 const ROTATE_HANDLE_DIST = 14 + 13;
 const FLIP_DURATION = 310; // per half-turn — 620ms total
@@ -69,9 +73,9 @@ const NEW_TEXT_H = 72;
 const TAPE_W = 200;
 const TAPE_H = 32;
 const TAPE_MIN_W = 40;
-const TAPE_MAX_W = SPREAD_W;
+const TAPE_MAX_W = SPREAD_W * 2;
 const TAPE_MIN_H = 14;
-const TAPE_MAX_H = 90;
+const TAPE_MAX_H = 320;
 /** Tape tones cycled by the tape tool, in placement order. */
 const TAPE_TONES: (keyof typeof SHOP_TONES)[] = ['sage', 'rose', 'amber', 'blue', 'mauve', 'cream'];
 
@@ -449,7 +453,12 @@ function PlacedItemView({
     width: itemW.value,
     height: itemH.value,
     transform: [{ rotate: `${rot.value}deg` }],
-    zIndex: isSelected ? 9999 : item.z,
+    // Render order doubles every item's z so the selected one can be lifted
+    // exactly half a layer (×2 + 1) above its own position — enough that its
+    // frame/handles clear the item directly beneath it, while still respecting
+    // the real z-order against everything else. (Pinning it to a flat 9999
+    // made bring-forward/send-back invisible while an item was selected.)
+    zIndex: isSelected ? item.z * 2 + 1 : item.z * 2,
   }));
 
   // Live font sizing for text items: the lettering tracks the box height so the
@@ -731,8 +740,15 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
   const renderTile = (item: ShopItem, keyPrefix = '') => {
     const toneKey = item.tone as keyof typeof SHOP_TONES;
     const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
+    const isHovered = hoveredItemId === keyPrefix + item.id;
     return (
-      <View key={keyPrefix + item.id} style={styles.tileWrapper}>
+      // Lift the hovered tile above its grid siblings so its tooltip (which
+      // overflows below the tile) paints on top of the following rows instead
+      // of slipping underneath them.
+      <View
+        key={keyPrefix + item.id}
+        style={[styles.tileWrapper, isHovered && styles.tileWrapperHovered]}
+      >
         <Pressable
           style={[
             styles.tile,
@@ -758,7 +774,7 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
             </View>
           )}
         </Pressable>
-        {hoveredItemId === keyPrefix + item.id && (
+        {isHovered && (
           <View style={styles.itemTooltip} pointerEvents="none">
             <Text style={styles.tooltipText}>{item.name}</Text>
           </View>
@@ -1512,6 +1528,7 @@ export default function EditorScreen() {
         : p,
     );
     pushHistory(newPages);
+    scheduleSave(newPages);
   }
 
   function handleSendBack(id: string) {
@@ -1531,6 +1548,7 @@ export default function EditorScreen() {
         : p,
     );
     pushHistory(newPages);
+    scheduleSave(newPages);
   }
 
   function handleDeleteSelected() {
@@ -1905,9 +1923,15 @@ export default function EditorScreen() {
   const toolbarLeft = selectedItem
     ? containerW / 2 + (selectedItem.x - SPREAD_W / 2) * spreadScale - 56
     : 0;
-  const toolbarTop = selectedItem
+  // Prefer just above the item; if that would clip off the top of the canvas,
+  // flip the toolbar to just below the item instead.
+  const toolbarAbove = selectedItem
     ? containerH / 2 + (selectedItem.y - selectedItem.h / 2 - SPREAD_H / 2) * spreadScale - 56
     : 0;
+  const toolbarBelow = selectedItem
+    ? containerH / 2 + (selectedItem.y + selectedItem.h / 2 - SPREAD_H / 2) * spreadScale + 12
+    : 0;
+  const toolbarTop = toolbarAbove < 4 ? toolbarBelow : toolbarAbove;
 
   const flipSide: 'left' | 'right' = flipState
     ? (flipState.dir === 'next') === (flipState.phase === 'A')
@@ -3238,6 +3262,11 @@ const styles = StyleSheet.create({
   // Tile wrapper for item tooltip positioning
   tileWrapper: {
     position: 'relative',
+  },
+  // Hovered tile floats above its neighbours so the tooltip isn't covered.
+  tileWrapperHovered: {
+    zIndex: 200,
+    elevation: 20,
   },
   // Category tooltip (appears to the LEFT of the tab rail icon)
   catTooltip: {
