@@ -183,16 +183,20 @@ async function cropBlob(rgba, w, blob) {
       out[o + 3] = rgba[s + 3]
     }
   }
-  let img = sharp(out, { raw: { width: bw, height: bh, channels: 4 } })
-  img = sharp(await img.trim().toBuffer()).ensureAlpha()
-  if (PAD > 0) {
-    img = sharp(
-      await img
-        .extend({ top: PAD, bottom: PAD, left: PAD, right: PAD, background: { r: 0, g: 0, b: 0, alpha: 0 } })
-        .toBuffer(),
-    )
+  // Encode to PNG before any re-wrap — a trimmed *raw* buffer has no format header.
+  let png
+  try {
+    png = await sharp(out, { raw: { width: bw, height: bh, channels: 4 } }).trim().png().toBuffer()
+  } catch {
+    png = await sharp(out, { raw: { width: bw, height: bh, channels: 4 } }).png().toBuffer()
   }
-  return img.png().toBuffer()
+  if (PAD > 0) {
+    png = await sharp(png)
+      .extend({ top: PAD, bottom: PAD, left: PAD, right: PAD, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer()
+  }
+  return png
 }
 
 async function splitSheet(buf, baseName) {
