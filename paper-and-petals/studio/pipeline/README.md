@@ -83,6 +83,33 @@ npm run ingest -- --no-bg            # never remove background
 npm run ingest -- --publish          # write live docs instead of drafts (skip review)
 ```
 
+## Background removal & sheet splitting (`extract`)
+
+A prep tool for before ingest. Two modes:
+
+```bash
+# Just remove backgrounds for a folder (or one file) → transparent PNGs
+node pipeline/extract.mjs ./raw --out ./cutouts
+
+# Split a sheet of many elements into individual cut-out items
+node pipeline/extract.mjs ./sheets/spring-stickers.png --split --out "./incoming/Spring Meadow"
+```
+
+`--split` removes the background, finds each separated blob of artwork, and saves
+it as its own transparent PNG (`spring-stickers-01.png`, `-02.png`, …). Ideal for
+sticker sheets / contact-sheet generations where items don't touch.
+
+Useful options: `--gap <px>` bridges thin breaks so one item doesn't split in two
+(default 4; raise if a flower loses a petal); `--min-size <px>` drops specks
+(default 28); `--pad <px>` adds breathing room (default 12); `--remove-bg` /
+`--no-bg` force or skip removal; `--max-edge <px>` caps working resolution
+(default 2400). Items that physically overlap merge into one piece — separate
+them on the page, or raise `--min-size` and re-run.
+
+Output naming is top-to-bottom, left-to-right. Then just rename the output folder
+into `incoming/` and run `npm run ingest`. (Needs `@imgly/background-removal-node`
+installed for opaque art; transparent input is used as-is.)
+
 ## Review & publish
 
 Everything lands as `drafts.*`, invisible to the app. Open `npm run dev`

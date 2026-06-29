@@ -7,7 +7,8 @@
     "build": "sanity build",
     "deploy": "sanity deploy",
     "seed": "node --experimental-vm-modules scripts/seed.mjs",
-    "ingest": "node pipeline/ingest.mjs"
+    "ingest": "node pipeline/ingest.mjs",
+    "extract": "node pipeline/extract.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
