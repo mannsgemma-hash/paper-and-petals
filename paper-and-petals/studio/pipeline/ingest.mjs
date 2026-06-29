@@ -103,8 +103,11 @@ async function processImage(buf, filename) {
     const remove = await loadBgRemover()
     if (remove) {
       try {
-        const blob = await remove(working) // accepts Buffer; returns a Blob
-        working = Buffer.from(await blob.arrayBuffer())
+        // Hand the remover a real PNG Blob with an explicit type — a bare buffer
+        // gets wrapped as a typeless blob and fails format detection.
+        const pngInput = await sharp(working).png().toBuffer()
+        const result = await remove(new Blob([pngInput], { type: 'image/png' }))
+        working = Buffer.from(await result.arrayBuffer())
         console.log('  · removed background')
       } catch (e) {
         console.warn(`  ⚠ background removal failed (${e?.message ?? e}) — using original`)
