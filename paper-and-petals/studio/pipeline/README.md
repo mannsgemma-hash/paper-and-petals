@@ -16,7 +16,12 @@ npm install
 npm install @imgly/background-removal-node
 ```
 
-Set credentials (a `.env` is fine if you load it, or export inline):
+Set credentials. This is a local content tool that runs wherever Node does —
+typically the **PC** (the Mac is only needed for the iOS dev build). It makes
+**outbound** HTTPS calls only (Sanity + Anthropic), so a firewall that blocks
+Metro's LAN port won't affect it.
+
+macOS / Linux (bash):
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
@@ -24,6 +29,22 @@ export SANITY_WRITE_TOKEN=sk...        # a write token from sanity.io/manage
 # optional overrides (defaults shown):
 # export SANITY_PROJECT_ID=cv53e819
 # export SANITY_DATASET=production
+```
+
+Windows PowerShell (set for the session, then run):
+
+```powershell
+$env:ANTHROPIC_API_KEY="sk-ant-..."
+$env:SANITY_WRITE_TOKEN="sk..."
+npm run ingest
+```
+
+Windows cmd.exe:
+
+```bat
+set ANTHROPIC_API_KEY=sk-ant-...
+set SANITY_WRITE_TOKEN=sk...
+npm run ingest
 ```
 
 ## Folder convention
