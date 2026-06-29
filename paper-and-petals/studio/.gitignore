@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.sanity/
+
+# Pipeline working folders — raw art in, generated previews out (don't commit)
+incoming/
+pipeline/out/

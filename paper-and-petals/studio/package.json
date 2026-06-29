@@ -6,13 +6,20 @@
     "dev": "sanity dev",
     "build": "sanity build",
     "deploy": "sanity deploy",
-    "seed": "node --experimental-vm-modules scripts/seed.mjs"
+    "seed": "node --experimental-vm-modules scripts/seed.mjs",
+    "ingest": "node pipeline/ingest.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.40.0",
+    "@sanity/client": "^7.22.1",
     "@sanity/vision": "^3.72.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "sanity": "^3.72.1"
+    "sanity": "^3.72.1",
+    "sharp": "^0.33.5"
+  },
+  "optionalDependencies": {
+    "@imgly/background-removal-node": "^1.4.5"
   },
   "devDependencies": {
     "@sanity/types": "^3.72.1",
