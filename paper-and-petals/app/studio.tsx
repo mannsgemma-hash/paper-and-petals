@@ -22,7 +22,7 @@ import { screen, track } from '../src/lib/analytics';
 
 // Studio subscription screen. Presented as a modal. Annual is pre-selected as
 // the best value; a 7-day trial and "cancel anytime" remove the pressure, and
-// the keepsake-pack alternative is always one tap away in the shop.
+// the buy-a-collection alternative is always one tap away in the shop.
 
 const BENEFITS: { icon: any; title: string; body: string }[] = [
   {
@@ -46,7 +46,8 @@ export default function StudioScreen() {
   const router = useRouter();
   const hasStudio = useAppStore((s) => s.hasStudio);
   const setHasStudio = useAppStore((s) => s.setHasStudio);
-  const setOwnedItemIds = useAppStore((s) => s.setOwnedItemIds);
+  const setOwnedCollectionIds = useAppStore((s) => s.setOwnedCollectionIds);
+  const setLegacyOwnedItemIds = useAppStore((s) => s.setLegacyOwnedItemIds);
   const [plan, setPlan] = useState<StudioPlan>('annual');
   const [busy, setBusy] = useState(false);
 
@@ -77,15 +78,17 @@ export default function StudioScreen() {
   const restore = async () => {
     setBusy(true);
     try {
-      const { studio, ownedPackIds } = await restorePurchases();
+      const { studio, ownedCollectionIds, legacyOwnedItemIds } = await restorePurchases();
       setHasStudio(studio);
-      if (ownedPackIds.length) setOwnedItemIds(ownedPackIds);
+      if (ownedCollectionIds.length) setOwnedCollectionIds(ownedCollectionIds);
+      if (legacyOwnedItemIds.length) setLegacyOwnedItemIds(legacyOwnedItemIds);
+      const restoredSomething = studio || ownedCollectionIds.length || legacyOwnedItemIds.length;
       Alert.alert(
-        studio || ownedPackIds.length ? 'Purchases restored' : 'Nothing to restore',
+        restoredSomething ? 'Purchases restored' : 'Nothing to restore',
         studio
           ? 'Your Studio subscription is active again.'
-          : ownedPackIds.length
-            ? 'Your keepsake packs are back in your collection.'
+          : restoredSomething
+            ? 'Your collections are back in your library.'
             : 'We couldn’t find any past purchases for this account.',
       );
     } finally {
@@ -170,10 +173,10 @@ export default function StudioScreen() {
               <Text style={styles.restoreText}>Restore purchases</Text>
             </Pressable>
 
-            {/* Keepsake alternative */}
+            {/* One-time alternative */}
             <View style={styles.alt}>
               <Text style={styles.altText}>
-                Prefer to buy once? Individual keepsake packs are yours forever.
+                Prefer to buy once? Individual collections are yours forever.
               </Text>
               <Pressable onPress={() => router.replace('/(tabs)/shop')}>
                 <Text style={styles.altLink}>Browse the shop →</Text>

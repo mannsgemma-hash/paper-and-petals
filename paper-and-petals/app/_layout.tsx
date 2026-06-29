@@ -21,10 +21,12 @@ export default function RootLayout() {
     initRevenueCat();
     initAnalytics();
     initNotifications();
-    // Sync subscription + owned packs from RevenueCat into the store.
-    syncEntitlements().then(({ studio, ownedPackIds }) => {
-      useAppStore.getState().setHasStudio(studio);
-      if (ownedPackIds.length) useAppStore.getState().setOwnedItemIds(ownedPackIds);
+    // Sync subscription + owned collections from RevenueCat into the store.
+    syncEntitlements().then(({ studio, ownedCollectionIds, legacyOwnedItemIds }) => {
+      const store = useAppStore.getState();
+      store.setHasStudio(studio);
+      if (ownedCollectionIds.length) store.setOwnedCollectionIds(ownedCollectionIds);
+      if (legacyOwnedItemIds.length) store.setLegacyOwnedItemIds(legacyOwnedItemIds);
     });
   }, []);
 

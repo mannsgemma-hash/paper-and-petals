@@ -37,7 +37,7 @@ import { JOURNAL_FONTS, familyForFontKey } from '../../src/theme/fonts';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../src/data/shop';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
-import { fetchLiveItems, sanityItemToShopItem } from '../../src/services/content';
+import { fetchCatalogue } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
 import { screen, track } from '../../src/lib/analytics';
@@ -187,10 +187,6 @@ const FLOWER_ASSETS = [
 // ─── Drawer items catalogue ───────────────────────────────────────────────────
 
 const DRAWER_ITEMS: Record<string, { id: string; glyph: string; tone: keyof typeof SHOP_TONES; flowerAsset?: number }[]> = {
-  collections: [
-    { id: 'col-1', glyph: 'package', tone: 'sage' }, { id: 'col-2', glyph: 'package', tone: 'rose' },
-    { id: 'col-3', glyph: 'package', tone: 'blue' }, { id: 'col-4', glyph: 'package', tone: 'amber' },
-  ],
   papers: [
     { id: 'pap-1', glyph: 'file-text', tone: 'cream' }, { id: 'pap-2', glyph: 'file-text', tone: 'sage' },
     { id: 'pap-3', glyph: 'file', tone: 'amber' }, { id: 'pap-4', glyph: 'file', tone: 'rose' },
@@ -663,8 +659,8 @@ function ItemToolbar({
 
 // ─── DrawerBody ───────────────────────────────────────────────────────────────
 
-/** Visible categories in the editor drawer — exclude 'all' and 'collections'. */
-const EDITOR_CATEGORIES = DRAWER_CATEGORIES.filter((c) => c.id !== 'collections');
+/** Visible categories in the editor drawer (DRAWER_CATEGORIES already excludes 'all'). */
+const EDITOR_CATEGORIES = DRAWER_CATEGORIES;
 
 interface DrawerBodyProps {
   shopItems: ShopItem[];
@@ -678,13 +674,16 @@ interface DrawerBodyProps {
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const ownedItems = useAppStore((s) => s.ownedItems);
+  const ownedCollections = useAppStore((s) => s.ownedCollections);
+  const legacyOwnedItems = useAppStore((s) => s.legacyOwnedItems);
   const hasStudio = useAppStore((s) => s.hasStudio);
   const recentItemIds = useAppStore((s) => s.recentItemIds);
 
-  // Only items the player can actually use show in the drawer: free, owned
-  // keepsake packs, or everything when subscribed to Studio.
-  const isOwned = (item: ShopItem) => isItemUnlocked(item, ownedItems, hasStudio);
+  // Only items the player can actually use show in the drawer: free items,
+  // items in an owned collection, grandfathered one-time buys, or everything
+  // when subscribed to Studio.
+  const isOwned = (item: ShopItem) =>
+    isItemUnlocked(item, ownedCollections, hasStudio, legacyOwnedItems);
 
   // Build a map from category key → ShopItem[], fallback to DRAWER_ITEMS if store is empty
   const itemsByCategory: Record<string, ShopItem[]> = shopItems.length > 0
@@ -703,14 +702,12 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
             id: it.id,
             category: cat,
             name: it.id,
-            price: 0,
-            tier: 'free' as const,
             tone: it.tone as ShopItem['tone'],
             glyph: it.glyph as ShopItem['glyph'],
             flowerAsset: it.flowerAsset,
             desc: '',
-            items: 0,
-            owned: true,
+            free: true,
+            collectionIds: [],
             isNew: false,
           })),
         ]),
@@ -1294,6 +1291,7 @@ export default function EditorScreen() {
   const renameJournal = useAppStore((s) => s.renameJournal);
   const shopItems = useAppStore((s) => s.shopItems);
   const setShopItems = useAppStore((s) => s.setShopItems);
+  const setCollections = useAppStore((s) => s.setCollections);
   const pendingDelivery = useAppStore((s) => s.pendingDelivery);
   const clearPendingDelivery = useAppStore((s) => s.clearPendingDelivery);
   const noteRecentItem = useAppStore((s) => s.noteRecentItem);
@@ -1316,10 +1314,12 @@ export default function EditorScreen() {
     markEditorTipsSeen();
   }
 
-  // Refresh live Sanity items on mount (same as shop screen)
+  // Refresh live Sanity catalogue on mount (same as shop screen). Keep the
+  // static fallback when a half is empty so the offline drawer stays usable.
   useEffect(() => {
-    fetchLiveItems().then((results) => {
-      if (results.length > 0) setShopItems(results.map(sanityItemToShopItem));
+    fetchCatalogue().then(({ items, collections }) => {
+      if (items.length > 0) setShopItems(items);
+      if (collections.length > 0) setCollections(collections);
     });
   }, []);
 

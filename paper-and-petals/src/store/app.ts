@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SHOP_CATALOGUE, ShopItem } from '../data/shop';
+import { SHOP_CATALOGUE, FALLBACK_COLLECTIONS, ShopItem, Collection } from '../data/shop';
 
 /** Launch state drives where SCR-01 routes after the bar fills. */
 export type LaunchState = 'new' | 'returning';
@@ -27,10 +27,17 @@ const SEED_JOURNALS: Journal[] = [
 interface AppState {
   launchState: LaunchState;
   journals: Journal[];
-  ownedItems: Record<string, boolean>;
+  /** Collections the player has bought one-time (owned forever). */
+  ownedCollections: Record<string, boolean>;
+  /**
+   * Items bought one-time under the *old* per-item model. Kept only so existing
+   * buyers never lose what they paid for — never written to by new purchases.
+   */
+  legacyOwnedItems: Record<string, boolean>;
   /** True while the player has an active Studio subscription. */
   hasStudio: boolean;
   shopItems: ShopItem[];
+  collections: Collection[];
   /** Items just purchased and waiting to be "unwrapped" in the editor. */
   pendingDelivery: ShopItem[];
   /** Most-recently placed item ids, newest first (capped). */
@@ -38,13 +45,17 @@ interface AppState {
   setLaunchState: (s: LaunchState) => void;
   renameJournal: (id: string, name: string) => void;
   addJournal: () => Journal;
-  purchaseItem: (id: string) => void;
   setShopItems: (items: ShopItem[]) => void;
-  markItemOwned: (id: string) => void;
+  setCollections: (collections: Collection[]) => void;
+  /** Record a collection as owned (after a successful purchase). */
+  markCollectionOwned: (id: string) => void;
   setHasStudio: (v: boolean) => void;
-  /** Mark several packs owned at once (used by restore / boot sync). */
-  setOwnedItemIds: (ids: string[]) => void;
+  /** Mark several collections owned at once (restore / boot sync). */
+  setOwnedCollectionIds: (ids: string[]) => void;
+  /** Record legacy one-time item purchases for grandfathering. */
+  setLegacyOwnedItemIds: (ids: string[]) => void;
   queueDelivery: (item: ShopItem) => void;
+  queueDeliveryMany: (items: ShopItem[]) => void;
   clearPendingDelivery: () => void;
   noteRecentItem: (id: string) => void;
 }
@@ -52,11 +63,13 @@ interface AppState {
 export const useAppStore = create<AppState>((set, get) => ({
   launchState: 'new',
   journals: SEED_JOURNALS,
-  ownedItems: {},
+  ownedCollections: {},
+  legacyOwnedItems: {},
   hasStudio: false,
   pendingDelivery: [],
   recentItemIds: [],
   shopItems: SHOP_CATALOGUE,
+  collections: FALLBACK_COLLECTIONS,
   setLaunchState: (launchState) => set({ launchState }),
   renameJournal: (id, name) =>
     set((s) => ({
@@ -77,30 +90,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     return journal;
   },
-  purchaseItem: (id) =>
-    set((s) => ({ ownedItems: { ...s.ownedItems, [id]: true } })),
   setShopItems: (items) => set({ shopItems: items }),
-  markItemOwned: (id) =>
-    set((s) => ({
-      ownedItems: { ...s.ownedItems, [id]: true },
-      shopItems: s.shopItems.map((it) =>
-        it.id === id ? { ...it, owned: true } : it
-      ),
-    })),
+  setCollections: (collections) => set({ collections }),
+  markCollectionOwned: (id) =>
+    set((s) => ({ ownedCollections: { ...s.ownedCollections, [id]: true } })),
   setHasStudio: (hasStudio) => set({ hasStudio }),
-  setOwnedItemIds: (ids) =>
+  setOwnedCollectionIds: (ids) =>
     set((s) => {
-      const owned = { ...s.ownedItems };
+      const owned = { ...s.ownedCollections };
       ids.forEach((id) => {
         owned[id] = true;
       });
-      const idSet = new Set(ids);
-      return {
-        ownedItems: owned,
-        shopItems: s.shopItems.map((it) =>
-          idSet.has(it.id) ? { ...it, owned: true } : it
-        ),
-      };
+      return { ownedCollections: owned };
+    }),
+  setLegacyOwnedItemIds: (ids) =>
+    set((s) => {
+      const owned = { ...s.legacyOwnedItems };
+      ids.forEach((id) => {
+        owned[id] = true;
+      });
+      return { legacyOwnedItems: owned };
     }),
   queueDelivery: (item) =>
     set((s) => ({
@@ -108,6 +117,12 @@ export const useAppStore = create<AppState>((set, get) => ({
         ? s.pendingDelivery
         : [...s.pendingDelivery, item],
     })),
+  queueDeliveryMany: (items) =>
+    set((s) => {
+      const seen = new Set(s.pendingDelivery.map((p) => p.id));
+      const fresh = items.filter((it) => !seen.has(it.id));
+      return { pendingDelivery: [...s.pendingDelivery, ...fresh] };
+    }),
   clearPendingDelivery: () => set({ pendingDelivery: [] }),
   noteRecentItem: (id) =>
     set((s) => ({

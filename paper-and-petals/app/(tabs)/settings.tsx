@@ -53,7 +53,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const hasStudio = useAppStore((s) => s.hasStudio);
   const setHasStudio = useAppStore((s) => s.setHasStudio);
-  const setOwnedItemIds = useAppStore((s) => s.setOwnedItemIds);
+  const setOwnedCollectionIds = useAppStore((s) => s.setOwnedCollectionIds);
+  const setLegacyOwnedItemIds = useAppStore((s) => s.setLegacyOwnedItemIds);
 
   const [prefs, setPrefs] = useState({
     sound: true,
@@ -142,7 +143,7 @@ export default function SettingsScreen() {
           <SettingsRow
             divider
             icon="heart"
-            title="Keepsake packs are yours forever"
+            title="Collections you buy are yours forever"
             description="Anything you buy once — or place in a journal — stays with you, subscription or not."
             trailing={<StatusStamp tone="cream">Yours</StatusStamp>}
           />
@@ -150,17 +151,18 @@ export default function SettingsScreen() {
             divider
             icon="refresh-cw"
             title="Restore purchases"
-            description="Restore your subscription and bought packs from your App Store account — handy on a new device."
+            description="Restore your subscription and bought collections from your App Store account — handy on a new device."
             trailing={<Chevron />}
             onPress={async () => {
-              const { studio, ownedPackIds } = await restorePurchases();
+              const { studio, ownedCollectionIds, legacyOwnedItemIds } = await restorePurchases();
               setHasStudio(studio);
-              if (ownedPackIds.length) setOwnedItemIds(ownedPackIds);
-              const restored = studio || ownedPackIds.length > 0;
+              if (ownedCollectionIds.length) setOwnedCollectionIds(ownedCollectionIds);
+              if (legacyOwnedItemIds.length) setLegacyOwnedItemIds(legacyOwnedItemIds);
+              const restored = studio || ownedCollectionIds.length > 0 || legacyOwnedItemIds.length > 0;
               Alert.alert(
                 restored ? 'Purchases restored' : 'Nothing to restore',
                 restored
-                  ? 'Your subscription and bought packs are back in your collection.'
+                  ? 'Your subscription and collections are back in your library.'
                   : 'We couldn’t find any past purchases for this account.',
               );
             }}

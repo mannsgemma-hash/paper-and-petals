@@ -1,7 +1,13 @@
 /**
- * SCR-06 Shop mock catalogue — mirrors ui_kits/app/Shop.jsx.
- * Categories ARE final; items are placeholders until the real
- * catalogue lands in Sanity (Phase 2).
+ * SCR-06 Shop catalogue — collection-first (bundles-only) model.
+ *
+ * Items are single pieces. Monetisation lives on *collections* (bundles):
+ * a collection is bought once (owned forever) or unlocked wholesale by a Studio
+ * subscription. Individual items are never sold. The free tier is a fixed set of
+ * items — standalone free pieces plus items inside "free" collections.
+ *
+ * Sanity is the live source of truth; the static data below is the offline
+ * fallback rendered when the network is unreachable.
  */
 
 import type { ComponentProps } from 'react';
@@ -15,9 +21,9 @@ export interface ShopCategory {
   icon: FeatherName;
 }
 
+// "collections" is no longer a category — collections are their own browse axis.
 export const SHOP_CATEGORIES: ShopCategory[] = [
   { id: 'all', label: 'All', icon: 'star' },
-  { id: 'collections', label: 'Collections', icon: 'package' },
   { id: 'papers', label: 'Papers & backgrounds', icon: 'file-text' },
   { id: 'stickers', label: 'Stickers', icon: 'circle' },
   { id: 'tape', label: 'Tape & fasteners', icon: 'paperclip' },
@@ -45,48 +51,72 @@ export const SHOP_TONES = {
 
 export type ShopTone = keyof typeof SHOP_TONES;
 
-/**
- * Monetisation tier for a shop item (a "pack" of ≥10 pieces).
- * - `free`      — in everyone's starter collection, no charge.
- * - `pack`      — a one-time "keepsake" purchase; owned forever once bought.
- * - `catalogue` — part of the living library, unlocked while subscribed to Studio.
- */
-export type ItemTier = 'free' | 'pack' | 'catalogue';
-
+/** A single piece. Whether it can be placed is governed by `isItemUnlocked`. */
 export interface ShopItem {
   id: string;
   category: string;
   name: string;
-  price: number;
-  tier: ItemTier;
   tone: ShopTone;
   glyph: FeatherName;
   /** Real artwork — local require() number or Sanity URL { uri: string }. */
   flowerAsset?: number | { uri: string };
   desc: string;
-  items: number;
-  owned: boolean;
+  /** In the free tier: standalone-free OR a member of a free collection. */
+  free: boolean;
+  /** Ids of every collection that contains this item (may be empty). */
+  collectionIds: string[];
   isNew: boolean;
+}
+
+/** Lightweight reference to a member item, used to render a collection's gallery. */
+export interface CollectionItemRef {
+  id: string;
+  name: string;
+  category: string;
+  tone: ShopTone;
+  glyph: FeatherName;
+  flowerAsset?: number | { uri: string };
+}
+
+/** A bundle — the only thing the shop sells. */
+export interface Collection {
+  id: string;
+  name: string;
+  palette: ShopTone;
+  /** Cover artwork — local require() number or Sanity URL { uri: string }. */
+  cover?: number | { uri: string };
+  whatYouGet: string;
+  /** One-time price; ignored when `free`. */
+  price: number;
+  free: boolean;
+  isNew: boolean;
+  /** Derived from `items.length` — never stored manually. */
+  pieceCount: number;
+  items: CollectionItemRef[];
 }
 
 /**
  * The one place that decides whether an item can be placed in a journal.
  * - free items are always available;
- * - a one-time purchased pack is yours forever (in `ownedItems`);
- * - a Studio subscription unlocks the whole catalogue *and* every keepsake pack.
+ * - owning a collection that contains the item unlocks it forever;
+ * - a Studio subscription unlocks every collection;
+ * - `legacyOwnedItems` grandfathers pieces bought one-time under the old
+ *   per-item model, so existing buyers never lose what they paid for.
  *
  * Note: items already placed in a saved spread snapshot their artwork, so they
  * keep rendering even if a subscription later lapses — this gate only governs
  * placing *new* items from the drawer/shop.
  */
 export function isItemUnlocked(
-  item: Pick<ShopItem, 'id' | 'tier' | 'price'>,
-  ownedItems: Record<string, boolean>,
+  item: Pick<ShopItem, 'id' | 'free' | 'collectionIds'>,
+  ownedCollections: Record<string, boolean>,
   hasStudio: boolean,
+  legacyOwnedItems: Record<string, boolean> = {},
 ): boolean {
-  if (item.tier === 'free' || item.price === 0) return true;
-  if (ownedItems[item.id]) return true;
-  return hasStudio;
+  if (item.free) return true;
+  if (hasStudio) return true;
+  if (item.collectionIds.some((id) => ownedCollections[id])) return true;
+  return !!legacyOwnedItems[item.id];
 }
 
 const FLOWERS = {
@@ -98,13 +128,10 @@ const FLOWERS = {
   zinnia: require('../../assets/flowers/06-zinnia-crimson.png'),
 };
 
-type RawShopItem = Omit<ShopItem, 'tier'>;
+// ─── Static fallback data (offline only; Sanity drives the live catalogue) ──────
 
-/**
- * Tier assignment by id. Everything not listed here defaults to `catalogue`
- * (i.e. unlocked by a Studio subscription). Eventually Sanity drives this.
- */
-const FREE_IDS = new Set([
+/** Fixed free-tier items (standalone). */
+const FREE_ITEM_IDS = new Set([
   'pap-linen', 'pap-grid', 'pap-dots',
   'stk-checks', 'stk-hearts', 'stk-stars',
   'tap-washi', 'tap-twine',
@@ -115,94 +142,109 @@ const FREE_IDS = new Set([
   'fab-stitch', 'pho-vellum',
   'dec-doily', 'dec-bow',
 ]);
-// Premium one-time "keepsake" packs — the curated collections plus a few
-// designer sets. Owned forever once bought; also included with Studio.
-const PACK_IDS = new Set([
-  'col-spring', 'col-romance', 'col-coastal', 'col-autumn',
-  'flo-press', 'fab-lace', 'eph-letters',
-]);
 
-function tierFor(id: string): ItemTier {
-  if (FREE_IDS.has(id)) return 'free';
-  if (PACK_IDS.has(id)) return 'pack';
-  return 'catalogue';
-}
+/** Which items each fallback collection contains. Every non-free item lives in one. */
+const COLLECTION_MEMBERS: Record<string, string[]> = {
+  'col-spring': ['pap-foxed', 'flo-press', 'flo-zinnia', 'fab-linen', 'dec-ribbon'],
+  'col-romance': ['eph-letters', 'fab-lace', 'pap-ledger', 'frm-oval', 'pnt-splash'],
+  'col-coastal': ['eph-postage', 'tap-stripes', 'pho-polaroid', 'frm-tag', 'tap-pins'],
+  'col-autumn': ['typ-quotes', 'typ-labels', 'stk-seals', 'stk-arrows', 'tap-floral'],
+};
 
-const RAW_CATALOGUE: RawShopItem[] = [
-  // Curated collections
-  { id: 'col-spring', category: 'collections', name: 'Spring meadow', price: 5.99, tone: 'sage', glyph: 'feather', desc: 'A 32-piece collection of pressed wildflowers, soft botanical papers, and hand-painted ribbon, made for cottagecore spreads.', items: 32, owned: false, isNew: true },
-  { id: 'col-romance', category: 'collections', name: 'Old romance', price: 6.49, tone: 'rose', glyph: 'heart', desc: '24 pieces drawing from love letters, cherry blossoms, and lace handkerchiefs.', items: 24, owned: true, isNew: false },
-  { id: 'col-coastal', category: 'collections', name: 'Coastal almanac', price: 5.99, tone: 'blue', glyph: 'anchor', desc: 'Tide charts, soft-tone driftwood, postage from sea-side towns. 28 pieces.', items: 28, owned: false, isNew: false },
-  { id: 'col-autumn', category: 'collections', name: 'Autumn library', price: 6.99, tone: 'amber', glyph: 'book', desc: 'Acorns, library cards, foxed pages and dried oak leaves. 30 pieces.', items: 30, owned: false, isNew: true },
+// Invert COLLECTION_MEMBERS → itemId → collectionIds.
+const ITEM_TO_COLLECTIONS: Record<string, string[]> = (() => {
+  const map: Record<string, string[]> = {};
+  for (const [colId, itemIds] of Object.entries(COLLECTION_MEMBERS)) {
+    for (const itemId of itemIds) (map[itemId] ??= []).push(colId);
+  }
+  return map;
+})();
 
+type RawItem = Omit<ShopItem, 'free' | 'collectionIds'>;
+
+const RAW_ITEMS: RawItem[] = [
   // Papers & backgrounds
-  { id: 'pap-linen', category: 'papers', name: 'Linen sheets', price: 1.99, tone: 'cream', glyph: 'file-text', desc: 'Eight cream linen weave backgrounds with subtle directional grain.', items: 8, owned: true, isNew: false },
-  { id: 'pap-grid', category: 'papers', name: 'Soft grid pages', price: 1.49, tone: 'sage', glyph: 'grid', desc: 'Faint sage grid pages for journaling and notes.', items: 6, owned: false, isNew: false },
-  { id: 'pap-foxed', category: 'papers', name: 'Foxed pages', price: 2.49, tone: 'amber', glyph: 'file', desc: 'Aged paper with botanical foxing marks. Great for layering.', items: 10, owned: false, isNew: true },
-  { id: 'pap-dots', category: 'papers', name: 'Soft polka dots', price: 1.99, tone: 'rose', glyph: 'more-horizontal', desc: 'Six pastel dotted backgrounds in our most-loved palette.', items: 6, owned: false, isNew: false },
-  { id: 'pap-ledger', category: 'papers', name: 'Old ledger pages', price: 2.99, tone: 'mauve', glyph: 'align-left', desc: 'Aged accounting paper. Perfect for memory keeping.', items: 8, owned: false, isNew: false },
+  { id: 'pap-linen', category: 'papers', name: 'Linen sheets', tone: 'cream', glyph: 'file-text', desc: 'Eight cream linen weave backgrounds with subtle directional grain.', isNew: false },
+  { id: 'pap-grid', category: 'papers', name: 'Soft grid pages', tone: 'sage', glyph: 'grid', desc: 'Faint sage grid pages for journaling and notes.', isNew: false },
+  { id: 'pap-foxed', category: 'papers', name: 'Foxed pages', tone: 'amber', glyph: 'file', desc: 'Aged paper with botanical foxing marks. Great for layering.', isNew: true },
+  { id: 'pap-dots', category: 'papers', name: 'Soft polka dots', tone: 'rose', glyph: 'more-horizontal', desc: 'Six pastel dotted backgrounds in our most-loved palette.', isNew: false },
+  { id: 'pap-ledger', category: 'papers', name: 'Old ledger pages', tone: 'mauve', glyph: 'align-left', desc: 'Aged accounting paper. Perfect for memory keeping.', isNew: false },
 
   // Stickers
-  { id: 'stk-seals', category: 'stickers', name: 'Wax seal stickers', price: 2.49, tone: 'oxblood', glyph: 'disc', desc: 'Twelve wax-impression seals in cottage palette.', items: 12, owned: true, isNew: false },
-  { id: 'stk-arrows', category: 'stickers', name: 'Hand-drawn arrows', price: 1.49, tone: 'forest', glyph: 'arrow-right', desc: 'Soft ink-drawn arrows to point at the things that matter.', items: 18, owned: false, isNew: false },
-  { id: 'stk-stars', category: 'stickers', name: 'Hand-drawn stars', price: 1.49, tone: 'amber', glyph: 'star', desc: 'A constellation of inked stars and tiny sparkles.', items: 14, owned: false, isNew: true },
-  { id: 'stk-checks', category: 'stickers', name: 'Checkmarks & ticks', price: 0.99, tone: 'sage', glyph: 'check', desc: 'Twelve cosy ticks and check-marks for to-dos.', items: 12, owned: false, isNew: false },
-  { id: 'stk-hearts', category: 'stickers', name: 'Tiny heart stickers', price: 1.49, tone: 'rose', glyph: 'heart', desc: 'Painted hearts in three sizes, all the right pinks.', items: 16, owned: false, isNew: false },
+  { id: 'stk-seals', category: 'stickers', name: 'Wax seal stickers', tone: 'oxblood', glyph: 'disc', desc: 'Twelve wax-impression seals in cottage palette.', isNew: false },
+  { id: 'stk-arrows', category: 'stickers', name: 'Hand-drawn arrows', tone: 'forest', glyph: 'arrow-right', desc: 'Soft ink-drawn arrows to point at the things that matter.', isNew: false },
+  { id: 'stk-stars', category: 'stickers', name: 'Hand-drawn stars', tone: 'amber', glyph: 'star', desc: 'A constellation of inked stars and tiny sparkles.', isNew: true },
+  { id: 'stk-checks', category: 'stickers', name: 'Checkmarks & ticks', tone: 'sage', glyph: 'check', desc: 'Twelve cosy ticks and check-marks for to-dos.', isNew: false },
+  { id: 'stk-hearts', category: 'stickers', name: 'Tiny heart stickers', tone: 'rose', glyph: 'heart', desc: 'Painted hearts in three sizes, all the right pinks.', isNew: false },
 
   // Tape & fasteners
-  { id: 'tap-washi', category: 'tape', name: 'Sage washi', price: 1.99, tone: 'sage', glyph: 'minus', desc: 'Sage washi tape in three widths.', items: 6, owned: true, isNew: false },
-  { id: 'tap-floral', category: 'tape', name: 'Floral washi roll', price: 2.49, tone: 'rose', glyph: 'minus', desc: 'Floral pattern washi with soft rose roses on cream.', items: 4, owned: false, isNew: true },
-  { id: 'tap-stripes', category: 'tape', name: 'Vintage striped tape', price: 1.99, tone: 'amber', glyph: 'minus', desc: 'Striped washi in warm amber and ivory.', items: 4, owned: false, isNew: false },
-  { id: 'tap-twine', category: 'tape', name: 'Garden twine', price: 1.49, tone: 'mauve', glyph: 'link', desc: 'Soft mauve twine and paper-clip fasteners.', items: 8, owned: false, isNew: false },
-  { id: 'tap-pins', category: 'tape', name: 'Brass paperclips', price: 1.99, tone: 'gold', glyph: 'paperclip', desc: 'Antique brass paperclips and corner stays.', items: 10, owned: false, isNew: false },
+  { id: 'tap-washi', category: 'tape', name: 'Sage washi', tone: 'sage', glyph: 'minus', desc: 'Sage washi tape in three widths.', isNew: false },
+  { id: 'tap-floral', category: 'tape', name: 'Floral washi roll', tone: 'rose', glyph: 'minus', desc: 'Floral pattern washi with soft rose roses on cream.', isNew: true },
+  { id: 'tap-stripes', category: 'tape', name: 'Vintage striped tape', tone: 'amber', glyph: 'minus', desc: 'Striped washi in warm amber and ivory.', isNew: false },
+  { id: 'tap-twine', category: 'tape', name: 'Garden twine', tone: 'mauve', glyph: 'link', desc: 'Soft mauve twine and paper-clip fasteners.', isNew: false },
+  { id: 'tap-pins', category: 'tape', name: 'Brass paperclips', tone: 'gold', glyph: 'paperclip', desc: 'Antique brass paperclips and corner stays.', isNew: false },
 
   // Ephemera
-  { id: 'eph-postage', category: 'ephemera', name: 'Vintage postage', price: 2.99, tone: 'oxblood', glyph: 'mail', desc: 'Twenty vintage postage stamps from old letters.', items: 20, owned: false, isNew: true },
-  { id: 'eph-tickets', category: 'ephemera', name: 'Train tickets', price: 1.99, tone: 'mauve', glyph: 'credit-card', desc: 'Twelve printed train and tram tickets.', items: 12, owned: false, isNew: false },
-  { id: 'eph-letters', category: 'ephemera', name: 'Old letters & notes', price: 3.49, tone: 'cream', glyph: 'mail', desc: 'Eight aged letters with cursive handwriting.', items: 8, owned: false, isNew: false },
-  { id: 'eph-cards', category: 'ephemera', name: 'Library cards', price: 1.99, tone: 'amber', glyph: 'credit-card', desc: 'Eight checkout cards from old libraries.', items: 8, owned: false, isNew: false },
+  { id: 'eph-postage', category: 'ephemera', name: 'Vintage postage', tone: 'oxblood', glyph: 'mail', desc: 'Twenty vintage postage stamps from old letters.', isNew: true },
+  { id: 'eph-tickets', category: 'ephemera', name: 'Train tickets', tone: 'mauve', glyph: 'credit-card', desc: 'Twelve printed train and tram tickets.', isNew: false },
+  { id: 'eph-letters', category: 'ephemera', name: 'Old letters & notes', tone: 'cream', glyph: 'mail', desc: 'Eight aged letters with cursive handwriting.', isNew: false },
+  { id: 'eph-cards', category: 'ephemera', name: 'Library cards', tone: 'amber', glyph: 'credit-card', desc: 'Eight checkout cards from old libraries.', isNew: false },
 
   // Florals & botanicals — real assets
-  { id: 'flo-press', category: 'florals', name: 'Pressed wildflowers', price: 3.99, tone: 'sage', glyph: 'feather', flowerAsset: FLOWERS.cornflower, desc: 'Six real pressed wildflowers, gently scanned.', items: 6, owned: true, isNew: false },
-  { id: 'flo-blossom', category: 'florals', name: 'Cherry blossom', price: 2.99, tone: 'rose', glyph: 'feather', flowerAsset: FLOWERS.blossom, desc: 'Two cherry blossom clusters.', items: 2, owned: false, isNew: true },
-  { id: 'flo-zinnia', category: 'florals', name: 'Garden zinnias', price: 2.49, tone: 'oxblood', glyph: 'feather', flowerAsset: FLOWERS.zinnia, desc: 'A small bouquet of crimson zinnias.', items: 3, owned: false, isNew: false },
-  { id: 'flo-cosmos', category: 'florals', name: 'Lavender cosmos', price: 2.49, tone: 'mauve', glyph: 'feather', flowerAsset: FLOWERS.cosmos, desc: 'Lavender cosmos in two sizes.', items: 2, owned: false, isNew: false },
+  { id: 'flo-press', category: 'florals', name: 'Pressed wildflowers', tone: 'sage', glyph: 'feather', flowerAsset: FLOWERS.cornflower, desc: 'Six real pressed wildflowers, gently scanned.', isNew: false },
+  { id: 'flo-blossom', category: 'florals', name: 'Cherry blossom', tone: 'rose', glyph: 'feather', flowerAsset: FLOWERS.blossom, desc: 'Two cherry blossom clusters.', isNew: true },
+  { id: 'flo-zinnia', category: 'florals', name: 'Garden zinnias', tone: 'oxblood', glyph: 'feather', flowerAsset: FLOWERS.zinnia, desc: 'A small bouquet of crimson zinnias.', isNew: false },
+  { id: 'flo-cosmos', category: 'florals', name: 'Lavender cosmos', tone: 'mauve', glyph: 'feather', flowerAsset: FLOWERS.cosmos, desc: 'Lavender cosmos in two sizes.', isNew: false },
 
   // Frames & containers
-  { id: 'frm-oval', category: 'frames', name: 'Oval portrait frames', price: 2.99, tone: 'gold', glyph: 'circle', desc: 'Six oval frames for photos and clippings.', items: 6, owned: false, isNew: false },
-  { id: 'frm-corner', category: 'frames', name: 'Gilded corners', price: 1.99, tone: 'gold', glyph: 'corner-up-left', desc: 'Eight gilded corner pieces for layering.', items: 8, owned: false, isNew: true },
-  { id: 'frm-tag', category: 'frames', name: 'Hang-tags & cards', price: 2.49, tone: 'cream', glyph: 'tag', desc: 'Twelve hang-tag shapes with eyelets.', items: 12, owned: false, isNew: false },
+  { id: 'frm-oval', category: 'frames', name: 'Oval portrait frames', tone: 'gold', glyph: 'circle', desc: 'Six oval frames for photos and clippings.', isNew: false },
+  { id: 'frm-corner', category: 'frames', name: 'Gilded corners', tone: 'gold', glyph: 'corner-up-left', desc: 'Eight gilded corner pieces for layering.', isNew: true },
+  { id: 'frm-tag', category: 'frames', name: 'Hang-tags & cards', tone: 'cream', glyph: 'tag', desc: 'Twelve hang-tag shapes with eyelets.', isNew: false },
 
   // Writing & typography
-  { id: 'typ-quotes', category: 'type', name: 'Hand-written quotes', price: 2.99, tone: 'forest', glyph: 'edit-3', desc: 'Twenty hand-written cottagecore quotes.', items: 20, owned: false, isNew: false },
-  { id: 'typ-num', category: 'type', name: 'Numbers & dates', price: 1.99, tone: 'oxblood', glyph: 'hash', desc: 'Ink-pressed numbers, days of the week, and months.', items: 48, owned: false, isNew: false },
-  { id: 'typ-labels', category: 'type', name: 'Type labels', price: 2.49, tone: 'cream', glyph: 'type', desc: 'Press-typed paper labels in nine layouts.', items: 9, owned: true, isNew: false },
+  { id: 'typ-quotes', category: 'type', name: 'Hand-written quotes', tone: 'forest', glyph: 'edit-3', desc: 'Twenty hand-written cottagecore quotes.', isNew: false },
+  { id: 'typ-num', category: 'type', name: 'Numbers & dates', tone: 'oxblood', glyph: 'hash', desc: 'Ink-pressed numbers, days of the week, and months.', isNew: false },
+  { id: 'typ-labels', category: 'type', name: 'Type labels', tone: 'cream', glyph: 'type', desc: 'Press-typed paper labels in nine layouts.', isNew: false },
 
   // Paint & artistic
-  { id: 'pnt-splash', category: 'paint', name: 'Watercolour splashes', price: 2.49, tone: 'rose', glyph: 'droplet', desc: 'Soft rose watercolour splashes.', items: 8, owned: false, isNew: true },
-  { id: 'pnt-strokes', category: 'paint', name: 'Brush strokes', price: 1.99, tone: 'sage', glyph: 'edit-2', desc: 'Hand-painted sage brush strokes.', items: 10, owned: false, isNew: false },
-  { id: 'pnt-pencil', category: 'paint', name: 'Pencil scribbles', price: 1.49, tone: 'mauve', glyph: 'edit-2', desc: 'Casual pencil marks and doodles.', items: 12, owned: false, isNew: false },
+  { id: 'pnt-splash', category: 'paint', name: 'Watercolour splashes', tone: 'rose', glyph: 'droplet', desc: 'Soft rose watercolour splashes.', isNew: true },
+  { id: 'pnt-strokes', category: 'paint', name: 'Brush strokes', tone: 'sage', glyph: 'edit-2', desc: 'Hand-painted sage brush strokes.', isNew: false },
+  { id: 'pnt-pencil', category: 'paint', name: 'Pencil scribbles', tone: 'mauve', glyph: 'edit-2', desc: 'Casual pencil marks and doodles.', isNew: false },
 
   // Sewing & fabric
-  { id: 'fab-linen', category: 'fabric', name: 'Linen swatches', price: 2.49, tone: 'sage', glyph: 'layers', desc: 'Six woven linen swatches with frayed edges.', items: 6, owned: false, isNew: false },
-  { id: 'fab-lace', category: 'fabric', name: 'Antique lace', price: 2.99, tone: 'cream', glyph: 'layers', desc: 'Lace trim from an old wedding gown.', items: 5, owned: false, isNew: true },
-  { id: 'fab-stitch', category: 'fabric', name: 'Cross-stitch motifs', price: 1.99, tone: 'rose', glyph: 'x', desc: 'Twelve small embroidered motifs.', items: 12, owned: false, isNew: false },
+  { id: 'fab-linen', category: 'fabric', name: 'Linen swatches', tone: 'sage', glyph: 'layers', desc: 'Six woven linen swatches with frayed edges.', isNew: false },
+  { id: 'fab-lace', category: 'fabric', name: 'Antique lace', tone: 'cream', glyph: 'layers', desc: 'Lace trim from an old wedding gown.', isNew: true },
+  { id: 'fab-stitch', category: 'fabric', name: 'Cross-stitch motifs', tone: 'rose', glyph: 'x', desc: 'Twelve small embroidered motifs.', isNew: false },
 
   // Photos & memory keeping
-  { id: 'pho-polaroid', category: 'photos', name: 'Polaroid frames', price: 2.49, tone: 'cream', glyph: 'image', desc: 'Six polaroid frames you can fill with a photo.', items: 6, owned: false, isNew: false },
-  { id: 'pho-vellum', category: 'photos', name: 'Vellum overlays', price: 1.99, tone: 'blue', glyph: 'copy', desc: 'Translucent vellum sheets for layering.', items: 5, owned: false, isNew: false },
+  { id: 'pho-polaroid', category: 'photos', name: 'Polaroid frames', tone: 'cream', glyph: 'image', desc: 'Six polaroid frames you can fill with a photo.', isNew: false },
+  { id: 'pho-vellum', category: 'photos', name: 'Vellum overlays', tone: 'blue', glyph: 'copy', desc: 'Translucent vellum sheets for layering.', isNew: false },
 
   // Decorative details
-  { id: 'dec-doily', category: 'details', name: 'Lace doilies', price: 1.99, tone: 'cream', glyph: 'sun', desc: 'Six paper doilies in cream and ivory.', items: 6, owned: false, isNew: false },
-  { id: 'dec-ribbon', category: 'details', name: 'Velvet ribbons', price: 2.49, tone: 'oxblood', glyph: 'gift', desc: 'Eight velvet ribbon ends.', items: 8, owned: false, isNew: false },
-  { id: 'dec-bow', category: 'details', name: 'Tiny paper bows', price: 1.49, tone: 'rose', glyph: 'gift', desc: 'Twelve tiny tied paper bows.', items: 12, owned: false, isNew: true },
+  { id: 'dec-doily', category: 'details', name: 'Lace doilies', tone: 'cream', glyph: 'sun', desc: 'Six paper doilies in cream and ivory.', isNew: false },
+  { id: 'dec-ribbon', category: 'details', name: 'Velvet ribbons', tone: 'oxblood', glyph: 'gift', desc: 'Eight velvet ribbon ends.', isNew: false },
+  { id: 'dec-bow', category: 'details', name: 'Tiny paper bows', tone: 'rose', glyph: 'gift', desc: 'Twelve tiny tied paper bows.', isNew: true },
 ];
 
-// Inject the monetisation tier, and zero the price of free items so the UI
-// reads "Free" rather than a leftover placeholder price.
-export const SHOP_CATALOGUE: ShopItem[] = RAW_CATALOGUE.map((it) => {
-  const tier = tierFor(it.id);
-  return { ...it, tier, price: tier === 'free' ? 0 : it.price, owned: false };
+export const SHOP_CATALOGUE: ShopItem[] = RAW_ITEMS.map((it) => ({
+  ...it,
+  free: FREE_ITEM_IDS.has(it.id),
+  collectionIds: ITEM_TO_COLLECTIONS[it.id] ?? [],
+}));
+
+const COLLECTION_META: Omit<Collection, 'pieceCount' | 'items'>[] = [
+  { id: 'col-spring', name: 'Spring meadow', palette: 'sage', price: 5.99, free: false, isNew: true, whatYouGet: 'Pressed wildflowers, soft botanical papers, and hand-painted ribbon, made for cottagecore spreads.' },
+  { id: 'col-romance', name: 'Old romance', palette: 'rose', price: 6.49, free: false, isNew: false, whatYouGet: 'Love letters, lace, aged ledgers and oval frames for tender, romantic pages.' },
+  { id: 'col-coastal', name: 'Coastal almanac', palette: 'blue', price: 5.99, free: false, isNew: false, whatYouGet: 'Vintage postage, striped tape, polaroids and hang-tags from sea-side towns.' },
+  { id: 'col-autumn', name: 'Autumn library', palette: 'amber', price: 6.99, free: false, isNew: true, whatYouGet: 'Hand-written quotes, type labels, wax seals and ink arrows for cosy archives.' },
+];
+
+export const FALLBACK_COLLECTIONS: Collection[] = COLLECTION_META.map((meta) => {
+  const items: CollectionItemRef[] = (COLLECTION_MEMBERS[meta.id] ?? [])
+    .map((id) => SHOP_CATALOGUE.find((s) => s.id === id))
+    .filter((s): s is ShopItem => !!s)
+    .map((s) => ({ id: s.id, name: s.name, category: s.category, tone: s.tone, glyph: s.glyph, flowerAsset: s.flowerAsset }));
+  return { ...meta, pieceCount: items.length, items };
 });
 
 /**

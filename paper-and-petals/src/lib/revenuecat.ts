@@ -10,13 +10,19 @@ const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? ''
 /** RevenueCat entitlement that grants the full living catalogue. */
 export const STUDIO_ENTITLEMENT = 'studio'
 
+const COLLECTION_PREFIX = 'com.paperandpetals.collection.'
+// Legacy one-time per-item products, kept only so existing buyers are grandfathered.
+const LEGACY_PACK_PREFIX = 'com.paperandpetals.pack.'
+
 export type StudioPlan = 'monthly' | 'annual'
 
 export interface Entitlements {
   /** Active Studio subscription. */
   studio: boolean
-  /** Ids of one-time "keepsake" packs the account owns. */
-  ownedPackIds: string[]
+  /** Ids of one-time collections the account owns. */
+  ownedCollectionIds: string[]
+  /** Ids of items bought under the old per-item model (grandfathered). */
+  legacyOwnedItemIds: string[]
 }
 
 export function initRevenueCat() {
@@ -30,18 +36,31 @@ export function initRevenueCat() {
   }
 }
 
-/** Map a product identifier (com.paperandpetals.pack.<id>) back to the item id. */
-function packIdFromProduct(productId: string): string | null {
-  const prefix = 'com.paperandpetals.pack.'
-  return productId.startsWith(prefix) ? productId.slice(prefix.length) : null
+/** Map a product identifier back to a collection id. */
+function collectionIdFromProduct(productId: string): string | null {
+  return productId.startsWith(COLLECTION_PREFIX) ? productId.slice(COLLECTION_PREFIX.length) : null
+}
+
+/** Map a legacy product identifier back to the item id. */
+function legacyItemIdFromProduct(productId: string): string | null {
+  return productId.startsWith(LEGACY_PACK_PREFIX) ? productId.slice(LEGACY_PACK_PREFIX.length) : null
 }
 
 function entitlementsFromInfo(info: any): Entitlements {
   const studio = !!info?.entitlements?.active?.[STUDIO_ENTITLEMENT]
-  const ownedPackIds = (info?.nonSubscriptionTransactions ?? [])
-    .map((t: any) => packIdFromProduct(t.productIdentifier))
+  const txns = info?.nonSubscriptionTransactions ?? []
+  const ownedCollectionIds = txns
+    .map((t: any) => collectionIdFromProduct(t.productIdentifier))
     .filter((id: string | null): id is string => !!id)
-  return { studio, ownedPackIds: Array.from(new Set(ownedPackIds)) }
+  // Grandfather: old per-item purchases stay unlocked under the collection model.
+  const legacyOwnedItemIds = txns
+    .map((t: any) => legacyItemIdFromProduct(t.productIdentifier))
+    .filter((id: string | null): id is string => !!id)
+  return {
+    studio,
+    ownedCollectionIds: Array.from(new Set(ownedCollectionIds)),
+    legacyOwnedItemIds: Array.from(new Set(legacyOwnedItemIds)),
+  }
 }
 
 /**
@@ -49,12 +68,12 @@ function entitlementsFromInfo(info: any): Entitlements {
  * returns an empty result when the SDK isn't available (web / Expo Go).
  */
 export async function syncEntitlements(): Promise<Entitlements> {
-  if (!Purchases) return { studio: false, ownedPackIds: [] }
+  if (!Purchases) return { studio: false, ownedCollectionIds: [], legacyOwnedItemIds: [] }
   try {
     const info = await Purchases.getCustomerInfo()
     return entitlementsFromInfo(info)
   } catch {
-    return { studio: false, ownedPackIds: [] }
+    return { studio: false, ownedCollectionIds: [], legacyOwnedItemIds: [] }
   }
 }
 
@@ -77,16 +96,16 @@ export async function purchaseStudio(plan: StudioPlan): Promise<boolean> {
 }
 
 /**
- * Buy a single keepsake pack — owned forever.
+ * Buy a single collection — owned forever.
  * Product identifiers must be created in App Store Connect / Google Play as:
- *   com.paperandpetals.pack.<itemId>
+ *   com.paperandpetals.collection.<collectionId>
  */
-export async function purchaseSingleItem(itemId: string): Promise<boolean> {
+export async function purchaseCollection(collectionId: string): Promise<boolean> {
   if (!Purchases) throw new Error('Store not available on this platform')
-  const productId = `com.paperandpetals.pack.${itemId}`
+  const productId = `${COLLECTION_PREFIX}${collectionId}`
   const products = await Purchases.getProducts([productId])
   if (!products || products.length === 0) {
-    throw new Error('This pack isn’t available for individual purchase yet. You can unlock it with Studio.')
+    throw new Error('This collection isn’t available to buy yet. You can unlock it with Studio.')
   }
   const { customerInfo } = await Purchases.purchaseStoreProduct(products[0])
   return !!customerInfo.nonSubscriptionTransactions?.find(
@@ -95,15 +114,15 @@ export async function purchaseSingleItem(itemId: string): Promise<boolean> {
 }
 
 /**
- * Restore previously bought packs and any active subscription.
+ * Restore previously bought collections and any active subscription.
  * Returns the full entitlement picture so the store can sync.
  */
 export async function restorePurchases(): Promise<Entitlements> {
-  if (!Purchases) return { studio: false, ownedPackIds: [] }
+  if (!Purchases) return { studio: false, ownedCollectionIds: [], legacyOwnedItemIds: [] }
   try {
     const info = await Purchases.restorePurchases()
     return entitlementsFromInfo(info)
   } catch {
-    return { studio: false, ownedPackIds: [] }
+    return { studio: false, ownedCollectionIds: [], legacyOwnedItemIds: [] }
   }
 }
