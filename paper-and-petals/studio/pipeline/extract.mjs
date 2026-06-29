@@ -37,16 +37,20 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 const argv = process.argv.slice(2)
-const positional = argv.filter((a) => !a.startsWith('--') && !isOptValue(a))
-function isOptValue(a) {
-  const i = argv.indexOf(a)
-  return i > 0 && argv[i - 1].startsWith('--') && !FLAGS.has(argv[i - 1])
-}
-const FLAGS = new Set(['--split', '--remove-bg', '--no-bg'])
+const BOOL_FLAGS = new Set(['--split', '--remove-bg', '--no-bg'])
 const hasFlag = (f) => argv.includes(f)
 const getOpt = (f, d) => {
   const i = argv.indexOf(f)
   return i >= 0 && argv[i + 1] ? argv[i + 1] : d
+}
+// Positionals = args that are neither an option name nor the value after a value-option.
+const positional = []
+for (let i = 0; i < argv.length; i++) {
+  const a = argv[i]
+  if (a.startsWith('--')) continue
+  const prev = argv[i - 1]
+  if (prev && prev.startsWith('--') && !BOOL_FLAGS.has(prev)) continue
+  positional.push(a)
 }
 
 const INPUT = positional[0]
