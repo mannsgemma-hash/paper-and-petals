@@ -94,12 +94,12 @@ async function loadBgRemover() {
   return bgRemover
 }
 
-/** Background-remove (if needed) → trim transparent edges → cap size → PNG buffer. */
+/** Normalise an already-prepared image → cap size → PNG buffer.
+ *  Background removal/splitting is `extract`'s job and is NOT done here, so
+ *  full-page opaque papers are kept whole. Pass --remove-bg to force it. */
 async function processImage(buf, filename) {
   let working = buf
-  const meta = await sharp(buf).metadata()
-  const wantBg = FORCE_BG || (!NO_BG && !meta.hasAlpha)
-  if (wantBg) {
+  if (FORCE_BG) {
     const remove = await loadBgRemover()
     if (remove) {
       try {
@@ -114,11 +114,16 @@ async function processImage(buf, filename) {
       }
     }
   }
+  const meta = await sharp(working).metadata()
   let img = sharp(working).ensureAlpha()
-  try {
-    img = sharp(await img.trim().toBuffer()).ensureAlpha() // trim transparent padding
-  } catch {
-    /* uniform image — nothing to trim */
+  // Only tighten genuine cut-outs (images with transparency). Opaque full-page
+  // papers have no transparent margin and must stay full-bleed — don't trim them.
+  if (meta.hasAlpha) {
+    try {
+      img = sharp(await img.trim().png().toBuffer())
+    } catch {
+      /* uniform image — nothing to trim */
+    }
   }
   return img
     .resize({ width: MAX_DIM, height: MAX_DIM, fit: 'inside', withoutEnlargement: true })
@@ -251,11 +256,24 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
 
   const items = []
   for (const f of files) {
-    items.push(await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection` }))
+    try {
+      items.push(await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection` }))
+    } catch (e) {
+      console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
+    }
+  }
+  if (items.length === 0) {
+    console.log('  (no usable images — collection skipped)')
+    return
   }
 
-  // Collection-level metadata (overrides win).
-  const ai = anthropic ? await collectionMetadata(brandVoice, folderName, items.map((i) => i.meta)) : {}
+  // Collection-level metadata (overrides win; failures fall back to defaults).
+  let ai = {}
+  try {
+    if (anthropic) ai = await collectionMetadata(brandVoice, folderName, items.map((i) => i.meta))
+  } catch (e) {
+    console.warn(`  ⚠ collection metadata failed (${e?.message ?? e}) — using folder name + defaults`)
+  }
   const name = overrides.name ?? ai.name ?? folderName
   const palette = overrides.palette ?? ai.palette ?? items[0]?.meta.tone ?? 'sage'
   const whatYouGet = overrides.whatYouGet ?? ai.whatYouGet ?? ''
@@ -300,7 +318,11 @@ async function processFreeFolder(dir, brandVoice) {
   console.log(`\n🆓 Free items`)
   const files = await listImages(dir)
   for (const f of files) {
-    await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece' })
+    try {
+      await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece' })
+    } catch (e) {
+      console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
+    }
   }
 }
 
