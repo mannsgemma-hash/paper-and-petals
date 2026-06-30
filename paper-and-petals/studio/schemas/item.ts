@@ -23,6 +23,12 @@ export default defineType({
     defineField({ name: 'category', type: 'string', options: { list: CATEGORIES } }),
     defineField({ name: 'asset', title: 'Artwork', type: 'image', options: { hotspot: true } }),
     defineField({
+      name: 'printAsset',
+      title: 'Print artwork (high-res)',
+      type: 'image',
+      description: 'High-resolution PNG for print download by outright purchasers. Set by the ingest pipeline.',
+    }),
+    defineField({
       name: 'free',
       title: 'In free tier',
       type: 'boolean',

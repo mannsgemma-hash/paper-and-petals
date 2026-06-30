@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Modal,
@@ -26,6 +27,7 @@ import {
 import { fetchCatalogue } from '../../src/services/content';
 import { screen, track } from '../../src/lib/analytics';
 import { purchaseCollection } from '../../src/lib/revenuecat';
+import { downloadCollectionZip } from '../../src/lib/downloads';
 
 // SCR-06 Shop. Collection-first (bundles only): a grid of collection cards is the
 // primary browse, with a free-items area below filtered by the category chips.
@@ -427,6 +429,56 @@ function FreeItemCard({ item, onOpen }: { item: ShopItem; onOpen: () => void }) 
 
 // ─── Modals ──────────────────────────────────────────────────────────────────────
 
+function CollectionDownloadButton({ collection }: { collection: Collection }) {
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
+
+  const run = async () => {
+    setBusy(true);
+    setProgress({ done: 0, total: collection.items.length });
+    try {
+      await downloadCollectionZip(
+        collection.name,
+        collection.items.map((i) => ({ name: i.name, url: i.printUrl })),
+        (done, total) => setProgress({ done, total }),
+      );
+      track('collection_downloaded', { collectionId: collection.id });
+    } catch (e: any) {
+      Alert.alert('Download unavailable', e?.message ?? 'Please try again in a moment.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onPress = () =>
+    Alert.alert(
+      'Download for print',
+      `${collection.name} — ${collection.pieceCount} pieces, saved as a zip you can open on a computer.\n\nFor your own personal use (printing, crafting). Please don’t resell or share the files.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Download', onPress: run },
+      ],
+    );
+
+  return (
+    <Pressable style={[styles.dlOwned, busy && styles.dlOwnedBusy]} onPress={onPress} disabled={busy}>
+      {busy ? (
+        <>
+          <ActivityIndicator size="small" color={theme.palette.forest} />
+          <Text style={styles.dlOwnedBusyText}>
+            {progress.total ? `${progress.done}/${progress.total}` : 'Preparing…'}
+          </Text>
+        </>
+      ) : (
+        <>
+          <Feather name="download" size={14} color={theme.palette.cream} />
+          <Text style={styles.dlOwnedText}>Download for print</Text>
+        </>
+      )}
+    </Pressable>
+  );
+}
+
 function CollectionDetail({
   collection,
   status,
@@ -484,9 +536,12 @@ function CollectionDetail({
                     </Pressable>
                   </View>
                 ) : status === 'owned' ? (
-                  <View style={styles.ownedTag}>
-                    <Feather name="check" size={13} color={theme.palette.forest} />
-                    <Text style={styles.ownedText}>OWNED</Text>
+                  <View style={styles.colCta}>
+                    <View style={styles.ownedTag}>
+                      <Feather name="check" size={13} color={theme.palette.forest} />
+                      <Text style={styles.ownedText}>OWNED</Text>
+                    </View>
+                    <CollectionDownloadButton collection={collection} />
                   </View>
                 ) : status === 'studio' ? (
                   <View style={styles.studioTag}>
@@ -965,6 +1020,24 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   orStudio: { fontFamily: theme.font.ui, fontSize: 12, fontWeight: '600', color: theme.palette.forest },
+  dlOwned: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    height: 40,
+    paddingHorizontal: 18,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.palette.forest,
+    ...theme.shadow.paper,
+  },
+  dlOwnedBusy: {
+    backgroundColor: 'rgba(78,102,82,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(78,102,82,0.4)',
+  },
+  dlOwnedText: { fontFamily: theme.font.ui, fontSize: 14, fontWeight: '700', color: theme.palette.cream },
+  dlOwnedBusyText: { fontFamily: theme.font.ui, fontSize: 13, fontWeight: '600', color: theme.palette.forest },
   colName: { fontFamily: theme.font.display, fontSize: theme.fontSize.h3, color: theme.color.fg1, marginTop: 4 },
   colStatRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   colStat: { fontFamily: theme.font.ui, fontSize: 13, color: theme.color.fg3, fontWeight: '600' },

@@ -33,7 +33,7 @@ const LIVE_COLLECTIONS_QUERY = `*[_type == "collection" && (!defined(publishAt) 
   whatYouGet,
   publishAt,
   "coverUrl": cover.asset->url,
-  "items": items[]->{ _id, name, category, glyphFallback, tone, "assetUrl": asset.asset->url }
+  "items": items[]->{ _id, name, category, glyphFallback, tone, "assetUrl": asset.asset->url, "printUrl": printAsset.asset->url }
 }`
 
 export interface SanityItem {
@@ -57,6 +57,7 @@ export interface SanityCollectionItem {
   glyphFallback?: string
   tone?: string
   assetUrl?: string
+  printUrl?: string
 }
 
 export interface SanityCollection {
@@ -100,6 +101,7 @@ function collectionItemToRef(ci: SanityCollectionItem): CollectionItemRef {
     tone: (ci.tone ?? staticMatch?.tone ?? 'sage') as ShopItem['tone'],
     glyph: (ci.glyphFallback ?? staticMatch?.glyph ?? 'package') as any,
     flowerAsset: ci.assetUrl ? ({ uri: ci.assetUrl } as any) : staticMatch?.flowerAsset,
+    printUrl: ci.printUrl,
   }
 }
 

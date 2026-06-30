@@ -114,13 +114,19 @@ export default function HomeScreen() {
         <Wordmark size={22} />
       </View>
 
-      {/* Top-right: shop + settings */}
+      {/* Top-right: shop + library + settings */}
       <View style={styles.topActions}>
         <TopButton
           label="Shop"
           icon="shopping-bag"
           color={theme.palette.terracotta}
           onPress={() => router.push('/(tabs)/shop')}
+        />
+        <TopButton
+          label="Library"
+          icon="book-open"
+          color={theme.palette.forest}
+          onPress={() => router.push('/library')}
         />
         <TopButton
           label="Settings"
@@ -204,7 +210,7 @@ function TopButton({
   onPress,
 }: {
   label: string;
-  icon: 'shopping-bag' | 'settings';
+  icon: React.ComponentProps<typeof Feather>['name'];
   color: string;
   onPress: () => void;
 }) {

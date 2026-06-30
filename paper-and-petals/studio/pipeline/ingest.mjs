@@ -44,7 +44,8 @@ const CATEGORIES = [
   'frames', 'type', 'paint', 'fabric', 'photos', 'details',
 ]
 const TONES = ['sage', 'forest', 'rose', 'mauve', 'blue', 'amber', 'cream', 'oxblood', 'gold']
-const MAX_DIM = 1200
+const MAX_DIM = 1200 // in-app display asset
+const PRINT_MAX = 3000 // high-res asset for print download (no enlargement past source)
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 // ─── Args + env ─────────────────────────────────────────────────────────────────
@@ -94,10 +95,10 @@ async function loadBgRemover() {
   return bgRemover
 }
 
-/** Normalise an already-prepared image → cap size → PNG buffer.
+/** Prepare an already-cut-out image at full resolution → PNG buffer.
  *  Background removal/splitting is `extract`'s job and is NOT done here, so
- *  full-page opaque papers are kept whole. Pass --remove-bg to force it. */
-async function processImage(buf, filename) {
+ *  full-page opaque papers are kept whole. Pass --remove-bg to force removal. */
+async function prepareBase(buf) {
   let working = buf
   if (FORCE_BG) {
     const remove = await loadBgRemover()
@@ -125,10 +126,15 @@ async function processImage(buf, filename) {
       /* uniform image — nothing to trim */
     }
   }
-  return img
-    .resize({ width: MAX_DIM, height: MAX_DIM, fit: 'inside', withoutEnlargement: true })
-    .png()
-    .toBuffer()
+  return img.png().toBuffer()
+}
+
+const resizePng = (buf, max) =>
+  sharp(buf).resize({ width: max, height: max, fit: 'inside', withoutEnlargement: true }).png().toBuffer()
+
+/** Display-size PNG (used for covers). */
+async function processImage(buf) {
+  return resizePng(await prepareBase(buf), MAX_DIM)
 }
 
 /** Pull the first JSON object out of a model reply (tolerates prose / code fences). */
@@ -218,17 +224,20 @@ async function readOverrides(dir) {
 async function processOneImage(dir, filename, { free, brandVoice, hint }) {
   console.log(`  • ${filename}`)
   const raw = await fs.readFile(path.join(dir, filename))
-  const png = await processImage(raw, filename)
-  const meta = await itemMetadata(png, brandVoice, hint)
+  const base = await prepareBase(raw)
+  const display = await resizePng(base, MAX_DIM)
+  const print = await resizePng(base, PRINT_MAX)
+  const meta = await itemMetadata(display, brandVoice, hint)
   const id = idFor(meta.name, `${dir}/${filename}`)
 
   if (DRY_RUN) {
     await fs.mkdir(OUT_DIR, { recursive: true })
-    await fs.writeFile(path.join(OUT_DIR, `item-${id}.png`), png)
+    await fs.writeFile(path.join(OUT_DIR, `item-${id}.png`), display)
     return { id, meta, assetId: null, free }
   }
 
-  const assetId = await uploadAsset(png, `${id}.png`)
+  const assetId = await uploadAsset(display, `${id}.png`)
+  const printAssetId = await uploadAsset(print, `${id}-print.png`)
   const doc = {
     _id: docId(`item-${id}`),
     _type: 'item',
@@ -239,6 +248,7 @@ async function processOneImage(dir, filename, { free, brandVoice, hint }) {
     glyphFallback: meta.glyph,
     description: meta.description,
     asset: imageField(assetId),
+    printAsset: imageField(printAssetId),
   }
   await sanity.createOrReplace(doc)
   console.log(`    ↳ ${doc._id}  [${meta.category} · ${meta.tone}]  "${meta.description}"`)

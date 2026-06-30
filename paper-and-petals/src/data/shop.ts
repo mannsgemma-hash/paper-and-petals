@@ -76,6 +76,8 @@ export interface CollectionItemRef {
   tone: ShopTone;
   glyph: FeatherName;
   flowerAsset?: number | { uri: string };
+  /** High-res print PNG URL — present for live Sanity items, used by outright owners. */
+  printUrl?: string;
 }
 
 /** A bundle — the only thing the shop sells. */

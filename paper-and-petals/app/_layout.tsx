@@ -47,6 +47,7 @@ export default function RootLayout() {
         <Stack.Screen name="(tabs)" />
         <Stack.Screen name="editor/[id]" />
         <Stack.Screen name="studio" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="library" />
         <Stack.Screen name="feedback" />
       </Stack>
     </>
