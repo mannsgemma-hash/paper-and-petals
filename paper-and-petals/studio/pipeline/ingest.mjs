@@ -46,6 +46,7 @@ const CATEGORIES = [
 const TONES = ['sage', 'forest', 'rose', 'mauve', 'blue', 'amber', 'cream', 'oxblood', 'gold']
 const MAX_DIM = 1200 // in-app display asset
 const PRINT_MAX = 3000 // high-res asset for print download (no enlargement past source)
+const VISION_MAX = 640 // tiny thumbnail sent to Claude for metadata — image tokens scale with pixel area
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 // ─── Args + env ─────────────────────────────────────────────────────────────────
@@ -257,7 +258,10 @@ async function processOneImage(dir, filename, { free, brandVoice, hint }) {
   if (meta) {
     console.log('    · cached metadata (no charge)')
   } else {
-    meta = await itemMetadata(display, brandVoice, hint)
+    // Send a small thumbnail (not the full display image) — image tokens scale
+    // with pixel area, so this is the biggest cost lever.
+    const thumb = await resizePng(base, VISION_MAX)
+    meta = await itemMetadata(thumb, brandVoice, hint)
     metaCache[hash] = meta
     cacheDirty = true
     await saveCache()
