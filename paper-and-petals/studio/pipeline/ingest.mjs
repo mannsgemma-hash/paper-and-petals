@@ -78,9 +78,33 @@ const sanity = !DRY_RUN
 // ─── Helpers ────────────────────────────────────────────────────────────────────
 const slug = (s) =>
   s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 48)
-const hash4 = (s) => crypto.createHash('sha1').update(s).digest('hex').slice(0, 4)
-const idFor = (name, sourceKey) => `${slug(name) || 'item'}-${hash4(sourceKey)}`
+const sha1 = (buf) => crypto.createHash('sha1').update(buf).digest('hex')
 const docId = (id) => (PUBLISH ? id : `drafts.${id}`)
+
+// ─── Metadata cache ──────────────────────────────────────────────────────────────
+// Claude metadata is keyed by the artwork's content hash and cached on disk, so
+// re-running (or a dry-run followed by a real run) never re-charges for art that
+// hasn't changed. Edit the art → new hash → regenerated. Delete the cache file to
+// force a full re-generation.
+const CACHE_FILE = path.join(SCRIPT_DIR, '.ingest-cache.json')
+let metaCache = {}
+let cacheDirty = false
+async function loadCache() {
+  try {
+    metaCache = JSON.parse(await fs.readFile(CACHE_FILE, 'utf8'))
+  } catch {
+    metaCache = {}
+  }
+}
+async function saveCache() {
+  if (!cacheDirty) return
+  try {
+    await fs.writeFile(CACHE_FILE, JSON.stringify(metaCache, null, 2))
+    cacheDirty = false
+  } catch {
+    /* best-effort */
+  }
+}
 
 let bgRemover // lazily-loaded optional dependency
 async function loadBgRemover() {
@@ -224,11 +248,23 @@ async function readOverrides(dir) {
 async function processOneImage(dir, filename, { free, brandVoice, hint }) {
   console.log(`  • ${filename}`)
   const raw = await fs.readFile(path.join(dir, filename))
+  const hash = sha1(raw)
   const base = await prepareBase(raw)
   const display = await resizePng(base, MAX_DIM)
   const print = await resizePng(base, PRINT_MAX)
-  const meta = await itemMetadata(display, brandVoice, hint)
-  const id = idFor(meta.name, `${dir}/${filename}`)
+  // Reuse cached metadata for unchanged art — no Claude call, no charge.
+  let meta = metaCache[hash]
+  if (meta) {
+    console.log('    · cached metadata (no charge)')
+  } else {
+    meta = await itemMetadata(display, brandVoice, hint)
+    metaCache[hash] = meta
+    cacheDirty = true
+    await saveCache()
+  }
+  // Content-hash id → stable across renames/moves, so re-runs overwrite the same
+  // draft instead of creating duplicates.
+  const id = `${slug(meta.name) || 'item'}-${hash.slice(0, 8)}`
 
   if (DRY_RUN) {
     await fs.mkdir(OUT_DIR, { recursive: true })
@@ -346,6 +382,8 @@ async function main() {
     process.exit(1)
   }
 
+  await loadCache()
+
   let brandVoice = ''
   try {
     brandVoice = await fs.readFile(path.join(SCRIPT_DIR, 'brand-voice.md'), 'utf8')
@@ -375,6 +413,7 @@ async function main() {
     else await processCollectionFolder(dir, folder.name, brandVoice)
   }
 
+  await saveCache()
   console.log(`\n✓ Done.${DRY_RUN ? ` Review metadata in ${OUT_DIR}` : ' Review and publish the drafts in Sanity Studio.'}`)
 }
 
