@@ -21,6 +21,7 @@
 //
 // Usage (from studio/):
 //   ANTHROPIC_API_KEY=... SANITY_WRITE_TOKEN=... npm run ingest
+//   npm run ingest -- --batch          # generate all metadata via the Batch API (~50% cheaper, slower) then upload
 //   npm run ingest -- --dry-run        # process + metadata only, write to pipeline/out, no upload
 //   npm run ingest -- --publish        # create published docs instead of drafts
 //   npm run ingest -- --model claude-opus-4-8
@@ -61,6 +62,7 @@ const DRY_RUN = hasFlag('--dry-run')
 const PUBLISH = hasFlag('--publish')
 const FORCE_BG = hasFlag('--remove-bg')
 const NO_BG = hasFlag('--no-bg')
+const BATCH = hasFlag('--batch') // generate all metadata via the Batch API (~50% cheaper, slower)
 const MODEL = getOpt('--model', 'claude-haiku-4-5')
 const INPUT_DIR = path.resolve(getOpt('--input', path.join(SCRIPT_DIR, '..', 'incoming')))
 const OUT_DIR = path.join(SCRIPT_DIR, 'out')
@@ -173,13 +175,14 @@ function parseJson(resp) {
   return JSON.parse(body.slice(start, end + 1))
 }
 
-async function itemMetadata(pngBuf, brandVoice, hint) {
+/** The messages.create params for one item's metadata (shared by live + batch). */
+function itemParams(pngBuf, brandVoice, hint) {
   const instruction =
     `Catalogue this single scrapbook element.${hint ? ` Context: ${hint}.` : ''}\n\n` +
     `Reply with ONLY a JSON object:\n` +
     `{ "name": string, "category": one of ${JSON.stringify(CATEGORIES)}, ` +
     `"tone": one of ${JSON.stringify(TONES)}, "glyph": a Feather icon name, "description": string }`
-  const resp = await anthropic.messages.create({
+  return {
     model: MODEL,
     max_tokens: 400,
     system: brandVoice,
@@ -192,11 +195,18 @@ async function itemMetadata(pngBuf, brandVoice, hint) {
         ],
       },
     ],
-  })
-  const m = parseJson(resp)
+  }
+}
+
+function normalizeItemMeta(m) {
   if (!CATEGORIES.includes(m.category)) m.category = 'details'
   if (!TONES.includes(m.tone)) m.tone = 'sage'
   return m
+}
+
+async function itemMetadata(pngBuf, brandVoice, hint) {
+  const resp = await anthropic.messages.create(itemParams(pngBuf, brandVoice, hint))
+  return normalizeItemMeta(parseJson(resp))
 }
 
 async function collectionMetadata(brandVoice, folderName, members) {
@@ -376,6 +386,87 @@ async function processFreeFolder(dir, brandVoice) {
   }
 }
 
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * Pre-generate every not-yet-cached item's metadata through the Batch API
+ * (~50% cheaper) and store it in the cache. The normal upload pass then runs
+ * cache-only, making no live per-item calls. Submitted in chunks to stay well
+ * under the batch size/payload limits.
+ */
+async function runBatchPrepass(folders, brandVoice) {
+  const requests = []
+  const seen = new Set()
+  for (const folder of folders) {
+    if (folder.name === '_done' || folder.name.startsWith('.')) continue
+    const dir = path.join(INPUT_DIR, folder.name)
+    const isFree = folder.name === '_free'
+    const hint = isFree ? 'a free starter-set piece' : `part of the "${folder.name}" collection`
+    let files = []
+    try {
+      files = await listImages(dir)
+    } catch {
+      continue
+    }
+    for (const filename of files) {
+      let raw
+      try {
+        raw = await fs.readFile(path.join(dir, filename))
+      } catch {
+        continue
+      }
+      const hash = sha1(raw)
+      if (metaCache[hash] || seen.has(hash)) continue
+      seen.add(hash)
+      try {
+        const thumb = await resizePng(await prepareBase(raw), VISION_MAX)
+        requests.push({ custom_id: hash, params: itemParams(thumb, brandVoice, hint) })
+      } catch (e) {
+        console.warn(`  ⚠ ${filename}: ${e?.message ?? e}`)
+      }
+    }
+  }
+
+  if (requests.length === 0) {
+    console.log('Batch: everything is already cached — nothing to generate.\n')
+    return
+  }
+
+  const CHUNK = 100
+  console.log(`Batch: generating metadata for ${requests.length} new piece(s) via the Batch API (~50% cheaper).\n`)
+  for (let i = 0; i < requests.length; i += CHUNK) {
+    const chunk = requests.slice(i, i + CHUNK)
+    const label = `chunk ${Math.floor(i / CHUNK) + 1}/${Math.ceil(requests.length / CHUNK)}`
+    const batch = await anthropic.messages.batches.create({ requests: chunk })
+    console.log(`  ${label}: submitted ${chunk.length} (batch ${batch.id}) — polling…`)
+    let status = batch
+    while (status.processing_status !== 'ended') {
+      await sleep(20000)
+      status = await anthropic.messages.batches.retrieve(batch.id)
+      const c = status.request_counts ?? {}
+      console.log(`    … ${status.processing_status} (succeeded ${c.succeeded ?? 0}, errored ${c.errored ?? 0})`)
+    }
+    let ok = 0
+    let bad = 0
+    for await (const r of await anthropic.messages.batches.results(batch.id)) {
+      if (r.result?.type === 'succeeded') {
+        try {
+          metaCache[r.custom_id] = normalizeItemMeta(parseJson(r.result.message))
+          cacheDirty = true
+          ok++
+        } catch {
+          bad++
+        }
+      } else {
+        bad++
+      }
+    }
+    await saveCache()
+    console.log(`  ${label}: cached ${ok}${bad ? `, ${bad} failed (will retry live)` : ''}.`)
+  }
+  console.log('')
+}
+
 async function main() {
   if (!anthropic) {
     console.error('Missing ANTHROPIC_API_KEY — needed for metadata generation.')
@@ -408,7 +499,13 @@ async function main() {
   }
 
   console.log(`Ingesting from ${INPUT_DIR}`)
-  console.log(`Mode: ${DRY_RUN ? 'DRY RUN (no upload)' : PUBLISH ? 'PUBLISH (live docs)' : 'DRAFTS (review in Studio)'} · model: ${MODEL}\n`)
+  console.log(
+    `Mode: ${DRY_RUN ? 'DRY RUN (no upload)' : PUBLISH ? 'PUBLISH (live docs)' : 'DRAFTS (review in Studio)'}` +
+      `${BATCH ? ' · BATCH metadata' : ''} · model: ${MODEL}\n`,
+  )
+
+  // Batch mode: pre-generate all new metadata cheaply, then the loop runs cache-only.
+  if (BATCH) await runBatchPrepass(folders, brandVoice)
 
   for (const folder of folders) {
     const dir = path.join(INPUT_DIR, folder.name)
