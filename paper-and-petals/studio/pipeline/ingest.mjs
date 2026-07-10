@@ -315,9 +315,18 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   }
 
   const items = []
+  const seenIds = new Set()
   for (const f of files) {
     try {
-      items.push(await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection` }))
+      const it = await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection` })
+      // Skip duplicate art (same content hash → same id) so the collection never
+      // references the same piece twice (which would collide on _key / React key).
+      if (seenIds.has(it.id)) {
+        console.log(`    · duplicate of an earlier piece — not added twice`)
+        continue
+      }
+      seenIds.add(it.id)
+      items.push(it)
     } catch (e) {
       console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
     }

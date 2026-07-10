@@ -106,7 +106,13 @@ function collectionItemToRef(ci: SanityCollectionItem): CollectionItemRef {
 }
 
 export function sanityCollectionToCollection(sc: SanityCollection): Collection {
-  const items = (sc.items ?? []).filter((ci): ci is SanityCollectionItem => !!ci).map(collectionItemToRef)
+  const seen = new Set<string>()
+  const items = (sc.items ?? [])
+    .filter((ci): ci is SanityCollectionItem => !!ci)
+    .map(collectionItemToRef)
+    // De-dupe: a collection can reference the same piece twice (duplicate art or
+    // a repeated Studio reference). Keep the first so keys/counts stay correct.
+    .filter((ref) => (seen.has(ref.id) ? false : (seen.add(ref.id), true)))
   return {
     id: stripCollectionId(sc._id),
     name: sc.name,
