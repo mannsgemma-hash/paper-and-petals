@@ -4,8 +4,10 @@ import { Platform } from 'react-native'
 let Purchases: any = null
 try { Purchases = require('react-native-purchases').default } catch {}
 
-const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY ?? ''
-const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY ?? ''
+// RevenueCat *public* SDK keys — designed to be embedded in the client, so it's
+// safe to ship these defaults. A .env value (EXPO_PUBLIC_REVENUECAT_*) overrides.
+const IOS_KEY = process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY || 'appl_cKqXLjtIJBZjnZQTfjuqsJiXSbL'
+const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY || ''
 
 /** RevenueCat entitlement that grants the full living catalogue. */
 export const STUDIO_ENTITLEMENT = 'studio'
