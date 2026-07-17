@@ -177,9 +177,14 @@ function parseJson(resp) {
 }
 
 /** The messages.create params for one item's metadata (shared by live + batch). */
-function itemParams(pngBuf, brandVoice, hint) {
+function itemParams(pngBuf, brandVoice, hint, notes = '') {
   const instruction =
     `Catalogue this single scrapbook element.${hint ? ` Context: ${hint}.` : ''}\n\n` +
+    (notes
+      ? `The artist's own generation prompts for this collection are below. Use them to ` +
+        `inform an accurate name and description — match the piece you SEE to its prompt ` +
+        `where possible, but trust the image over the text.\n<prompts>\n${notes}\n</prompts>\n\n`
+      : '') +
     `Reply with ONLY a JSON object:\n` +
     `{ "name": string, "category": one of ${JSON.stringify(CATEGORIES)}, ` +
     `"tone": one of ${JSON.stringify(TONES)}, "glyph": a Feather icon name, "description": string }`
@@ -205,16 +210,17 @@ function normalizeItemMeta(m) {
   return m
 }
 
-async function itemMetadata(pngBuf, brandVoice, hint) {
-  const resp = await anthropic.messages.create(itemParams(pngBuf, brandVoice, hint))
+async function itemMetadata(pngBuf, brandVoice, hint, notes = '') {
+  const resp = await anthropic.messages.create(itemParams(pngBuf, brandVoice, hint, notes))
   return normalizeItemMeta(parseJson(resp))
 }
 
-async function collectionMetadata(brandVoice, folderName, members) {
+async function collectionMetadata(brandVoice, folderName, members, notes = '') {
   const list = members.map((m) => `- ${m.name} (${m.category}): ${m.description}`).join('\n')
   const instruction =
     `Write collection (bundle) metadata for a Paper & Petals collection named ` +
     `"${folderName}" containing these ${members.length} pieces:\n${list}\n\n` +
+    (notes ? `The artist's generation prompts for this collection (extra context):\n<prompts>\n${notes}\n</prompts>\n\n` : '') +
     `Reply with ONLY a JSON object:\n` +
     `{ "name": a warm 1–4 word title (keep "${folderName}" if already good), ` +
     `"palette": one of ${JSON.stringify(TONES)}, ` +
@@ -265,7 +271,37 @@ async function readOverrides(dir) {
   }
 }
 
-async function processOneImage(dir, filename, { free, brandVoice, hint }) {
+const NOTES_MAX = 6000
+
+/**
+ * Generation prompts / notes for a collection: any .md file(s) dropped in the
+ * folder (e.g. the daily prompt file). Fed to Claude as context so item names
+ * and descriptions match the artist's intent. Never treated as artwork.
+ */
+async function readPromptNotes(dir) {
+  let entries
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true })
+  } catch {
+    return ''
+  }
+  const mds = entries
+    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.md'))
+    .map((e) => e.name)
+    .sort()
+  let out = ''
+  for (const name of mds) {
+    try {
+      out += (out ? '\n\n' : '') + (await fs.readFile(path.join(dir, name), 'utf8')).trim()
+    } catch {
+      /* unreadable — skip */
+    }
+  }
+  if (out.length > NOTES_MAX) out = out.slice(0, NOTES_MAX) + '\n…(truncated)'
+  return out
+}
+
+async function processOneImage(dir, filename, { free, brandVoice, hint, notes }) {
   console.log(`  • ${filename}`)
   const raw = await fs.readFile(path.join(dir, filename))
   const hash = sha1(raw)
@@ -280,7 +316,7 @@ async function processOneImage(dir, filename, { free, brandVoice, hint }) {
     // Send a small thumbnail (not the full display image) — image tokens scale
     // with pixel area, so this is the biggest cost lever.
     const thumb = await resizePng(base, VISION_MAX)
-    meta = await itemMetadata(thumb, brandVoice, hint)
+    meta = await itemMetadata(thumb, brandVoice, hint, notes)
     metaCache[hash] = meta
     cacheDirty = true
     await saveCache()
@@ -317,6 +353,8 @@ async function processOneImage(dir, filename, { free, brandVoice, hint }) {
 async function processCollectionFolder(dir, folderName, brandVoice) {
   console.log(`\n📦 Collection: ${folderName}`)
   const overrides = await readOverrides(dir)
+  const notes = await readPromptNotes(dir)
+  if (notes) console.log('  · using prompt notes (.md) as context')
   const files = await listImages(dir)
   if (files.length === 0) {
     console.log('  (no images — skipped)')
@@ -327,7 +365,7 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   const seenIds = new Set()
   for (const f of files) {
     try {
-      const it = await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection` })
+      const it = await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection`, notes })
       // Skip duplicate art (same content hash → same id) so the collection never
       // references the same piece twice (which would collide on _key / React key).
       if (seenIds.has(it.id)) {
@@ -348,7 +386,7 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   // Collection-level metadata (overrides win; failures fall back to defaults).
   let ai = {}
   try {
-    if (anthropic) ai = await collectionMetadata(brandVoice, folderName, items.map((i) => i.meta))
+    if (anthropic) ai = await collectionMetadata(brandVoice, folderName, items.map((i) => i.meta), notes)
   } catch (e) {
     console.warn(`  ⚠ collection metadata failed (${e?.message ?? e}) — using folder name + defaults`)
   }
@@ -394,10 +432,11 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
 
 async function processFreeFolder(dir, brandVoice) {
   console.log(`\n🆓 Free items`)
+  const notes = await readPromptNotes(dir)
   const files = await listImages(dir)
   for (const f of files) {
     try {
-      await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece' })
+      await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece', notes })
     } catch (e) {
       console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
     }
@@ -421,6 +460,7 @@ async function runBatchPrepass(folders, brandVoice) {
     const dir = path.join(INPUT_DIR, folder.name)
     const isFree = folder.name === '_free'
     const hint = isFree ? 'a free starter-set piece' : `part of the "${folder.name}" collection`
+    const notes = await readPromptNotes(dir)
     let files = []
     try {
       files = await listImages(dir)
@@ -439,7 +479,7 @@ async function runBatchPrepass(folders, brandVoice) {
       seen.add(hash)
       try {
         const thumb = await resizePng(await prepareBase(raw), VISION_MAX)
-        requests.push({ custom_id: hash, params: itemParams(thumb, brandVoice, hint) })
+        requests.push({ custom_id: hash, params: itemParams(thumb, brandVoice, hint, notes) })
       } catch (e) {
         console.warn(`  ⚠ ${filename}: ${e?.message ?? e}`)
       }

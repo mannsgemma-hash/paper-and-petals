@@ -66,58 +66,52 @@ cd C:\Users\Gemma\paper-and-petals\paper-and-petals\studio
 git pull                     # grab any code/pipeline updates
 ```
 
-**1. Create the art** in Firefly / Midjourney / from your artist (using your
-daily prompts). Save the image files somewhere, e.g. `C:\Users\Gemma\art-in`.
+**1. Create the art.** The daily task generates single-item prompts for one
+collection; paste them into Midjourney and **download the images straight into
+that collection's folder** under `incoming\`. Drop the day's **prompt `.md`
+file into the same folder** — the pipeline feeds it to Claude so item names and
+descriptions match your intent (it's never treated as artwork).
 
-**2. Turn the art into individual, background-free pieces.**
-
-- If a file is **a sheet of many items** (a sticker page, a contact sheet), split
-  it into separate cut-outs straight into a collection folder:
-  ```powershell
-  node pipeline/extract.mjs "C:\Users\Gemma\art-in\spring-sheet.png" --split --out ".\incoming\Spring Meadow"
-  ```
-- If a file is **already one item per image** but has a background, just cut out:
-  ```powershell
-  node pipeline/extract.mjs "C:\Users\Gemma\art-in" --out ".\incoming\Spring Meadow"
-  ```
-- If your art is **already transparent, one item per file** (typical Firefly),
-  skip extract — just copy the files into a collection folder yourself.
-
-Useful flags: `--gap 8` if one item splits into pieces; `--min-size 40` if you get
-specks; `--no-bg` if already transparent. (See `README.md`.)
+**2. Tag anything that needs its background removed.** Single-item generations
+don't need splitting — just rename any file that still has a background so it
+ends in **`_cut`**, e.g. `teapot_cut.png`. Transparent/full-page art needs no
+tag. (Sheets are still supported if you ever make one: tag `_split`.)
 
 **3. Lay out the `incoming` folder.** One folder per collection; a special
 `_free` folder for free-tier items:
 ```
 incoming\
   Spring Meadow\          ← becomes a paid collection
+    prompts.md            ← the day's prompts (context for metadata)
     cover.png             (optional; else the first piece is the cover)
     collection.json       (optional; see below)
-    spring-sheet-01.png
-    spring-sheet-02.png
+    teapot_cut.png        ← will get its background removed
+    pressed-rose.png      ← already transparent, used as-is
   _free\                  ← these become free starter-set items (no collection)
     washi-sage.png
 ```
-Open the folder, **delete any junk crops**, and rename pieces if you like.
 
 Optional `collection.json` to override what the AI guesses (any field optional):
 ```json
 { "name": "Spring Meadow", "palette": "sage", "price": 5.99, "free": false }
 ```
 
-**4. Preview the metadata (cheap, no upload).**
+**4. Prep the tagged files (in place).**
 ```powershell
-npm run ingest -- --dry-run
+npm run prep
 ```
-Look in `pipeline\out\` — you'll see the names, categories, tones, descriptions
-and suggested prices the AI produced. Tweak art/folders if anything's off.
+Backgrounds are removed in the same folder; originals are kept in
+`incoming\_originals\`. Glance over the results, delete any bad cut-outs.
 
 **5. Upload as drafts.**
 ```powershell
-npm run ingest
+npm run ingest -- --batch
 ```
-This processes every image, uploads it to Sanity, and creates **draft** items +
-collections. Nothing is live yet.
+This normalises every image, has Claude write the metadata (using your prompt
+`.md` as context, via the cheap Batch API), uploads display + print assets to
+Sanity, and creates **draft** items + collections. Nothing is live yet.
+(`npm run ingest -- --dry-run` first if you want to preview metadata in
+`pipeline\out\` without uploading.)
 
 **6. Review and publish.**
 ```powershell
