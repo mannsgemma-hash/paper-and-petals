@@ -544,9 +544,26 @@ function CollectionDetail({
                     <CollectionDownloadButton collection={collection} />
                   </View>
                 ) : status === 'studio' ? (
-                  <View style={styles.studioTag}>
-                    <Feather name="package" size={12} color={theme.palette.forest} />
-                    <Text style={styles.studioTagText}>INCLUDED WITH STUDIO</Text>
+                  <View style={styles.colCta}>
+                    <View style={styles.studioTag}>
+                      <Feather name="package" size={12} color={theme.palette.forest} />
+                      <Text style={styles.studioTagText}>INCLUDED WITH STUDIO</Text>
+                    </View>
+                    {/* Upsell for subscribers: owning outright adds keep-forever +
+                        print download — a perk Studio alone doesn't include. */}
+                    <Pressable
+                      style={[styles.ownForPrint, purchasing && { opacity: 0.6 }]}
+                      onPress={() => onBuy(collection)}
+                      disabled={purchasing}
+                    >
+                      <Feather name="download" size={13} color={theme.palette.forest} />
+                      <Text style={styles.ownForPrintText}>
+                        {purchasing ? 'Adding…' : `Own it to download & print · $${collection.price.toFixed(2)}`}
+                      </Text>
+                    </Pressable>
+                    <Text style={styles.ownForPrintNote}>
+                      Yours forever — even if Studio ends — with the high-res art to print.
+                    </Text>
                   </View>
                 ) : (
                   <View style={styles.freeTag}>
@@ -1020,6 +1037,31 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   orStudio: { fontFamily: theme.font.ui, fontSize: 12, fontWeight: '600', color: theme.palette.forest },
+  ownForPrint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    height: 38,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(78,102,82,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(78,102,82,0.42)',
+    marginTop: 6,
+  },
+  ownForPrintText: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.palette.forest,
+  },
+  ownForPrintNote: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    lineHeight: 16,
+    color: theme.color.fg3,
+    marginTop: 2,
+  },
   dlOwned: {
     flexDirection: 'row',
     alignItems: 'center',

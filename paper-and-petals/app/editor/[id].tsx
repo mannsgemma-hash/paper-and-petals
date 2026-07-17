@@ -40,6 +40,7 @@ import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/template
 import { fetchCatalogue } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
+import { Tour, type TourStep } from '../../src/components/Tour';
 import { screen, track } from '../../src/lib/analytics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
 import { SOUNDSCAPES, type SoundscapeId } from '../../src/lib/soundscapes';
@@ -82,6 +83,55 @@ const TAPE_TONES: (keyof typeof SHOP_TONES)[] = ['sage', 'rose', 'amber', 'blue'
 // Doodle pen
 const DOODLE_STROKE = 3;
 const DOODLE_MIN_BOX = 24;
+
+/**
+ * First-open feature tour. Rings are positioned over the fixed chrome: the "+"
+ * drawer FAB (canvas top-right), the mini-FAB tool rail beneath it, the page
+ * rail on the left, and the top bar. Coordinates mirror the layout constants
+ * (topbar ≈64 tall; FAB top:18/right:18; mini-FABs top 84–334, right 23).
+ */
+const EDITOR_TOUR: TourStep[] = [
+  {
+    icon: 'plus',
+    title: 'Your collection',
+    body: 'Open the drawer of papers, stickers, florals and treasures — tap any piece to place it on the page.',
+    ring: { top: 74, right: 10, width: 72, height: 72 },
+    card: { top: 156, right: 20 },
+  },
+  {
+    icon: 'edit-3',
+    title: 'Craft tools',
+    body: 'Add handwritten text, your own photos, stretchy washi tape, freehand doodles, ready-made layouts, and cosy soundscapes.',
+    ring: { top: 140, right: 16, width: 60, height: 312, borderRadius: 30 },
+    card: { top: 200, right: 88 },
+  },
+  {
+    icon: 'book-open',
+    title: 'Pages',
+    body: 'Your journal has many spreads — tap a page here to flip to it, and add more with the +.',
+    ring: { top: 76, left: 4, width: 66, height: 320, borderRadius: 24 },
+    card: { top: 140, left: 84 },
+  },
+  {
+    icon: 'rotate-ccw',
+    title: 'Undo, name & share',
+    body: 'Rename your journal, undo and redo any change, and share or save a picture of your finished spread.',
+    ring: { top: 6, right: 12, width: 270, height: 52, borderRadius: 26 },
+    card: { top: 70, right: 20 },
+  },
+  {
+    icon: 'move',
+    title: 'Arrange anything',
+    body: 'Tap a placed piece to select it — drag to move, pull the corners to resize, spin the handle to rotate, and use the little toolbar to layer or delete.',
+    card: { top: '30%', left: '50%', width: 340, marginLeft: -170 },
+  },
+  {
+    icon: 'download',
+    title: 'Keep the art you love',
+    body: 'A Studio subscription unlocks every collection in the app. Buy a collection outright and it’s yours forever — including downloading the high-res art for printing, from My Library.',
+    card: { top: '30%', left: '50%', width: 340, marginLeft: -170 },
+  },
+];
 
 /** Soft paper lift behind items when their shadow toggle is on. */
 const ITEM_SHADOW = {
@@ -2428,35 +2478,8 @@ export default function EditorScreen() {
         {/* ── Soundscape player ────────────────────────────────────── */}
         <SoundscapeBar visible={showSoundPanel} onClose={() => setShowSoundPanel(false)} />
 
-        {/* ── First-run tips ────────────────────────────────────────── */}
-        {showTips && (
-          <View style={styles.textModalScrim}>
-            <Pressable style={StyleSheet.absoluteFill} onPress={dismissTips} />
-            <View style={styles.tipsCard}>
-              <Text style={styles.drawerEyebrow}>WELCOME TO YOUR CRAFT DESK</Text>
-              <Text style={styles.textModalTitle}>A few ways to play</Text>
-              {[
-                { icon: 'plus', label: 'Add papers, stickers & florals from your collection' },
-                { icon: 'type', label: 'Drop in text — choose a handwritten font and colour' },
-                { icon: 'image', label: 'Bring in your own photos from the camera roll' },
-                { icon: 'minus', label: 'Lay washi tape and stretch it to any length' },
-                { icon: 'edit-3', label: 'Doodle freehand with the pen' },
-                { icon: 'grid', label: 'Start from a ready-made layout' },
-                { icon: 'share', label: 'Share or save your finished spread' },
-              ].map((t) => (
-                <View key={t.icon} style={styles.tipRow}>
-                  <View style={styles.tipIcon}>
-                    <Feather name={t.icon as any} size={16} color={theme.palette.forest} />
-                  </View>
-                  <Text style={styles.tipLabel}>{t.label}</Text>
-                </View>
-              ))}
-              <View style={styles.textModalActions}>
-                <Button title="Start crafting" onPress={dismissTips} />
-              </View>
-            </View>
-          </View>
-        )}
+        {/* ── First-run tour — steps through each feature ──────────── */}
+        {showTips && <Tour steps={EDITOR_TOUR} onDone={dismissTips} />}
 
         {/* ── Purchase arrival ──────────────────────────────────────── */}
         {pendingDelivery.length > 0 && (

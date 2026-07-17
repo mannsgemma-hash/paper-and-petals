@@ -18,6 +18,7 @@ import { SHOP_TONES, type Collection } from '../src/data/shop';
 import { fetchCatalogue } from '../src/services/content';
 import { screen, track } from '../src/lib/analytics';
 import { downloadCollectionZip } from '../src/lib/downloads';
+import { purchaseCollection } from '../src/lib/revenuecat';
 
 // My library — collections the player owns outright (one-time purchases). This is
 // the home for re-downloading the high-res print files. Subscription-only
@@ -26,6 +27,10 @@ import { downloadCollectionZip } from '../src/lib/downloads';
 export default function LibraryScreen() {
   const router = useRouter();
   const ownedCollections = useAppStore((s) => s.ownedCollections);
+  const hasStudio = useAppStore((s) => s.hasStudio);
+  const markCollectionOwned = useAppStore((s) => s.markCollectionOwned);
+  const queueDeliveryMany = useAppStore((s) => s.queueDeliveryMany);
+  const shopItems = useAppStore((s) => s.shopItems);
   const collections = useAppStore((s) => s.collections);
   const setCollections = useAppStore((s) => s.setCollections);
   const setShopItems = useAppStore((s) => s.setShopItems);
@@ -46,6 +51,58 @@ export default function LibraryScreen() {
     () => collections.filter((c) => ownedCollections[c.id]),
     [collections, ownedCollections],
   );
+
+  // Collections a subscriber can use in-app but doesn't own outright — offered
+  // here as "own it to download & print" (the perk Studio alone doesn't include).
+  const studioOnly = useMemo(
+    () => (hasStudio ? collections.filter((c) => !c.free && !ownedCollections[c.id]) : []),
+    [collections, ownedCollections, hasStudio],
+  );
+
+  const resolveMembers = (c: Collection) =>
+    c.items.map(
+      (ref) =>
+        shopItems.find((s) => s.id === ref.id) ?? {
+          id: ref.id,
+          category: ref.category,
+          name: ref.name,
+          tone: ref.tone,
+          glyph: ref.glyph,
+          flowerAsset: ref.flowerAsset,
+          desc: '',
+          free: false,
+          collectionIds: [c.id],
+          isNew: false,
+        },
+    );
+
+  const onBuyToOwn = (c: Collection) => {
+    Alert.alert(
+      'Own this collection',
+      `${c.name} — $${c.price.toFixed(2)} one-time.\n\nIt stays yours forever (even if Studio ends), and you can download the high-res art for printing.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: `Buy for $${c.price.toFixed(2)}`,
+          onPress: async () => {
+            setBusyId(c.id);
+            try {
+              const ok = await purchaseCollection(c.id);
+              if (ok) {
+                markCollectionOwned(c.id);
+                queueDeliveryMany(resolveMembers(c));
+                track('collection_purchased', { collectionId: c.id, price: c.price, source: 'library_upsell' });
+              }
+            } catch (e: any) {
+              Alert.alert('Purchase unavailable', e?.message ?? 'Please try again in a moment.');
+            } finally {
+              setBusyId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const runDownload = async (c: Collection) => {
     setBusyId(c.id);
@@ -94,7 +151,7 @@ export default function LibraryScreen() {
           print and use in hardcopy.
         </Text>
 
-        {owned.length === 0 ? (
+        {owned.length === 0 && studioOnly.length === 0 ? (
           <View style={styles.empty}>
             <Feather name="download-cloud" size={32} color={theme.color.fg4} />
             <Text style={styles.emptyTitle}>No collections to download yet</Text>
@@ -139,6 +196,46 @@ export default function LibraryScreen() {
               </View>
             );
           })
+        )}
+
+        {/* Studio-unlocked collections — usable in-app already; owning adds
+            keep-forever + print download. */}
+        {studioOnly.length > 0 && (
+          <>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Included with Studio</Text>
+              <Text style={styles.sectionSub}>
+                You can use these in your journals now. Own one outright to keep it forever and
+                download the art for printing.
+              </Text>
+            </View>
+            {studioOnly.map((c) => {
+              const busy = busyId === c.id;
+              return (
+                <View key={c.id} style={styles.card}>
+                  <CollectionThumb collection={c} />
+                  <View style={styles.cardBody}>
+                    <Text style={styles.cardName} numberOfLines={1}>{c.name}</Text>
+                    <Text style={styles.cardMeta}>{c.pieceCount} pieces · in Studio</Text>
+                  </View>
+                  <Pressable
+                    style={[styles.ownBtn, busy && styles.dlBtnBusy]}
+                    onPress={() => onBuyToOwn(c)}
+                    disabled={busy || busyId !== null}
+                  >
+                    {busy ? (
+                      <ActivityIndicator size="small" color={theme.palette.forest} />
+                    ) : (
+                      <>
+                        <Feather name="download" size={14} color={theme.palette.forest} />
+                        <Text style={styles.ownBtnText}>Own · ${c.price.toFixed(2)}</Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
+              );
+            })}
+          </>
         )}
       </ScrollView>
     </Screen>
@@ -277,4 +374,22 @@ const styles = StyleSheet.create({
   },
   dlText: { fontFamily: theme.font.ui, fontSize: 14, fontWeight: '700', color: theme.palette.cream },
   dlBusyText: { fontFamily: theme.font.ui, fontSize: 13, fontWeight: '600', color: theme.palette.forest },
+
+  sectionHead: { marginTop: 22, marginBottom: 12, gap: 4 },
+  sectionTitle: { fontFamily: theme.font.display, fontSize: 19, color: theme.color.fg1 },
+  sectionSub: { fontFamily: theme.font.ui, fontSize: 13, lineHeight: 19, color: theme.color.fg3 },
+  ownBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    minWidth: 120,
+    height: 42,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.pill,
+    backgroundColor: 'rgba(78,102,82,0.10)',
+    borderWidth: 1,
+    borderColor: 'rgba(78,102,82,0.42)',
+  },
+  ownBtnText: { fontFamily: theme.font.ui, fontSize: 13, fontWeight: '700', color: theme.palette.forest },
 });

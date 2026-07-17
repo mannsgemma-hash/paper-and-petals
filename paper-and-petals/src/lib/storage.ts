@@ -101,3 +101,13 @@ export async function hasSeenEditorTips(): Promise<boolean> {
 export async function markEditorTipsSeen(): Promise<void> {
   await setItem(KEY_EDITOR_TIPS_SEEN, '1');
 }
+
+const KEY_HOME_TOUR_SEEN = 'pp:home-tour-seen';
+
+export async function hasSeenHomeTour(): Promise<boolean> {
+  return (await getItem(KEY_HOME_TOUR_SEEN)) === '1';
+}
+
+export async function markHomeTourSeen(): Promise<void> {
+  await setItem(KEY_HOME_TOUR_SEEN, '1');
+}

@@ -17,6 +17,8 @@ import { theme } from '../../src/theme/theme';
 import { useAppStore, type Journal } from '../../src/store/app';
 import { promptOfTheDay } from '../../src/data/prompts';
 import { screen, track } from '../../src/lib/analytics';
+import { hasSeenHomeTour, markHomeTourSeen } from '../../src/lib/storage';
+import { Tour, type TourStep } from '../../src/components/Tour';
 
 // SCR-05 Home Screen. Toca-Boca-style journal carousel.
 // Central featured journal with smaller neighbours peeking on either side.
@@ -29,6 +31,37 @@ const CARD_W = 300;
 const CARD_H = 420;
 const STEP = 280;
 
+/** First-open tour of the home screen. Rings sit over the fixed chrome. */
+const HOME_TOUR: TourStep[] = [
+  {
+    icon: 'book',
+    title: 'Your bookshelf',
+    body: 'Each leather journal is a scrapbook of your own. Swipe through them and tap one to open it — or start a fresh journal from the last slot.',
+    card: { top: '32%', left: '50%', width: 340, marginLeft: -170 },
+  },
+  {
+    icon: 'shopping-bag',
+    title: 'The shop',
+    body: 'Browse curated collections of papers, stickers and treasures. There’s a free starter set, and new collections arrive every week.',
+    ring: { top: 16, right: 16, width: 340, height: 72, borderRadius: 36 },
+    card: { top: 100, right: 24 },
+  },
+  {
+    icon: 'download',
+    title: 'My library',
+    body: 'A Studio subscription unlocks every collection in the app. Buy a collection outright and it’s yours forever — you can even download the high-res art here for printing at home.',
+    ring: { top: 16, right: 16, width: 340, height: 72, borderRadius: 36 },
+    card: { top: 100, right: 24 },
+  },
+  {
+    icon: 'feather',
+    title: 'A little prompt',
+    body: 'Every day brings a gentle crafting prompt down here — a nudge when you don’t know what to make.',
+    ring: { bottom: 42, left: '18%', right: '18%', height: 40, borderRadius: 20 },
+    card: { bottom: 100, left: '50%', width: 340, marginLeft: -170 },
+  },
+];
+
 export default function HomeScreen() {
   const router = useRouter();
   const journals = useAppStore((s) => s.journals);
@@ -37,6 +70,19 @@ export default function HomeScreen() {
   useEffect(() => {
     screen('Home');
   }, []);
+
+  // First-open tour — shown once, then remembered.
+  const [showTour, setShowTour] = useState(false);
+  useEffect(() => {
+    hasSeenHomeTour().then((seen) => {
+      if (!seen) setShowTour(true);
+    });
+  }, []);
+  const dismissTour = () => {
+    setShowTour(false);
+    markHomeTourSeen();
+    track('home_tour_done');
+  };
 
   const [active, setActive] = useState(0);
   const dragDX = useRef(new Animated.Value(0)).current;
@@ -199,6 +245,9 @@ export default function HomeScreen() {
           </Pressable>
         ))}
       </View>
+
+      {/* First-open tour */}
+      {showTour && <Tour steps={HOME_TOUR} onDone={dismissTour} />}
     </Screen>
   );
 }
