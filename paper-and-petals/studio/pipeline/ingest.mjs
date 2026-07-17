@@ -34,6 +34,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
+import { fileTag } from './lib/image.mjs'
 import { createClient } from '@sanity/client'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -242,10 +243,18 @@ function imageField(assetId) {
 // ─── Run ────────────────────────────────────────────────────────────────────────
 async function listImages(dir) {
   const entries = await fs.readdir(dir, { withFileTypes: true })
-  return entries
+  const names = entries
     .filter((e) => e.isFile() && IMAGE_EXTS.has(path.extname(e.name).toLowerCase()) && !e.name.startsWith('cover.'))
     .map((e) => e.name)
     .sort()
+  // Files still tagged _split/_cut haven't been prepped — ingesting a whole
+  // sheet as one "item" is never right, so warn and skip them.
+  const ready = []
+  for (const name of names) {
+    if (fileTag(name)) console.warn(`  ⚠ ${name} is tagged "${fileTag(name)}" but unprocessed — run \`npm run prep\` first (skipped)`)
+    else ready.push(name)
+  }
+  return ready
 }
 
 async function readOverrides(dir) {
@@ -407,7 +416,8 @@ async function runBatchPrepass(folders, brandVoice) {
   const requests = []
   const seen = new Set()
   for (const folder of folders) {
-    if (folder.name === '_done' || folder.name.startsWith('.')) continue
+    // Skip working folders (_done, _originals, dotfolders) — _free is content.
+    if (folder.name.startsWith('.') || (folder.name.startsWith('_') && folder.name !== '_free')) continue
     const dir = path.join(INPUT_DIR, folder.name)
     const isFree = folder.name === '_free'
     const hint = isFree ? 'a free starter-set piece' : `part of the "${folder.name}" collection`
@@ -519,7 +529,7 @@ async function main() {
   for (const folder of folders) {
     const dir = path.join(INPUT_DIR, folder.name)
     if (folder.name === '_free') await processFreeFolder(dir, brandVoice)
-    else if (folder.name === '_done' || folder.name.startsWith('.')) continue
+    else if (folder.name.startsWith('_') || folder.name.startsWith('.')) continue // _done, _originals, …
     else await processCollectionFolder(dir, folder.name, brandVoice)
   }
 

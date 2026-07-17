@@ -9,7 +9,8 @@
     "seed": "node --experimental-vm-modules scripts/seed.mjs",
     "clear": "node scripts/clear.mjs",
     "ingest": "node pipeline/ingest.mjs",
-    "extract": "node pipeline/extract.mjs"
+    "extract": "node pipeline/extract.mjs",
+    "prep": "node pipeline/prep.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",

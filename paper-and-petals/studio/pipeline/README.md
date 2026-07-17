@@ -83,6 +83,30 @@ npm run ingest -- --no-bg            # never remove background
 npm run ingest -- --publish          # write live docs instead of drafts (skip review)
 ```
 
+## Tag-driven prep (`prep`) — the easy way
+
+Skip the separate split/staging folders: drop raw art **straight into its
+collection folder**, tag the filename with what it needs, and run one command.
+
+| Filename | Meaning |
+|---|---|
+| `teapots_split.png` | a sheet of many elements — split into `teapots-01.png`, `-02.png`… |
+| `old-letter_cut.png` | one element on a background — background removed → `old-letter.png` |
+| anything untagged | already ready — left alone |
+
+(`-split` / `-cut` also work; case-insensitive.)
+
+```bash
+npm run prep                 # processes every tagged file under incoming/, in place
+npm run prep -- --gap 10     # per-run overrides (same knobs as extract)
+```
+
+Pieces land in the **same collection folder**; originals are moved to
+`incoming/_originals/` (kept, never deleted; ingest ignores that folder). If you
+forget to prep, ingest refuses tagged files with a warning rather than uploading
+a whole sheet as one item. Default split gap is **0** (tuned for grid sheets) —
+raise it if one item breaks into pieces.
+
 ## Background removal & sheet splitting (`extract`)
 
 A prep tool for before ingest. Two modes:
