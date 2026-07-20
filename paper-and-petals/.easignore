@@ -1,0 +1,38 @@
+# .easignore — controls what gets uploaded to EAS Build.
+# When this file exists, EAS uses it INSTEAD of .gitignore, so the essentials
+# from .gitignore are repeated here. Everything listed is rebuilt on the EAS
+# servers (npm install + prebuild) or is irrelevant to the mobile app build.
+
+# JS dependencies — EAS runs `npm install` from package-lock.json
+node_modules/
+
+# Generated native projects — EAS runs prebuild itself
+/ios
+/android
+
+# Expo / Metro caches and web output
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+.metro-health-check*
+
+# Sanity Studio + the entire art/content pipeline.
+# This is a separate tool; the mobile app build never needs it. It also holds
+# its own node_modules and all the raw art in incoming/ — the real bloat.
+studio/
+
+# Secrets / signing material (never upload)
+.env
+.env*.local
+*.p8
+*.p12
+*.key
+*.pem
+*.jks
+*.mobileprovision
+
+# misc
+.git/
+*.log
+.DS_Store
