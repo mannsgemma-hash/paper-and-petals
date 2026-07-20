@@ -2,11 +2,13 @@
 // Seeds shop ITEMS (single pieces) and COLLECTIONS (bundles) into Sanity.
 // Keep in sync with src/data/shop.ts (the offline fallback mirror).
 //
-// NOTE: the write token below should be rotated — committing it is a security
-// risk. Prefer reading it from an env var (process.env.SANITY_WRITE_TOKEN).
 const PROJECT_ID = 'cv53e819'
 const DATASET = 'production'
-const TOKEN = process.env.SANITY_WRITE_TOKEN || 'skXRiSU5BuCfRmzApfZW85xDiLViqUQYviGIpqVV06DeOPd7rXe8Zp1GFrCgjXjVyFzELC8wcS5VHzygByzVNwJHYSSiSnPfr2P088NBSbgsQudB7R1e7ngAhOjeQ5Tk8gZyNO3o3SBAUX4WajSVCZ6nQs3ReTnXbjVcVM6eTmjt2wqlcfAu'
+const TOKEN = process.env.SANITY_WRITE_TOKEN
+if (!TOKEN) {
+  console.error('Set SANITY_WRITE_TOKEN first (PowerShell: $env:SANITY_WRITE_TOKEN="sk...").')
+  process.exit(1)
+}
 
 // Fixed free-tier items (standalone). Everything else is paid-only (sold inside a collection).
 const FREE_IDS = new Set([

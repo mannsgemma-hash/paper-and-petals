@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.paperandpetals.app",
       "infoPlist": {
         "UIBackgroundModes": ["audio"],
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocationWhenInUseUsageDescription": "Paper & Petals does not use your location. This notice exists only because a bundled software component references location services."
       }
     },
     "android": {
