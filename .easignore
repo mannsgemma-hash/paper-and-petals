@@ -1,0 +1,42 @@
+# .easignore (repo root) — controls what is uploaded to EAS Build.
+# The app lives in the nested paper-and-petals/ folder, but EAS archives from
+# the GIT REPO ROOT (this folder), so this file must live here. When present,
+# EAS uses it INSTEAD of .gitignore. Everything listed is either rebuilt on the
+# EAS servers (npm install + prebuild) or irrelevant to the mobile app build.
+
+# JS dependencies — reinstalled on EAS from package-lock.json (any depth)
+node_modules/
+
+# Generated native projects — EAS runs prebuild itself
+paper-and-petals/ios/
+paper-and-petals/android/
+
+# Sanity Studio + the whole art/content pipeline: separate tool with its own
+# node_modules and all the raw art under incoming/ — the real upload bloat.
+paper-and-petals/studio/
+
+# Repo folders unrelated to the app build
+chats/
+project/
+
+# Expo / Metro caches and web output
+.expo/
+dist/
+web-build/
+*.tsbuildinfo
+.metro-health-check*
+
+# Secrets / signing material (never upload)
+.env
+.env*.local
+*.p8
+*.p12
+*.key
+*.pem
+*.jks
+*.mobileprovision
+
+# misc
+.git/
+*.log
+.DS_Store
