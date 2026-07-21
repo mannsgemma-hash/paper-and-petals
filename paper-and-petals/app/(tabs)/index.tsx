@@ -346,21 +346,22 @@ function JournalCover({ journal, active }: { journal: Journal; active: boolean }
       {/* Spine darkening on the binding edge */}
       <View style={styles.spine} />
 
-      {/* Stitched inner border — only over the plain leather look */}
-      {!cover && <View style={styles.stitchBorder} />}
-
-      {/* Brass label plate */}
-      <View style={styles.brassPlate}>
-        <Text style={styles.brassName} numberOfLines={1}>
-          {journal.name}
-        </Text>
-        <Text style={styles.brassMeta}>
-          {journal.items} items · {journal.edited}
-        </Text>
-      </View>
-
-      {/* Ribbon bookmark */}
-      <View style={styles.ribbon} />
+      {/* Leather-only chrome: stitched border, name plate, ribbon. When the
+          journal has cover art, the art shows completely clean. */}
+      {!cover && (
+        <>
+          <View style={styles.stitchBorder} />
+          <View style={styles.brassPlate}>
+            <Text style={styles.brassName} numberOfLines={1}>
+              {journal.name}
+            </Text>
+            <Text style={styles.brassMeta}>
+              {journal.items} items · {journal.edited}
+            </Text>
+          </View>
+          <View style={styles.ribbon} />
+        </>
+      )}
     </View>
   );
 }
