@@ -71,14 +71,12 @@ const NEW_TEXT_W = 240;
 const NEW_TEXT_H = 72;
 // Washi tape — a stretchy strip; corner handles resize length and width
 // independently (unlike the proportional scale used by every other kind).
-const TAPE_W = 200;
-const TAPE_H = 32;
+// The tape TOOL was retired, but existing journals still contain tape items,
+// so the rendering + resize rules stay.
 const TAPE_MIN_W = 40;
 const TAPE_MAX_W = SPREAD_W * 2;
 const TAPE_MIN_H = 14;
 const TAPE_MAX_H = 320;
-/** Tape tones cycled by the tape tool, in placement order. */
-const TAPE_TONES: (keyof typeof SHOP_TONES)[] = ['sage', 'rose', 'amber', 'blue', 'mauve', 'cream'];
 
 // Doodle pen
 const DOODLE_STROKE = 3;
@@ -101,7 +99,7 @@ const EDITOR_TOUR: TourStep[] = [
   {
     icon: 'edit-3',
     title: 'Craft tools',
-    body: 'Add handwritten text, your own photos, stretchy washi tape, freehand doodles, ready-made layouts, and cosy soundscapes.',
+    body: 'Add handwritten text, your own photos, freehand doodles, ready-made layouts, and cosy soundscapes.',
     ring: { top: 140, right: 16, width: 60, height: 312, borderRadius: 30 },
     card: { top: 200, right: 88 },
   },
@@ -211,6 +209,8 @@ interface PlacedItem {
   srcH?: number;
   /** Paper-lift drop shadow toggle. */
   shadow?: boolean;
+  /** Horizontal mirror toggle. */
+  flipX?: boolean;
   x: number;
   y: number;
   w: number;
@@ -534,7 +534,9 @@ function PlacedItemView({
   return (
     <Animated.View style={animStyle}>
       <GestureDetector gesture={composed}>
-        <Animated.View style={styles.itemFill}>
+        <Animated.View
+          style={[styles.itemFill, item.flipX && { transform: [{ scaleX: -1 }] }]}
+        >
           {isText ? (
             <View style={styles.textItemInner}>
               <Animated.Text
@@ -659,6 +661,8 @@ interface ItemToolbarProps {
   onEditText?: () => void;
   onToggleShadow?: () => void;
   shadowOn?: boolean;
+  onFlip?: () => void;
+  flipOn?: boolean;
 }
 
 function ItemToolbar({
@@ -670,6 +674,8 @@ function ItemToolbar({
   onEditText,
   onToggleShadow,
   shadowOn,
+  onFlip,
+  flipOn,
 }: ItemToolbarProps) {
   return (
     <View style={[styles.toolbar, { left, top }]}>
@@ -689,6 +695,18 @@ function ItemToolbar({
             hitSlop={4}
           >
             <Feather name="sun" size={16} color={shadowOn ? theme.palette.forest : theme.color.fg1} />
+          </Pressable>
+          <View style={styles.toolDivider} />
+        </>
+      )}
+      {onFlip && (
+        <>
+          <Pressable
+            style={[styles.toolBtn, flipOn && styles.toolBtnActive]}
+            onPress={onFlip}
+            hitSlop={4}
+          >
+            <Feather name="repeat" size={16} color={flipOn ? theme.palette.forest : theme.color.fg1} />
           </Pressable>
           <View style={styles.toolDivider} />
         </>
@@ -1393,7 +1411,6 @@ export default function EditorScreen() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [showSoundPanel, setShowSoundPanel] = useState(false);
-  const tapeToneIdx = useRef(0);
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -1701,34 +1718,6 @@ export default function EditorScreen() {
     setTextEditorId(null);
   }
 
-  // ── Washi tape ────────────────────────────────────────────────────────────
-  function addTape() {
-    const currentItems = pages[activePage - 1].items;
-    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
-    const tone = TAPE_TONES[tapeToneIdx.current % TAPE_TONES.length];
-    tapeToneIdx.current += 1;
-    const newItem: PlacedItem = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      itemId: 'tape',
-      kind: 'tape',
-      glyph: 'minus',
-      tone,
-      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
-      y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
-      w: TAPE_W,
-      h: TAPE_H,
-      rotate: (Math.random() - 0.5) * 30,
-      z: maxZ + 1,
-    };
-    const newPages = pages.map((p, i) =>
-      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
-    );
-    pushHistory(newPages);
-    scheduleSave(newPages);
-    setSelectedId(newItem.id);
-    track('tape_added');
-  }
-
   // ── Doodle pen ────────────────────────────────────────────────────────────
   function addDoodle(points: { x: number; y: number }[]) {
     const xs = points.map((p) => p.x);
@@ -1838,6 +1827,16 @@ export default function EditorScreen() {
     const newPages = pages.map((p, i) =>
       i === activePage - 1
         ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, shadow: !it.shadow } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleFlipSelected(id: string) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, flipX: !it.flipX } : it)) }
         : p,
     );
     pushHistory(newPages);
@@ -2224,6 +2223,12 @@ export default function EditorScreen() {
                             : undefined
                         }
                         shadowOn={!!selectedItem.shadow}
+                        onFlip={
+                          selectedItem.kind !== 'text'
+                            ? () => handleFlipSelected(selectedItem.id)
+                            : undefined
+                        }
+                        flipOn={!!selectedItem.flipX}
                       />
                     </View>
                   )}
@@ -2260,27 +2265,22 @@ export default function EditorScreen() {
               <Feather name="image" size={20} color={theme.palette.forest} />
             </Pressable>
 
-            {/* Washi tape */}
-            <Pressable style={[styles.miniFab, { top: 184 }]} onPress={addTape}>
-              <Feather name="minus" size={20} color={theme.palette.forest} />
-            </Pressable>
-
             {/* Doodle pen — toggles draw mode */}
             <Pressable
-              style={[styles.miniFab, { top: 234 }, penMode && styles.miniFabActive]}
+              style={[styles.miniFab, { top: 184 }, penMode && styles.miniFabActive]}
               onPress={() => { setPenMode((m) => !m); setSelectedId(null); }}
             >
               <Feather name="edit-3" size={20} color={penMode ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
             {/* Starter templates */}
-            <Pressable style={[styles.miniFab, { top: 284 }]} onPress={() => setTemplatePickerOpen(true)}>
+            <Pressable style={[styles.miniFab, { top: 234 }]} onPress={() => setTemplatePickerOpen(true)}>
               <Feather name="grid" size={20} color={theme.palette.forest} />
             </Pressable>
 
             {/* Ambient soundscapes */}
             <Pressable
-              style={[styles.miniFab, { top: 334 }, showSoundPanel && styles.miniFabActive]}
+              style={[styles.miniFab, { top: 284 }, showSoundPanel && styles.miniFabActive]}
               onPress={() => setShowSoundPanel((v) => !v)}
             >
               <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
