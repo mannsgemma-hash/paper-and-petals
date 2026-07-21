@@ -203,6 +203,12 @@ interface PlacedItem {
   text?: string;
   fontKey?: string;
   color?: string;
+  align?: 'left' | 'center' | 'right';
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Lettering size multiplier on top of the box-height-based size. */
+  textScale?: number;
   // Doodle fields (kind === 'doodle'): stroke points in [0..srcW]×[0..srcH]
   points?: { x: number; y: number }[];
   srcW?: number;
@@ -509,8 +515,9 @@ function PlacedItemView({
 
   // Live font sizing for text items: the lettering tracks the box height so the
   // corner resize handles scale text for free.
+  const textScale = item.kind === 'text' ? (item.textScale ?? 1) : 1;
   const textAnimStyle = useAnimatedStyle(() => ({
-    fontSize: Math.max(8, itemH.value * TEXT_FILL),
+    fontSize: Math.max(8, itemH.value * TEXT_FILL * textScale),
   }));
 
   const toneKey = item.tone as keyof typeof SHOP_TONES;
@@ -542,7 +549,14 @@ function PlacedItemView({
               <Animated.Text
                 style={[
                   styles.textItem,
-                  { fontFamily: familyForFontKey(item.fontKey), color: item.color ?? theme.palette.charcoal },
+                  {
+                    fontFamily: familyForFontKey(item.fontKey),
+                    color: item.color ?? theme.palette.charcoal,
+                    textAlign: item.align ?? 'center',
+                    fontWeight: item.bold ? ('700' as const) : ('normal' as const),
+                    fontStyle: item.italic ? ('italic' as const) : ('normal' as const),
+                    textDecorationLine: item.underline ? ('underline' as const) : ('none' as const),
+                  },
                   textAnimStyle,
                 ]}
               >
@@ -1093,9 +1107,21 @@ function SpreadView({
 
 // ─── TextEditorModal ──────────────────────────────────────────────────────────
 
+type TextPatch = Partial<
+  Pick<PlacedItem, 'text' | 'fontKey' | 'color' | 'align' | 'bold' | 'italic' | 'underline' | 'textScale'>
+>;
+
+/** Lettering size steps offered by the text tool (multiplier on box-based size). */
+const TEXT_SIZES: { key: string; label: string; scale: number }[] = [
+  { key: 's', label: 'Small', scale: 0.7 },
+  { key: 'm', label: 'Medium', scale: 1 },
+  { key: 'l', label: 'Large', scale: 1.35 },
+  { key: 'xl', label: 'Huge', scale: 1.8 },
+];
+
 interface TextEditorModalProps {
   item: PlacedItem;
-  onChange: (patch: Partial<Pick<PlacedItem, 'text' | 'fontKey' | 'color'>>) => void;
+  onChange: (patch: TextPatch) => void;
   onClose: () => void;
 }
 
@@ -1103,6 +1129,8 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
   const [text, setText] = useState(item.text ?? '');
   const fontKey = item.fontKey ?? JOURNAL_FONTS[0].key;
   const color = item.color ?? theme.palette.charcoal;
+  const align = item.align ?? 'center';
+  const textScale = item.textScale ?? 1;
 
   return (
     <View style={styles.textModalScrim}>
@@ -1111,7 +1139,17 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
         <Text style={styles.textModalTitle}>Write something</Text>
 
         <TextInput
-          style={[styles.textModalInput, { fontFamily: familyForFontKey(fontKey), color }]}
+          style={[
+            styles.textModalInput,
+            {
+              fontFamily: familyForFontKey(fontKey),
+              color,
+              textAlign: align,
+              fontWeight: item.bold ? '700' : 'normal',
+              fontStyle: item.italic ? 'italic' : 'normal',
+              textDecorationLine: item.underline ? 'underline' : 'none',
+            },
+          ]}
           value={text}
           onChangeText={(t) => {
             setText(t);
@@ -1122,6 +1160,66 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
           multiline
           autoFocus
         />
+
+        {/* Style + alignment + size — one compact row of controls */}
+        <View style={styles.textCtrlRow}>
+          <View style={styles.textCtrlGroup}>
+            <Pressable
+              style={[styles.textCtrlBtn, item.bold && styles.textCtrlBtnActive]}
+              onPress={() => onChange({ bold: !item.bold })}
+              hitSlop={4}
+            >
+              <Text style={[styles.textCtrlGlyph, { fontWeight: '800' }, item.bold && styles.textCtrlGlyphActive]}>B</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.textCtrlBtn, item.italic && styles.textCtrlBtnActive]}
+              onPress={() => onChange({ italic: !item.italic })}
+              hitSlop={4}
+            >
+              <Text style={[styles.textCtrlGlyph, { fontStyle: 'italic' }, item.italic && styles.textCtrlGlyphActive]}>I</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.textCtrlBtn, item.underline && styles.textCtrlBtnActive]}
+              onPress={() => onChange({ underline: !item.underline })}
+              hitSlop={4}
+            >
+              <Text style={[styles.textCtrlGlyph, { textDecorationLine: 'underline' }, item.underline && styles.textCtrlGlyphActive]}>U</Text>
+            </Pressable>
+          </View>
+          <View style={styles.textCtrlGroup}>
+            {(['left', 'center', 'right'] as const).map((a) => (
+              <Pressable
+                key={a}
+                style={[styles.textCtrlBtn, align === a && styles.textCtrlBtnActive]}
+                onPress={() => onChange({ align: a })}
+                hitSlop={4}
+              >
+                <Feather
+                  name={a === 'left' ? 'align-left' : a === 'center' ? 'align-center' : 'align-right'}
+                  size={15}
+                  color={align === a ? theme.palette.cream : theme.color.fg1}
+                />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* Size */}
+        <Text style={styles.textModalLabel}>SIZE</Text>
+        <View style={styles.textCtrlGroup}>
+          {TEXT_SIZES.map((s) => {
+            const active = Math.abs(textScale - s.scale) < 0.01;
+            return (
+              <Pressable
+                key={s.key}
+                style={[styles.sizeChip, active && styles.textCtrlBtnActive]}
+                onPress={() => onChange({ textScale: s.scale })}
+              >
+                <Text style={[styles.sizeChipLabel, active && styles.textCtrlGlyphActive]}>{s.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         {/* Font picker */}
         <Text style={styles.textModalLabel}>FONT</Text>
@@ -1695,7 +1793,7 @@ export default function EditorScreen() {
     track('text_added');
   }
 
-  function updateTextItem(id: string, patch: Partial<Pick<PlacedItem, 'text' | 'fontKey' | 'color'>>) {
+  function updateTextItem(id: string, patch: TextPatch) {
     const newPages = pages.map((p, i) =>
       i === activePage - 1
         ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, ...patch } : it)) }
@@ -3458,6 +3556,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.color.fg3,
     marginTop: 4,
+  },
+  textCtrlRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  textCtrlGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  textCtrlBtn: {
+    width: 34,
+    height: 30,
+    borderRadius: theme.radius.xs,
+    borderWidth: 1,
+    borderColor: theme.color.bg3,
+    backgroundColor: theme.color.bg1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textCtrlBtnActive: {
+    backgroundColor: theme.palette.forest,
+    borderColor: theme.palette.forest,
+  },
+  textCtrlGlyph: {
+    fontFamily: theme.font.ui,
+    fontSize: 14,
+    color: theme.color.fg1,
+  },
+  textCtrlGlyphActive: {
+    color: theme.palette.cream,
+  },
+  sizeChip: {
+    paddingHorizontal: 12,
+    height: 30,
+    borderRadius: theme.radius.xs,
+    borderWidth: 1,
+    borderColor: theme.color.bg3,
+    backgroundColor: theme.color.bg1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  sizeChipLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.color.fg1,
   },
   fontRow: {
     gap: 8,
