@@ -28,7 +28,15 @@ import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
-import Svg, { Polyline, Line, Circle } from 'react-native-svg';
+import Svg, {
+  Polyline,
+  Line,
+  Circle,
+  Path as SvgPath,
+  Defs,
+  ClipPath,
+  Image as SvgImage,
+} from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { Button } from '../../src/components/Button';
@@ -296,6 +304,142 @@ function BrushStroke({
   }
 }
 
+// ─── Torn paper edges ─────────────────────────────────────────────────────────
+
+/** Ripped-edge styles offered when an image item is selected. */
+const TORN_STYLES: { key: string; label: string }[] = [
+  { key: 'none', label: 'None' },
+  { key: 'all', label: 'Torn all round' },
+  { key: 'top', label: 'Torn top' },
+  { key: 'bottom', label: 'Torn bottom' },
+  { key: 'strip', label: 'Torn strip' },
+  { key: 'deckle', label: 'Deckle edge' },
+];
+
+function hashSeed(id: string): number {
+  let h = 0;
+  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
+  return h || 1;
+}
+
+function tornSides(style: string) {
+  switch (style) {
+    case 'all':
+    case 'deckle':
+      return { t: true, r: true, b: true, l: true };
+    case 'top':
+      return { t: true, r: false, b: false, l: false };
+    case 'bottom':
+      return { t: false, r: false, b: true, l: false };
+    case 'strip':
+      return { t: true, r: false, b: true, l: false };
+    default:
+      return { t: false, r: false, b: false, l: false };
+  }
+}
+
+/**
+ * Builds a torn-rectangle path in the item's own px space (0..w, 0..h). The
+ * `fill` is a closed polygon for the clip mask; `stroke` traces only the torn
+ * edges so a white line can suggest the paper core along the rip.
+ */
+function tornPaperPath(w: number, h: number, style: string, seed: number) {
+  const sides = tornSides(style);
+  const deckle = style === 'deckle';
+  const amp = Math.max(deckle ? 2 : 4, Math.min(deckle ? 6 : 18, Math.min(w, h) * (deckle ? 0.03 : 0.07)));
+  const density = deckle ? 12 : 22; // target px between teeth
+
+  const A = { x: 0, y: 0 };
+  const B = { x: w, y: 0 };
+  const C = { x: w, y: h };
+  const D = { x: 0, y: h };
+
+  const teeth = (
+    P: { x: number; y: number },
+    Q: { x: number; y: number },
+    inward: { x: number; y: number },
+    salt: number,
+  ) => {
+    const len = Math.hypot(Q.x - P.x, Q.y - P.y) || 1;
+    const n = Math.max(5, Math.round(len / density));
+    const tang = { x: (Q.x - P.x) / len, y: (Q.y - P.y) / len };
+    const pts: { x: number; y: number }[] = [];
+    for (let i = 1; i < n; i++) {
+      const t = i / n;
+      const bx = P.x + (Q.x - P.x) * t;
+      const by = P.y + (Q.y - P.y) * t;
+      const off = amp * (deckle ? Math.sin(t * Math.PI * 3 + salt) * 0.5 + 0.5 : jitter(i, salt));
+      const wob = (jitter(i, salt + 99) - 0.5) * amp * 0.4;
+      pts.push({ x: bx + inward.x * off + tang.x * wob, y: by + inward.y * off + tang.y * wob });
+    }
+    return pts;
+  };
+
+  const top = sides.t ? teeth(A, B, { x: 0, y: 1 }, seed + 1) : [];
+  const right = sides.r ? teeth(B, C, { x: -1, y: 0 }, seed + 2) : [];
+  const bottom = sides.b ? teeth(C, D, { x: 0, y: -1 }, seed + 3) : [];
+  const left = sides.l ? teeth(D, A, { x: 1, y: 0 }, seed + 4) : [];
+
+  const p = (pt: { x: number; y: number }) => `${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+  const seq = [A, ...top, B, ...right, C, ...bottom, D, ...left];
+  const fill = 'M' + seq.map(p).join(' L ') + ' Z';
+
+  const parts: string[] = [];
+  if (sides.t) parts.push('M' + [A, ...top, B].map(p).join(' L '));
+  if (sides.r) parts.push('M' + [B, ...right, C].map(p).join(' L '));
+  if (sides.b) parts.push('M' + [C, ...bottom, D].map(p).join(' L '));
+  if (sides.l) parts.push('M' + [D, ...left, A].map(p).join(' L '));
+
+  return { fill, stroke: parts.join(' ') };
+}
+
+/** An image clipped to a torn-paper shape, with a white core along the rip. */
+function TornImage({
+  source,
+  w,
+  h,
+  style,
+  id,
+}: {
+  source: number | { uri: string };
+  w: number;
+  h: number;
+  style: string;
+  id: string;
+}) {
+  const { fill, stroke } = tornPaperPath(w, h, style, hashSeed(id + style));
+  const clipId = `torn-${id}`;
+  return (
+    <Svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <Defs>
+        <ClipPath id={clipId}>
+          <SvgPath d={fill} />
+        </ClipPath>
+      </Defs>
+      <SvgImage
+        href={source as any}
+        x={0}
+        y={0}
+        width={w}
+        height={h}
+        preserveAspectRatio="xMidYMid slice"
+        clipPath={`url(#${clipId})`}
+      />
+      {stroke ? (
+        <SvgPath
+          d={stroke}
+          stroke={theme.palette.cream}
+          strokeWidth={Math.max(1.5, Math.min(w, h) * 0.018)}
+          fill="none"
+          strokeLinejoin="round"
+          strokeLinecap="round"
+          opacity={0.92}
+        />
+      ) : null}
+    </Svg>
+  );
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Cross-platform confirm: window.confirm on web (Alert buttons are no-ops there). */
@@ -350,6 +494,8 @@ interface PlacedItem {
   shadow?: boolean;
   /** Horizontal mirror toggle. */
   flipX?: boolean;
+  /** Torn-paper edge style (see TORN_STYLES); undefined = clean rectangle. */
+  tornEdge?: string;
   x: number;
   y: number;
   w: number;
@@ -697,9 +843,15 @@ function PlacedItemView({
               </Animated.Text>
             </View>
           ) : isPhoto ? (
-            <View style={[styles.photoInner, liftShadow]}>
-              <Image source={item.flowerAsset as any} style={styles.photoImage} resizeMode="cover" />
-            </View>
+            item.tornEdge && item.tornEdge !== 'none' && item.flowerAsset != null ? (
+              <View style={styles.tornFill}>
+                <TornImage source={item.flowerAsset} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
+              </View>
+            ) : (
+              <View style={[styles.photoInner, liftShadow]}>
+                <Image source={item.flowerAsset as any} style={styles.photoImage} resizeMode="cover" />
+              </View>
+            )
           ) : isTape ? (
             <View style={[styles.tapeInner, { backgroundColor: bg }, liftShadow]}>
               {/* Torn-looking ends: lighter notches biting into each end */}
@@ -720,6 +872,10 @@ function PlacedItemView({
                 brush={item.brush ?? 'fine'}
               />
             </Svg>
+          ) : item.flowerAsset && item.tornEdge && item.tornEdge !== 'none' ? (
+            <View style={styles.tornFill}>
+              <TornImage source={item.flowerAsset} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
+            </View>
           ) : (
             <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }, !item.flowerAsset && liftShadow]}>
               {item.flowerAsset ? (
@@ -808,6 +964,8 @@ interface ItemToolbarProps {
   shadowOn?: boolean;
   onFlip?: () => void;
   flipOn?: boolean;
+  onTornEdge?: () => void;
+  tornOn?: boolean;
 }
 
 function ItemToolbar({
@@ -821,6 +979,8 @@ function ItemToolbar({
   shadowOn,
   onFlip,
   flipOn,
+  onTornEdge,
+  tornOn,
 }: ItemToolbarProps) {
   return (
     <View style={[styles.toolbar, { left, top }]}>
@@ -840,6 +1000,18 @@ function ItemToolbar({
             hitSlop={4}
           >
             <Feather name="sun" size={16} color={shadowOn ? theme.palette.forest : theme.color.fg1} />
+          </Pressable>
+          <View style={styles.toolDivider} />
+        </>
+      )}
+      {onTornEdge && (
+        <>
+          <Pressable
+            style={[styles.toolBtn, tornOn && styles.toolBtnActive]}
+            onPress={onTornEdge}
+            hitSlop={4}
+          >
+            <Feather name="scissors" size={16} color={tornOn ? theme.palette.forest : theme.color.fg1} />
           </Pressable>
           <View style={styles.toolDivider} />
         </>
@@ -1637,6 +1809,7 @@ export default function EditorScreen() {
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
   const [clipboard, setClipboard] = useState<PlacedItem | null>(null);
   const [textEditorId, setTextEditorId] = useState<string | null>(null);
+  const [tornPickerId, setTornPickerId] = useState<string | null>(null);
   const [penMode, setPenMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
@@ -2081,6 +2254,17 @@ export default function EditorScreen() {
     scheduleSave(newPages);
   }
 
+  function handleSetTorn(id: string, style: string) {
+    const tornEdge = style === 'none' ? undefined : style;
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, tornEdge } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
   // ── Photo import ──────────────────────────────────────────────────────────
   async function addPhoto() {
     try {
@@ -2194,6 +2378,7 @@ export default function EditorScreen() {
   const currentPageItems = pages[activePage - 1]?.items ?? [];
   const selectedItem = selectedId ? currentPageItems.find((it) => it.id === selectedId) : null;
   const editingTextItem = textEditorId ? currentPageItems.find((it) => it.id === textEditorId) : null;
+  const tornPickerItem = tornPickerId ? currentPageItems.find((it) => it.id === tornPickerId) : null;
   const canUndo = historyIdx > 0;
   const canRedo = historyIdx < history.length - 1;
   const isPhone = screenW < theme.layout.phoneBreakpoint;
@@ -2469,6 +2654,12 @@ export default function EditorScreen() {
                             : undefined
                         }
                         flipOn={!!selectedItem.flipX}
+                        onTornEdge={
+                          selectedItem.flowerAsset != null && selectedItem.kind !== 'doodle'
+                            ? () => setTornPickerId(selectedItem.id)
+                            : undefined
+                        }
+                        tornOn={!!selectedItem.tornEdge && selectedItem.tornEdge !== 'none'}
                       />
                     </View>
                   )}
@@ -2735,6 +2926,53 @@ export default function EditorScreen() {
             onChange={(patch) => updateTextItem(editingTextItem.id, patch)}
             onClose={closeTextEditor}
           />
+        )}
+
+        {/* ── Torn-edge picker ──────────────────────────────────────── */}
+        {tornPickerItem && (
+          <View style={styles.textModalScrim}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setTornPickerId(null)} />
+            <View style={styles.tornCard}>
+              <Text style={styles.textModalTitle}>Torn edge</Text>
+              <Text style={styles.textModalLabel}>RIP STYLE</Text>
+              <View style={styles.tornGrid}>
+                {TORN_STYLES.map((s) => {
+                  const active =
+                    (tornPickerItem.tornEdge ?? 'none') === s.key ||
+                    (s.key === 'none' && !tornPickerItem.tornEdge);
+                  return (
+                    <Pressable
+                      key={s.key}
+                      style={[styles.tornChip, active && styles.tornChipActive]}
+                      onPress={() => handleSetTorn(tornPickerItem.id, s.key)}
+                    >
+                      {tornPickerItem.flowerAsset != null && s.key !== 'none' ? (
+                        <View style={styles.tornPreview}>
+                          <TornImage
+                            source={tornPickerItem.flowerAsset}
+                            w={80}
+                            h={60}
+                            style={s.key}
+                            id={`prev-${s.key}`}
+                          />
+                        </View>
+                      ) : (
+                        <View style={[styles.tornPreview, styles.tornPreviewNone]}>
+                          <Feather name="square" size={22} color={theme.color.fg3} />
+                        </View>
+                      )}
+                      <Text style={[styles.tornChipLabel, active && styles.tornChipLabelActive]}>
+                        {s.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <View style={styles.textModalActions}>
+                <Button title="Done" onPress={() => setTornPickerId(null)} />
+              </View>
+            </View>
+          </View>
         )}
 
         {/* ── Template picker ───────────────────────────────────────── */}
@@ -3655,6 +3893,57 @@ const styles = StyleSheet.create({
   photoImage: {
     width: '100%',
     height: '100%',
+  },
+  tornFill: {
+    flex: 1,
+  },
+  tornCard: {
+    width: '86%',
+    maxWidth: 460,
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.lg,
+    padding: 18,
+    ...theme.shadow.lift,
+  },
+  tornGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginTop: 8,
+  },
+  tornChip: {
+    width: '30%',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1.5,
+    borderColor: 'transparent',
+  },
+  tornChipActive: {
+    borderColor: theme.palette.forest,
+    backgroundColor: theme.color.bg1,
+  },
+  tornPreview: {
+    width: 80,
+    height: 60,
+    borderRadius: theme.radius.xs,
+    overflow: 'hidden',
+    backgroundColor: theme.color.bg2,
+  },
+  tornPreviewNone: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tornChipLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.color.fg2,
+    marginTop: 5,
+    textAlign: 'center',
+  },
+  tornChipLabelActive: {
+    color: theme.palette.forest,
+    fontWeight: '700',
   },
 
   // Mini floating tools (text / photo / tape / pen) stacked under the FAB
