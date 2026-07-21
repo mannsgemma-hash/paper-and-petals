@@ -28,7 +28,7 @@ import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
-import Svg, { Polyline } from 'react-native-svg';
+import Svg, { Polyline, Line, Circle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { Button } from '../../src/components/Button';
@@ -71,14 +71,12 @@ const NEW_TEXT_W = 240;
 const NEW_TEXT_H = 72;
 // Washi tape — a stretchy strip; corner handles resize length and width
 // independently (unlike the proportional scale used by every other kind).
-const TAPE_W = 200;
-const TAPE_H = 32;
+// The tape TOOL was retired, but existing journals still contain tape items,
+// so the rendering + resize rules stay.
 const TAPE_MIN_W = 40;
 const TAPE_MAX_W = SPREAD_W * 2;
 const TAPE_MIN_H = 14;
 const TAPE_MAX_H = 320;
-/** Tape tones cycled by the tape tool, in placement order. */
-const TAPE_TONES: (keyof typeof SHOP_TONES)[] = ['sage', 'rose', 'amber', 'blue', 'mauve', 'cream'];
 
 // Doodle pen
 const DOODLE_STROKE = 3;
@@ -101,7 +99,7 @@ const EDITOR_TOUR: TourStep[] = [
   {
     icon: 'edit-3',
     title: 'Craft tools',
-    body: 'Add handwritten text, your own photos, stretchy washi tape, freehand doodles, ready-made layouts, and cosy soundscapes.',
+    body: 'Add handwritten text, your own photos, freehand doodles, ready-made layouts, and cosy soundscapes.',
     ring: { top: 140, right: 16, width: 60, height: 312, borderRadius: 30 },
     card: { top: 200, right: 88 },
   },
@@ -169,6 +167,135 @@ const TEXT_COLORS = [
   theme.palette.cream,
 ];
 
+// ─── Brushes ──────────────────────────────────────────────────────────────────
+
+/** Brush styles offered by the doodle pen. */
+const BRUSHES: { key: string; label: string }[] = [
+  { key: 'fine', label: 'Fine liner' },
+  { key: 'pencil', label: 'Pencil' },
+  { key: 'calligraphy', label: 'Calligraphy' },
+  { key: 'marker', label: 'Marker' },
+  { key: 'watercolour', label: 'Watercolour' },
+  { key: 'acrylic', label: 'Acrylic' },
+  { key: 'spray', label: 'Spray' },
+];
+
+/** Base stroke widths (spread px) offered by the pen size picker. */
+const PEN_WIDTHS = [2, 4, 7, 12];
+
+/** Deterministic pseudo-random in [0,1) so spray dots don't dance on re-render. */
+function jitter(i: number, salt: number): number {
+  const s = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/**
+ * Renders one pen stroke in the given brush style. Shared by the live drawing
+ * canvas and placed doodle items so a stroke looks identical in both.
+ */
+function BrushStroke({
+  points,
+  color,
+  width,
+  brush,
+}: {
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+  brush: string;
+}) {
+  if (points.length < 2) return null;
+  const pts = points.map((p) => `${p.x},${p.y}`).join(' ');
+  const line = (w: number, opacity: number, dx = 0, dy = 0, cap: 'round' | 'square' = 'round') => (
+    <Polyline
+      points={dx || dy ? points.map((p) => `${p.x + dx},${p.y + dy}`).join(' ') : pts}
+      fill="none"
+      stroke={color}
+      strokeWidth={w}
+      strokeOpacity={opacity}
+      strokeLinecap={cap}
+      strokeLinejoin="round"
+    />
+  );
+
+  switch (brush) {
+    case 'marker':
+      return line(width * 2, 0.8);
+    case 'acrylic':
+      // Flat, fully opaque paint laid on with a square-ended brush.
+      return line(width * 2.4, 1, 0, 0, 'square');
+    case 'pencil': {
+      // Grainy build-up: a soft main line plus a lighter ghost line offset a hair.
+      const off = Math.max(0.6, width * 0.3);
+      return (
+        <>
+          {line(width * 0.9, 0.55)}
+          {line(width * 0.45, 0.35, off, off)}
+        </>
+      );
+    }
+    case 'watercolour':
+      // Translucent washes stacked wide→narrow; overlaps pool darker like paint.
+      return (
+        <>
+          {line(width * 2.8, 0.1)}
+          {line(width * 1.9, 0.18)}
+          {line(width * 1.1, 0.3)}
+        </>
+      );
+    case 'calligraphy': {
+      // A 45° nib: segment width follows the stroke direction.
+      const segs = [];
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const theta = Math.atan2(b.y - a.y, b.x - a.x);
+        const w = width * (0.25 + 1.5 * Math.abs(Math.sin(theta - Math.PI / 4)));
+        segs.push(
+          <Line
+            key={i}
+            x1={a.x}
+            y1={a.y}
+            x2={b.x}
+            y2={b.y}
+            stroke={color}
+            strokeWidth={w}
+            strokeLinecap="round"
+          />,
+        );
+      }
+      return <>{segs}</>;
+    }
+    case 'spray': {
+      // A scatter of flecks around the stroke path, deterministic per point.
+      const step = Math.max(1, Math.floor(points.length / 160));
+      const perPoint = Math.min(10, 3 + Math.round(width));
+      const radius = width * 2.2;
+      const dots = [];
+      for (let i = 0; i < points.length; i += step) {
+        for (let j = 0; j < perPoint; j++) {
+          const dx = (jitter(i, j * 2 + 1) - 0.5) * 2 * radius;
+          const dy = (jitter(i, j * 2 + 2) - 0.5) * 2 * radius;
+          dots.push(
+            <Circle
+              key={`${i}-${j}`}
+              cx={points[i].x + dx}
+              cy={points[i].y + dy}
+              r={0.4 + jitter(i, j * 3 + 5) * width * 0.35}
+              fill={color}
+              fillOpacity={0.45}
+            />,
+          );
+        }
+      }
+      return <>{dots}</>;
+    }
+    default:
+      // Fine liner — the original clean uniform line.
+      return line(width, 1);
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Cross-platform confirm: window.confirm on web (Alert buttons are no-ops there). */
@@ -205,12 +332,24 @@ interface PlacedItem {
   text?: string;
   fontKey?: string;
   color?: string;
+  align?: 'left' | 'center' | 'right';
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  /** Lettering size multiplier on top of the box-height-based size. */
+  textScale?: number;
   // Doodle fields (kind === 'doodle'): stroke points in [0..srcW]×[0..srcH]
   points?: { x: number; y: number }[];
   srcW?: number;
   srcH?: number;
+  /** Brush style key (see BRUSHES); legacy doodles default to 'fine'. */
+  brush?: string;
+  /** Base stroke width in spread px; legacy doodles default to DOODLE_STROKE. */
+  stroke?: number;
   /** Paper-lift drop shadow toggle. */
   shadow?: boolean;
+  /** Horizontal mirror toggle. */
+  flipX?: boolean;
   x: number;
   y: number;
   w: number;
@@ -509,8 +648,9 @@ function PlacedItemView({
 
   // Live font sizing for text items: the lettering tracks the box height so the
   // corner resize handles scale text for free.
+  const textScale = item.kind === 'text' ? (item.textScale ?? 1) : 1;
   const textAnimStyle = useAnimatedStyle(() => ({
-    fontSize: Math.max(8, itemH.value * TEXT_FILL),
+    fontSize: Math.max(8, itemH.value * TEXT_FILL * textScale),
   }));
 
   const toneKey = item.tone as keyof typeof SHOP_TONES;
@@ -534,13 +674,22 @@ function PlacedItemView({
   return (
     <Animated.View style={animStyle}>
       <GestureDetector gesture={composed}>
-        <Animated.View style={styles.itemFill}>
+        <Animated.View
+          style={[styles.itemFill, item.flipX && { transform: [{ scaleX: -1 }] }]}
+        >
           {isText ? (
             <View style={styles.textItemInner}>
               <Animated.Text
                 style={[
                   styles.textItem,
-                  { fontFamily: familyForFontKey(item.fontKey), color: item.color ?? theme.palette.charcoal },
+                  {
+                    fontFamily: familyForFontKey(item.fontKey),
+                    color: item.color ?? theme.palette.charcoal,
+                    textAlign: item.align ?? 'center',
+                    fontWeight: item.bold ? ('700' as const) : ('normal' as const),
+                    fontStyle: item.italic ? ('italic' as const) : ('normal' as const),
+                    textDecorationLine: item.underline ? ('underline' as const) : ('none' as const),
+                  },
                   textAnimStyle,
                 ]}
               >
@@ -564,13 +713,11 @@ function PlacedItemView({
               viewBox={`0 0 ${item.srcW ?? 1} ${item.srcH ?? 1}`}
               preserveAspectRatio="none"
             >
-              <Polyline
-                points={(item.points ?? []).map((p) => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke={item.color ?? theme.palette.charcoal}
-                strokeWidth={DOODLE_STROKE}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <BrushStroke
+                points={item.points ?? []}
+                color={item.color ?? theme.palette.charcoal}
+                width={item.stroke ?? DOODLE_STROKE}
+                brush={item.brush ?? 'fine'}
               />
             </Svg>
           ) : (
@@ -659,6 +806,8 @@ interface ItemToolbarProps {
   onEditText?: () => void;
   onToggleShadow?: () => void;
   shadowOn?: boolean;
+  onFlip?: () => void;
+  flipOn?: boolean;
 }
 
 function ItemToolbar({
@@ -670,6 +819,8 @@ function ItemToolbar({
   onEditText,
   onToggleShadow,
   shadowOn,
+  onFlip,
+  flipOn,
 }: ItemToolbarProps) {
   return (
     <View style={[styles.toolbar, { left, top }]}>
@@ -689,6 +840,18 @@ function ItemToolbar({
             hitSlop={4}
           >
             <Feather name="sun" size={16} color={shadowOn ? theme.palette.forest : theme.color.fg1} />
+          </Pressable>
+          <View style={styles.toolDivider} />
+        </>
+      )}
+      {onFlip && (
+        <>
+          <Pressable
+            style={[styles.toolBtn, flipOn && styles.toolBtnActive]}
+            onPress={onFlip}
+            hitSlop={4}
+          >
+            <Feather name="repeat" size={16} color={flipOn ? theme.palette.forest : theme.color.fg1} />
           </Pressable>
           <View style={styles.toolDivider} />
         </>
@@ -1075,9 +1238,21 @@ function SpreadView({
 
 // ─── TextEditorModal ──────────────────────────────────────────────────────────
 
+type TextPatch = Partial<
+  Pick<PlacedItem, 'text' | 'fontKey' | 'color' | 'align' | 'bold' | 'italic' | 'underline' | 'textScale'>
+>;
+
+/** Lettering size steps offered by the text tool (multiplier on box-based size). */
+const TEXT_SIZES: { key: string; label: string; scale: number }[] = [
+  { key: 's', label: 'Small', scale: 0.7 },
+  { key: 'm', label: 'Medium', scale: 1 },
+  { key: 'l', label: 'Large', scale: 1.35 },
+  { key: 'xl', label: 'Huge', scale: 1.8 },
+];
+
 interface TextEditorModalProps {
   item: PlacedItem;
-  onChange: (patch: Partial<Pick<PlacedItem, 'text' | 'fontKey' | 'color'>>) => void;
+  onChange: (patch: TextPatch) => void;
   onClose: () => void;
 }
 
@@ -1085,6 +1260,8 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
   const [text, setText] = useState(item.text ?? '');
   const fontKey = item.fontKey ?? JOURNAL_FONTS[0].key;
   const color = item.color ?? theme.palette.charcoal;
+  const align = item.align ?? 'center';
+  const textScale = item.textScale ?? 1;
 
   return (
     <View style={styles.textModalScrim}>
@@ -1093,7 +1270,17 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
         <Text style={styles.textModalTitle}>Write something</Text>
 
         <TextInput
-          style={[styles.textModalInput, { fontFamily: familyForFontKey(fontKey), color }]}
+          style={[
+            styles.textModalInput,
+            {
+              fontFamily: familyForFontKey(fontKey),
+              color,
+              textAlign: align,
+              fontWeight: item.bold ? '700' : 'normal',
+              fontStyle: item.italic ? 'italic' : 'normal',
+              textDecorationLine: item.underline ? 'underline' : 'none',
+            },
+          ]}
           value={text}
           onChangeText={(t) => {
             setText(t);
@@ -1104,6 +1291,66 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
           multiline
           autoFocus
         />
+
+        {/* Style + alignment + size — one compact row of controls */}
+        <View style={styles.textCtrlRow}>
+          <View style={styles.textCtrlGroup}>
+            <Pressable
+              style={[styles.textCtrlBtn, item.bold && styles.textCtrlBtnActive]}
+              onPress={() => onChange({ bold: !item.bold })}
+              hitSlop={4}
+            >
+              <Text style={[styles.textCtrlGlyph, { fontWeight: '800' }, item.bold && styles.textCtrlGlyphActive]}>B</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.textCtrlBtn, item.italic && styles.textCtrlBtnActive]}
+              onPress={() => onChange({ italic: !item.italic })}
+              hitSlop={4}
+            >
+              <Text style={[styles.textCtrlGlyph, { fontStyle: 'italic' }, item.italic && styles.textCtrlGlyphActive]}>I</Text>
+            </Pressable>
+            <Pressable
+              style={[styles.textCtrlBtn, item.underline && styles.textCtrlBtnActive]}
+              onPress={() => onChange({ underline: !item.underline })}
+              hitSlop={4}
+            >
+              <Text style={[styles.textCtrlGlyph, { textDecorationLine: 'underline' }, item.underline && styles.textCtrlGlyphActive]}>U</Text>
+            </Pressable>
+          </View>
+          <View style={styles.textCtrlGroup}>
+            {(['left', 'center', 'right'] as const).map((a) => (
+              <Pressable
+                key={a}
+                style={[styles.textCtrlBtn, align === a && styles.textCtrlBtnActive]}
+                onPress={() => onChange({ align: a })}
+                hitSlop={4}
+              >
+                <Feather
+                  name={a === 'left' ? 'align-left' : a === 'center' ? 'align-center' : 'align-right'}
+                  size={15}
+                  color={align === a ? theme.palette.cream : theme.color.fg1}
+                />
+              </Pressable>
+            ))}
+          </View>
+        </View>
+
+        {/* Size */}
+        <Text style={styles.textModalLabel}>SIZE</Text>
+        <View style={styles.textCtrlGroup}>
+          {TEXT_SIZES.map((s) => {
+            const active = Math.abs(textScale - s.scale) < 0.01;
+            return (
+              <Pressable
+                key={s.key}
+                style={[styles.sizeChip, active && styles.textCtrlBtnActive]}
+                onPress={() => onChange({ textScale: s.scale })}
+              >
+                <Text style={[styles.sizeChipLabel, active && styles.textCtrlGlyphActive]}>{s.label}</Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         {/* Font picker */}
         <Text style={styles.textModalLabel}>FONT</Text>
@@ -1163,10 +1410,14 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
 function DoodleCanvas({
   spreadScale,
   color,
+  width,
+  brush,
   onStroke,
 }: {
   spreadScale: number;
   color: string;
+  width: number;
+  brush: string;
   onStroke: (points: { x: number; y: number }[]) => void;
 }) {
   const [livePoints, setLivePoints] = useState<{ x: number; y: number }[]>([]);
@@ -1208,13 +1459,11 @@ function DoodleCanvas({
       <View style={StyleSheet.absoluteFill}>
         {livePoints.length > 1 && (
           <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Polyline
-              points={livePoints.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke={color}
-              strokeWidth={DOODLE_STROKE * spreadScale}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            <BrushStroke
+              points={livePoints}
+              color={color}
+              width={width * spreadScale}
+              brush={brush}
             />
           </Svg>
         )}
@@ -1393,7 +1642,9 @@ export default function EditorScreen() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [showSoundPanel, setShowSoundPanel] = useState(false);
-  const tapeToneIdx = useRef(0);
+  const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
+  const [penWidth, setPenWidth] = useState(4);
+  const [penBrush, setPenBrush] = useState('fine');
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -1678,7 +1929,7 @@ export default function EditorScreen() {
     track('text_added');
   }
 
-  function updateTextItem(id: string, patch: Partial<Pick<PlacedItem, 'text' | 'fontKey' | 'color'>>) {
+  function updateTextItem(id: string, patch: TextPatch) {
     const newPages = pages.map((p, i) =>
       i === activePage - 1
         ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, ...patch } : it)) }
@@ -1701,39 +1952,13 @@ export default function EditorScreen() {
     setTextEditorId(null);
   }
 
-  // ── Washi tape ────────────────────────────────────────────────────────────
-  function addTape() {
-    const currentItems = pages[activePage - 1].items;
-    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
-    const tone = TAPE_TONES[tapeToneIdx.current % TAPE_TONES.length];
-    tapeToneIdx.current += 1;
-    const newItem: PlacedItem = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      itemId: 'tape',
-      kind: 'tape',
-      glyph: 'minus',
-      tone,
-      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
-      y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
-      w: TAPE_W,
-      h: TAPE_H,
-      rotate: (Math.random() - 0.5) * 30,
-      z: maxZ + 1,
-    };
-    const newPages = pages.map((p, i) =>
-      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
-    );
-    pushHistory(newPages);
-    scheduleSave(newPages);
-    setSelectedId(newItem.id);
-    track('tape_added');
-  }
-
   // ── Doodle pen ────────────────────────────────────────────────────────────
   function addDoodle(points: { x: number; y: number }[]) {
     const xs = points.map((p) => p.x);
     const ys = points.map((p) => p.y);
-    const pad = DOODLE_STROKE;
+    // Wide brushes (watercolour ~2.8×, spray scatter ~2.2×) paint past the
+    // path, so the bounding box needs matching breathing room.
+    const pad = Math.ceil(penWidth * 3) + 2;
     const minX = Math.min(...xs) - pad;
     const minY = Math.min(...ys) - pad;
     const maxX = Math.max(...xs) + pad;
@@ -1748,7 +1973,9 @@ export default function EditorScreen() {
       kind: 'doodle',
       glyph: 'edit-3',
       tone: 'sage',
-      color: theme.palette.charcoal,
+      color: penColor,
+      brush: penBrush,
+      stroke: penWidth,
       points: points.map((p) => ({ x: p.x - minX, y: p.y - minY })),
       srcW: w,
       srcH: h,
@@ -1838,6 +2065,16 @@ export default function EditorScreen() {
     const newPages = pages.map((p, i) =>
       i === activePage - 1
         ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, shadow: !it.shadow } : it)) }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleFlipSelected(id: string) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, flipX: !it.flipX } : it)) }
         : p,
     );
     pushHistory(newPages);
@@ -2197,7 +2434,9 @@ export default function EditorScreen() {
                     <View style={[StyleSheet.absoluteFill, styles.penLayer]}>
                       <DoodleCanvas
                         spreadScale={spreadScale}
-                        color={theme.palette.charcoal}
+                        color={penColor}
+                        width={penWidth}
+                        brush={penBrush}
                         onStroke={addDoodle}
                       />
                     </View>
@@ -2224,6 +2463,12 @@ export default function EditorScreen() {
                             : undefined
                         }
                         shadowOn={!!selectedItem.shadow}
+                        onFlip={
+                          selectedItem.kind !== 'text'
+                            ? () => handleFlipSelected(selectedItem.id)
+                            : undefined
+                        }
+                        flipOn={!!selectedItem.flipX}
                       />
                     </View>
                   )}
@@ -2260,35 +2505,87 @@ export default function EditorScreen() {
               <Feather name="image" size={20} color={theme.palette.forest} />
             </Pressable>
 
-            {/* Washi tape */}
-            <Pressable style={[styles.miniFab, { top: 184 }]} onPress={addTape}>
-              <Feather name="minus" size={20} color={theme.palette.forest} />
-            </Pressable>
-
             {/* Doodle pen — toggles draw mode */}
             <Pressable
-              style={[styles.miniFab, { top: 234 }, penMode && styles.miniFabActive]}
+              style={[styles.miniFab, { top: 184 }, penMode && styles.miniFabActive]}
               onPress={() => { setPenMode((m) => !m); setSelectedId(null); }}
             >
               <Feather name="edit-3" size={20} color={penMode ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
             {/* Starter templates */}
-            <Pressable style={[styles.miniFab, { top: 284 }]} onPress={() => setTemplatePickerOpen(true)}>
+            <Pressable style={[styles.miniFab, { top: 234 }]} onPress={() => setTemplatePickerOpen(true)}>
               <Feather name="grid" size={20} color={theme.palette.forest} />
             </Pressable>
 
             {/* Ambient soundscapes */}
             <Pressable
-              style={[styles.miniFab, { top: 334 }, showSoundPanel && styles.miniFabActive]}
+              style={[styles.miniFab, { top: 284 }, showSoundPanel && styles.miniFabActive]}
               onPress={() => setShowSoundPanel((v) => !v)}
             >
               <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
-            {/* Pen-mode hint */}
+            {/* Pen options — brush, size, colour */}
             {penMode && (
-              <View style={styles.penHint} pointerEvents="none">
+              <View style={styles.penPanel}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.penBrushRow}
+                >
+                  {BRUSHES.map((b) => {
+                    const active = b.key === penBrush;
+                    return (
+                      <Pressable
+                        key={b.key}
+                        style={[styles.penBrushChip, active && styles.penBrushChipActive]}
+                        onPress={() => setPenBrush(b.key)}
+                      >
+                        <Text style={[styles.penBrushLabel, active && styles.penBrushLabelActive]}>
+                          {b.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+                <View style={styles.penOptRow}>
+                  {PEN_WIDTHS.map((w, i) => {
+                    const active = w === penWidth;
+                    return (
+                      <Pressable
+                        key={w}
+                        style={[styles.penSizeBtn, active && styles.penSizeBtnActive]}
+                        onPress={() => setPenWidth(w)}
+                      >
+                        <View
+                          style={{
+                            width: 4 + i * 4,
+                            height: 4 + i * 4,
+                            borderRadius: (4 + i * 4) / 2,
+                            backgroundColor: active ? theme.palette.cream : theme.color.fg1,
+                          }}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                  <View style={styles.penOptDivider} />
+                  {TEXT_COLORS.map((c) => {
+                    const active = c === penColor;
+                    return (
+                      <Pressable
+                        key={c}
+                        style={[
+                          styles.penSwatch,
+                          { backgroundColor: c },
+                          c === theme.palette.cream && styles.penSwatchLight,
+                          active && styles.penSwatchActive,
+                        ]}
+                        onPress={() => setPenColor(c)}
+                      />
+                    );
+                  })}
+                </View>
                 <Text style={styles.penHintText}>Draw on the page · tap the pen again to finish</Text>
               </View>
             )}
@@ -3382,19 +3679,78 @@ const styles = StyleSheet.create({
     zIndex: 120,
     elevation: 12,
   },
-  penHint: {
+  penPanel: {
     position: 'absolute',
-    bottom: 52,
+    bottom: 24,
     alignSelf: 'center',
-    backgroundColor: 'rgba(43,42,40,0.78)',
+    backgroundColor: 'rgba(43,42,40,0.88)',
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    maxWidth: 520,
+  },
+  penBrushRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  penBrushChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: theme.radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    backgroundColor: 'rgba(255,253,246,0.14)',
+  },
+  penBrushChipActive: {
+    backgroundColor: theme.palette.forest,
+  },
+  penBrushLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.palette.cream,
+  },
+  penBrushLabelActive: {
+    fontWeight: '700',
+  },
+  penOptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  penSizeBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,253,246,0.14)',
+  },
+  penSizeBtnActive: {
+    backgroundColor: theme.palette.forest,
+  },
+  penOptDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: 'rgba(255,253,246,0.25)',
+    marginHorizontal: 2,
+  },
+  penSwatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+  penSwatchLight: {
+    borderWidth: 1,
+    borderColor: 'rgba(43,42,40,0.3)',
+  },
+  penSwatchActive: {
+    borderWidth: 2,
+    borderColor: theme.palette.cream,
   },
   penHintText: {
     fontFamily: theme.font.ui,
-    fontSize: 12,
-    color: theme.palette.cream,
+    fontSize: 11,
+    color: 'rgba(255,253,246,0.7)',
+    textAlign: 'center',
   },
   toolBtnActive: {
     backgroundColor: 'rgba(78,102,82,0.12)',
@@ -3458,6 +3814,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.color.fg3,
     marginTop: 4,
+  },
+  textCtrlRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 10,
+  },
+  textCtrlGroup: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  textCtrlBtn: {
+    width: 34,
+    height: 30,
+    borderRadius: theme.radius.xs,
+    borderWidth: 1,
+    borderColor: theme.color.bg3,
+    backgroundColor: theme.color.bg1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  textCtrlBtnActive: {
+    backgroundColor: theme.palette.forest,
+    borderColor: theme.palette.forest,
+  },
+  textCtrlGlyph: {
+    fontFamily: theme.font.ui,
+    fontSize: 14,
+    color: theme.color.fg1,
+  },
+  textCtrlGlyphActive: {
+    color: theme.palette.cream,
+  },
+  sizeChip: {
+    paddingHorizontal: 12,
+    height: 30,
+    borderRadius: theme.radius.xs,
+    borderWidth: 1,
+    borderColor: theme.color.bg3,
+    backgroundColor: theme.color.bg1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 6,
+  },
+  sizeChipLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.color.fg1,
   },
   fontRow: {
     gap: 8,
