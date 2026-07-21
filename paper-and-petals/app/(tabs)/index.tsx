@@ -4,6 +4,7 @@ import {
   Image,
   PanResponder,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -15,6 +16,7 @@ import { Screen } from '../../src/components/Screen';
 import { Wordmark } from '../../src/components/Wordmark';
 import { theme } from '../../src/theme/theme';
 import { useAppStore, type Journal } from '../../src/store/app';
+import { JOURNAL_COVERS, coverSource } from '../../src/data/covers';
 import { promptOfTheDay } from '../../src/data/prompts';
 import { screen, track } from '../../src/lib/analytics';
 import { hasSeenHomeTour, markHomeTourSeen } from '../../src/lib/storage';
@@ -85,6 +87,7 @@ export default function HomeScreen() {
   };
 
   const [active, setActive] = useState(0);
+  const [pickingCover, setPickingCover] = useState(false);
   const dragDX = useRef(new Animated.Value(0)).current;
   const dragState = useRef({ dragging: false, lastDX: 0 });
   const { width, height } = useWindowDimensions();
@@ -96,13 +99,19 @@ export default function HomeScreen() {
   const openJournal = (j: Journal) => {
     if (Math.abs(dragState.current.lastDX) > 5) return; // swipe, not tap
     if (j.isNew) {
-      const created = addJournal();
-      track('journal_opened', { journalId: created.id });
-      router.push(`/editor/${created.id}`);
+      // Choosing the cover first, then create + open the journal.
+      setPickingCover(true);
     } else {
       track('journal_opened', { journalId: j.id });
       router.push(`/editor/${j.id}`);
     }
+  };
+
+  const createWithCover = (coverKey: string) => {
+    setPickingCover(false);
+    const created = addJournal(coverKey);
+    track('journal_opened', { journalId: created.id });
+    router.push(`/editor/${created.id}`);
   };
 
   // Swipe: only treat as a drag past a small threshold so taps still land.
@@ -247,6 +256,10 @@ export default function HomeScreen() {
       </View>
 
       {/* First-open tour */}
+      {pickingCover && (
+        <CoverPicker onPick={createWithCover} onClose={() => setPickingCover(false)} />
+      )}
+
       {showTour && <Tour steps={HOME_TOUR} onDone={dismissTour} />}
     </Screen>
   );
@@ -321,13 +334,20 @@ function JournalCover({ journal, active }: { journal: Journal; active: boolean }
     );
   }
 
+  const cover = coverSource(journal.coverKey);
+
   return (
     <View style={[styles.cover, active ? theme.shadow.lift : theme.shadow.card]}>
+      {/* Cover art fills the card when a cover is chosen; else leather shows. */}
+      {cover && (
+        <Image source={cover} style={styles.coverArt} resizeMode="cover" />
+      )}
+
       {/* Spine darkening on the binding edge */}
       <View style={styles.spine} />
 
-      {/* Stitched inner border */}
-      <View style={styles.stitchBorder} />
+      {/* Stitched inner border — only over the plain leather look */}
+      {!cover && <View style={styles.stitchBorder} />}
 
       {/* Brass label plate */}
       <View style={styles.brassPlate}>
@@ -341,6 +361,38 @@ function JournalCover({ journal, active }: { journal: Journal; active: boolean }
 
       {/* Ribbon bookmark */}
       <View style={styles.ribbon} />
+    </View>
+  );
+}
+
+// ─── CoverPicker ──────────────────────────────────────────────────────────────
+
+/** Modal grid of cover art shown when starting a new journal. */
+function CoverPicker({
+  onPick,
+  onClose,
+}: {
+  onPick: (key: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <View style={styles.pickerScrim}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.pickerCard}>
+        <Text style={styles.pickerTitle}>Choose a cover</Text>
+        <Text style={styles.pickerSub}>Pick the front for your new journal.</Text>
+        <ScrollView contentContainerStyle={styles.pickerGrid}>
+          {JOURNAL_COVERS.map((c) => (
+            <Pressable key={c.key} style={styles.pickerItem} onPress={() => onPick(c.key)}>
+              <Image source={c.source} style={styles.pickerThumb} resizeMode="cover" />
+              <Text style={styles.pickerLabel} numberOfLines={1}>{c.label}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Pressable style={styles.pickerCancel} onPress={onClose}>
+          <Text style={styles.pickerCancelText}>Cancel</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -461,6 +513,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#5A3D26',
     overflow: 'hidden',
   },
+  coverArt: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   spine: {
     position: 'absolute',
     left: 0,
@@ -551,5 +610,73 @@ const styles = StyleSheet.create({
     color: theme.color.fg1,
     textAlign: 'center',
     paddingHorizontal: 24,
+  },
+
+  // Cover picker
+  pickerScrim: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(43,42,40,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 20,
+  },
+  pickerCard: {
+    width: '90%',
+    maxWidth: 560,
+    maxHeight: '82%',
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.lg,
+    padding: 20,
+    ...theme.shadow.lift,
+  },
+  pickerTitle: {
+    fontFamily: theme.font.display,
+    fontSize: 22,
+    color: theme.color.fg1,
+  },
+  pickerSub: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    color: theme.color.fg3,
+    marginTop: 2,
+    marginBottom: 14,
+  },
+  pickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  pickerItem: {
+    width: '30%',
+    marginBottom: 12,
+  },
+  pickerThumb: {
+    width: '100%',
+    aspectRatio: 0.72,
+    borderRadius: theme.radius.sm,
+    backgroundColor: theme.color.bg2,
+  },
+  pickerLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg2,
+    textAlign: 'center',
+    marginTop: 5,
+  },
+  pickerCancel: {
+    alignSelf: 'center',
+    marginTop: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+  },
+  pickerCancelText: {
+    fontFamily: theme.font.ui,
+    fontSize: 14,
+    color: theme.color.fg3,
   },
 });

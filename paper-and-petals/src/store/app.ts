@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { SHOP_CATALOGUE, FALLBACK_COLLECTIONS, ShopItem, Collection } from '../data/shop';
+import { randomCoverKey } from '../data/covers';
 
 /** Launch state drives where SCR-01 routes after the bar fills. */
 export type LaunchState = 'new' | 'returning';
@@ -9,18 +10,15 @@ export interface Journal {
   name: string;
   items: number;
   edited: string;
+  /** Cover art key (see JOURNAL_COVERS); undefined falls back to leather. */
+  coverKey?: string;
   isNew?: boolean;
 }
 
-// Every journal is bound in cognac leather — cover selection was removed from
-// the design, so the shelf reads as a matching leather set.
+// First run starts with a single journal wearing a random cover; the user
+// adds more and picks a cover for each. The trailing slot is the "add" card.
 const SEED_JOURNALS: Journal[] = [
-  { id: 'j-spring', name: 'Spring', items: 18, edited: '2 days ago' },
-  { id: 'j-autumn', name: 'Autumn Library', items: 24, edited: 'yesterday' },
-  { id: 'j-coastal', name: 'Coastal', items: 12, edited: '5 days ago' },
-  { id: 'j-romantic', name: 'Romantic', items: 9, edited: '1 week ago' },
-  { id: 'j-cottage', name: 'Cottagecore', items: 31, edited: '3 hours ago' },
-  { id: 'j-fieldnotes', name: 'Field Notes', items: 7, edited: 'today' },
+  { id: 'j-first', name: 'My Journal', items: 0, edited: 'just now', coverKey: randomCoverKey() },
   { id: 'j-new', name: '', items: 0, edited: '', isNew: true },
 ];
 
@@ -44,7 +42,7 @@ interface AppState {
   recentItemIds: string[];
   setLaunchState: (s: LaunchState) => void;
   renameJournal: (id: string, name: string) => void;
-  addJournal: () => Journal;
+  addJournal: (coverKey?: string) => Journal;
   setShopItems: (items: ShopItem[]) => void;
   setCollections: (collections: Collection[]) => void;
   /** Record a collection as owned (after a successful purchase). */
@@ -75,13 +73,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       journals: s.journals.map((j) => (j.id === id ? { ...j, name } : j)),
     })),
-  addJournal: () => {
+  addJournal: (coverKey) => {
     const count = get().journals.filter((j) => !j.isNew).length;
     const journal: Journal = {
       id: `j-${Date.now()}`,
       name: `Journal ${count + 1}`,
       items: 0,
       edited: 'just now',
+      coverKey: coverKey ?? randomCoverKey(),
     };
     set((s) => {
       const rest = s.journals.filter((j) => !j.isNew);
