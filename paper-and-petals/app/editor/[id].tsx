@@ -28,7 +28,7 @@ import { Feather } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
-import Svg, { Polyline } from 'react-native-svg';
+import Svg, { Polyline, Line, Circle } from 'react-native-svg';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Screen } from '../../src/components/Screen';
 import { Button } from '../../src/components/Button';
@@ -167,6 +167,135 @@ const TEXT_COLORS = [
   theme.palette.cream,
 ];
 
+// ─── Brushes ──────────────────────────────────────────────────────────────────
+
+/** Brush styles offered by the doodle pen. */
+const BRUSHES: { key: string; label: string }[] = [
+  { key: 'fine', label: 'Fine liner' },
+  { key: 'pencil', label: 'Pencil' },
+  { key: 'calligraphy', label: 'Calligraphy' },
+  { key: 'marker', label: 'Marker' },
+  { key: 'watercolour', label: 'Watercolour' },
+  { key: 'acrylic', label: 'Acrylic' },
+  { key: 'spray', label: 'Spray' },
+];
+
+/** Base stroke widths (spread px) offered by the pen size picker. */
+const PEN_WIDTHS = [2, 4, 7, 12];
+
+/** Deterministic pseudo-random in [0,1) so spray dots don't dance on re-render. */
+function jitter(i: number, salt: number): number {
+  const s = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
+  return s - Math.floor(s);
+}
+
+/**
+ * Renders one pen stroke in the given brush style. Shared by the live drawing
+ * canvas and placed doodle items so a stroke looks identical in both.
+ */
+function BrushStroke({
+  points,
+  color,
+  width,
+  brush,
+}: {
+  points: { x: number; y: number }[];
+  color: string;
+  width: number;
+  brush: string;
+}) {
+  if (points.length < 2) return null;
+  const pts = points.map((p) => `${p.x},${p.y}`).join(' ');
+  const line = (w: number, opacity: number, dx = 0, dy = 0, cap: 'round' | 'square' = 'round') => (
+    <Polyline
+      points={dx || dy ? points.map((p) => `${p.x + dx},${p.y + dy}`).join(' ') : pts}
+      fill="none"
+      stroke={color}
+      strokeWidth={w}
+      strokeOpacity={opacity}
+      strokeLinecap={cap}
+      strokeLinejoin="round"
+    />
+  );
+
+  switch (brush) {
+    case 'marker':
+      return line(width * 2, 0.8);
+    case 'acrylic':
+      // Flat, fully opaque paint laid on with a square-ended brush.
+      return line(width * 2.4, 1, 0, 0, 'square');
+    case 'pencil': {
+      // Grainy build-up: a soft main line plus a lighter ghost line offset a hair.
+      const off = Math.max(0.6, width * 0.3);
+      return (
+        <>
+          {line(width * 0.9, 0.55)}
+          {line(width * 0.45, 0.35, off, off)}
+        </>
+      );
+    }
+    case 'watercolour':
+      // Translucent washes stacked wide→narrow; overlaps pool darker like paint.
+      return (
+        <>
+          {line(width * 2.8, 0.1)}
+          {line(width * 1.9, 0.18)}
+          {line(width * 1.1, 0.3)}
+        </>
+      );
+    case 'calligraphy': {
+      // A 45° nib: segment width follows the stroke direction.
+      const segs = [];
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1];
+        const b = points[i];
+        const theta = Math.atan2(b.y - a.y, b.x - a.x);
+        const w = width * (0.25 + 1.5 * Math.abs(Math.sin(theta - Math.PI / 4)));
+        segs.push(
+          <Line
+            key={i}
+            x1={a.x}
+            y1={a.y}
+            x2={b.x}
+            y2={b.y}
+            stroke={color}
+            strokeWidth={w}
+            strokeLinecap="round"
+          />,
+        );
+      }
+      return <>{segs}</>;
+    }
+    case 'spray': {
+      // A scatter of flecks around the stroke path, deterministic per point.
+      const step = Math.max(1, Math.floor(points.length / 160));
+      const perPoint = Math.min(10, 3 + Math.round(width));
+      const radius = width * 2.2;
+      const dots = [];
+      for (let i = 0; i < points.length; i += step) {
+        for (let j = 0; j < perPoint; j++) {
+          const dx = (jitter(i, j * 2 + 1) - 0.5) * 2 * radius;
+          const dy = (jitter(i, j * 2 + 2) - 0.5) * 2 * radius;
+          dots.push(
+            <Circle
+              key={`${i}-${j}`}
+              cx={points[i].x + dx}
+              cy={points[i].y + dy}
+              r={0.4 + jitter(i, j * 3 + 5) * width * 0.35}
+              fill={color}
+              fillOpacity={0.45}
+            />,
+          );
+        }
+      }
+      return <>{dots}</>;
+    }
+    default:
+      // Fine liner — the original clean uniform line.
+      return line(width, 1);
+  }
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Cross-platform confirm: window.confirm on web (Alert buttons are no-ops there). */
@@ -213,6 +342,10 @@ interface PlacedItem {
   points?: { x: number; y: number }[];
   srcW?: number;
   srcH?: number;
+  /** Brush style key (see BRUSHES); legacy doodles default to 'fine'. */
+  brush?: string;
+  /** Base stroke width in spread px; legacy doodles default to DOODLE_STROKE. */
+  stroke?: number;
   /** Paper-lift drop shadow toggle. */
   shadow?: boolean;
   /** Horizontal mirror toggle. */
@@ -580,13 +713,11 @@ function PlacedItemView({
               viewBox={`0 0 ${item.srcW ?? 1} ${item.srcH ?? 1}`}
               preserveAspectRatio="none"
             >
-              <Polyline
-                points={(item.points ?? []).map((p) => `${p.x},${p.y}`).join(' ')}
-                fill="none"
-                stroke={item.color ?? theme.palette.charcoal}
-                strokeWidth={DOODLE_STROKE}
-                strokeLinecap="round"
-                strokeLinejoin="round"
+              <BrushStroke
+                points={item.points ?? []}
+                color={item.color ?? theme.palette.charcoal}
+                width={item.stroke ?? DOODLE_STROKE}
+                brush={item.brush ?? 'fine'}
               />
             </Svg>
           ) : (
@@ -1279,10 +1410,14 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
 function DoodleCanvas({
   spreadScale,
   color,
+  width,
+  brush,
   onStroke,
 }: {
   spreadScale: number;
   color: string;
+  width: number;
+  brush: string;
   onStroke: (points: { x: number; y: number }[]) => void;
 }) {
   const [livePoints, setLivePoints] = useState<{ x: number; y: number }[]>([]);
@@ -1324,13 +1459,11 @@ function DoodleCanvas({
       <View style={StyleSheet.absoluteFill}>
         {livePoints.length > 1 && (
           <Svg style={StyleSheet.absoluteFill} pointerEvents="none">
-            <Polyline
-              points={livePoints.map((p) => `${p.x},${p.y}`).join(' ')}
-              fill="none"
-              stroke={color}
-              strokeWidth={DOODLE_STROKE * spreadScale}
-              strokeLinecap="round"
-              strokeLinejoin="round"
+            <BrushStroke
+              points={livePoints}
+              color={color}
+              width={width * spreadScale}
+              brush={brush}
             />
           </Svg>
         )}
@@ -1509,6 +1642,9 @@ export default function EditorScreen() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [showTips, setShowTips] = useState(false);
   const [showSoundPanel, setShowSoundPanel] = useState(false);
+  const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
+  const [penWidth, setPenWidth] = useState(4);
+  const [penBrush, setPenBrush] = useState('fine');
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -1820,7 +1956,9 @@ export default function EditorScreen() {
   function addDoodle(points: { x: number; y: number }[]) {
     const xs = points.map((p) => p.x);
     const ys = points.map((p) => p.y);
-    const pad = DOODLE_STROKE;
+    // Wide brushes (watercolour ~2.8×, spray scatter ~2.2×) paint past the
+    // path, so the bounding box needs matching breathing room.
+    const pad = Math.ceil(penWidth * 3) + 2;
     const minX = Math.min(...xs) - pad;
     const minY = Math.min(...ys) - pad;
     const maxX = Math.max(...xs) + pad;
@@ -1835,7 +1973,9 @@ export default function EditorScreen() {
       kind: 'doodle',
       glyph: 'edit-3',
       tone: 'sage',
-      color: theme.palette.charcoal,
+      color: penColor,
+      brush: penBrush,
+      stroke: penWidth,
       points: points.map((p) => ({ x: p.x - minX, y: p.y - minY })),
       srcW: w,
       srcH: h,
@@ -2294,7 +2434,9 @@ export default function EditorScreen() {
                     <View style={[StyleSheet.absoluteFill, styles.penLayer]}>
                       <DoodleCanvas
                         spreadScale={spreadScale}
-                        color={theme.palette.charcoal}
+                        color={penColor}
+                        width={penWidth}
+                        brush={penBrush}
                         onStroke={addDoodle}
                       />
                     </View>
@@ -2384,9 +2526,66 @@ export default function EditorScreen() {
               <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
-            {/* Pen-mode hint */}
+            {/* Pen options — brush, size, colour */}
             {penMode && (
-              <View style={styles.penHint} pointerEvents="none">
+              <View style={styles.penPanel}>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.penBrushRow}
+                >
+                  {BRUSHES.map((b) => {
+                    const active = b.key === penBrush;
+                    return (
+                      <Pressable
+                        key={b.key}
+                        style={[styles.penBrushChip, active && styles.penBrushChipActive]}
+                        onPress={() => setPenBrush(b.key)}
+                      >
+                        <Text style={[styles.penBrushLabel, active && styles.penBrushLabelActive]}>
+                          {b.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+                <View style={styles.penOptRow}>
+                  {PEN_WIDTHS.map((w, i) => {
+                    const active = w === penWidth;
+                    return (
+                      <Pressable
+                        key={w}
+                        style={[styles.penSizeBtn, active && styles.penSizeBtnActive]}
+                        onPress={() => setPenWidth(w)}
+                      >
+                        <View
+                          style={{
+                            width: 4 + i * 4,
+                            height: 4 + i * 4,
+                            borderRadius: (4 + i * 4) / 2,
+                            backgroundColor: active ? theme.palette.cream : theme.color.fg1,
+                          }}
+                        />
+                      </Pressable>
+                    );
+                  })}
+                  <View style={styles.penOptDivider} />
+                  {TEXT_COLORS.map((c) => {
+                    const active = c === penColor;
+                    return (
+                      <Pressable
+                        key={c}
+                        style={[
+                          styles.penSwatch,
+                          { backgroundColor: c },
+                          c === theme.palette.cream && styles.penSwatchLight,
+                          active && styles.penSwatchActive,
+                        ]}
+                        onPress={() => setPenColor(c)}
+                      />
+                    );
+                  })}
+                </View>
                 <Text style={styles.penHintText}>Draw on the page · tap the pen again to finish</Text>
               </View>
             )}
@@ -3480,19 +3679,78 @@ const styles = StyleSheet.create({
     zIndex: 120,
     elevation: 12,
   },
-  penHint: {
+  penPanel: {
     position: 'absolute',
-    bottom: 52,
+    bottom: 24,
     alignSelf: 'center',
-    backgroundColor: 'rgba(43,42,40,0.78)',
+    backgroundColor: 'rgba(43,42,40,0.88)',
+    borderRadius: theme.radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+    maxWidth: 520,
+  },
+  penBrushRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  penBrushChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     borderRadius: theme.radius.pill,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
+    backgroundColor: 'rgba(255,253,246,0.14)',
+  },
+  penBrushChipActive: {
+    backgroundColor: theme.palette.forest,
+  },
+  penBrushLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.palette.cream,
+  },
+  penBrushLabelActive: {
+    fontWeight: '700',
+  },
+  penOptRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  penSizeBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,253,246,0.14)',
+  },
+  penSizeBtnActive: {
+    backgroundColor: theme.palette.forest,
+  },
+  penOptDivider: {
+    width: 1,
+    height: 18,
+    backgroundColor: 'rgba(255,253,246,0.25)',
+    marginHorizontal: 2,
+  },
+  penSwatch: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+  },
+  penSwatchLight: {
+    borderWidth: 1,
+    borderColor: 'rgba(43,42,40,0.3)',
+  },
+  penSwatchActive: {
+    borderWidth: 2,
+    borderColor: theme.palette.cream,
   },
   penHintText: {
     fontFamily: theme.font.ui,
-    fontSize: 12,
-    color: theme.palette.cream,
+    fontSize: 11,
+    color: 'rgba(255,253,246,0.7)',
+    textAlign: 'center',
   },
   toolBtnActive: {
     backgroundColor: 'rgba(78,102,82,0.12)',
