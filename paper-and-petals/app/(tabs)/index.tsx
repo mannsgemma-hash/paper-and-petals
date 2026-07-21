@@ -336,32 +336,35 @@ function JournalCover({ journal, active }: { journal: Journal; active: boolean }
 
   const cover = coverSource(journal.coverKey);
 
+  // A chosen cover shows as just the cut-out journal art — no leather book,
+  // no brown behind the transparent margins. The shadow rides on the image so
+  // iOS shapes it to the cut-out rather than a rectangle.
+  if (cover) {
+    return (
+      <View style={styles.coverBare}>
+        <Image
+          source={cover}
+          style={[styles.coverArt, active ? theme.shadow.lift : theme.shadow.card]}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
+
+  // Fallback leather book (only when a journal has no cover art).
   return (
     <View style={[styles.cover, active ? theme.shadow.lift : theme.shadow.card]}>
-      {/* Cover art fills the card when a cover is chosen; else leather shows. */}
-      {cover && (
-        <Image source={cover} style={styles.coverArt} resizeMode="cover" />
-      )}
-
-      {/* Spine darkening on the binding edge */}
       <View style={styles.spine} />
-
-      {/* Leather-only chrome: stitched border, name plate, ribbon. When the
-          journal has cover art, the art shows completely clean. */}
-      {!cover && (
-        <>
-          <View style={styles.stitchBorder} />
-          <View style={styles.brassPlate}>
-            <Text style={styles.brassName} numberOfLines={1}>
-              {journal.name}
-            </Text>
-            <Text style={styles.brassMeta}>
-              {journal.items} items · {journal.edited}
-            </Text>
-          </View>
-          <View style={styles.ribbon} />
-        </>
-      )}
+      <View style={styles.stitchBorder} />
+      <View style={styles.brassPlate}>
+        <Text style={styles.brassName} numberOfLines={1}>
+          {journal.name}
+        </Text>
+        <Text style={styles.brassMeta}>
+          {journal.items} items · {journal.edited}
+        </Text>
+      </View>
+      <View style={styles.ribbon} />
     </View>
   );
 }
@@ -385,7 +388,9 @@ function CoverPicker({
         <ScrollView contentContainerStyle={styles.pickerGrid}>
           {JOURNAL_COVERS.map((c) => (
             <Pressable key={c.key} style={styles.pickerItem} onPress={() => onPick(c.key)}>
-              <Image source={c.source} style={styles.pickerThumb} resizeMode="cover" />
+              <View style={styles.pickerThumb}>
+                <Image source={c.source} style={styles.pickerThumbImg} resizeMode="contain" />
+              </View>
               <Text style={styles.pickerLabel} numberOfLines={1}>{c.label}</Text>
             </Pressable>
           ))}
@@ -514,12 +519,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#5A3D26',
     overflow: 'hidden',
   },
+  coverBare: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+  },
   coverArt: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
+    width: '100%',
+    height: '100%',
   },
   spine: {
     position: 'absolute',
@@ -658,9 +666,17 @@ const styles = StyleSheet.create({
   },
   pickerThumb: {
     width: '100%',
-    aspectRatio: 0.72,
+    aspectRatio: 0.7,
     borderRadius: theme.radius.sm,
-    backgroundColor: theme.color.bg2,
+    backgroundColor: theme.color.bg1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    paddingVertical: 4,
+  },
+  pickerThumbImg: {
+    width: '100%',
+    height: '100%',
   },
   pickerLabel: {
     fontFamily: theme.font.ui,
