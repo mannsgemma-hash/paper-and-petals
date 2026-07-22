@@ -132,7 +132,10 @@ nothing to commit). You're done.
 ### One extra step for brand-new PAID collections
 For people to *buy* a new paid collection (not just get it via a Studio
 subscription), create a matching in-app-purchase product in App Store Connect /
-Google Play with id **`com.paperandpetals.collection.<id>`** (the `<id>` is the
-collection's id in Sanity, e.g. `col-spring`). Studio subscribers see every
-collection without this; it's only needed for one-time purchases. Free
-collections and Studio-only releases need nothing here.
+Google Play with id **`com.paperandpetals.collection.<id>`**, where `<id>` is the
+collection's Sanity id **with hyphens replaced by underscores** (Google Play
+forbids hyphens). So Sanity `col-spring` → product `com.paperandpetals.collection.col_spring`,
+and `spring-meadow` → `...collection.spring_meadow`. The app converts
+automatically; you just have to name the store product this way. Studio
+subscribers see every collection without this; it's only needed for one-time
+purchases. Free collections and Studio-only releases need nothing here.

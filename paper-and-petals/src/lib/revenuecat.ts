@@ -16,6 +16,15 @@ const COLLECTION_PREFIX = 'com.paperandpetals.collection.'
 // Legacy one-time per-item products, kept only so existing buyers are grandfathered.
 const LEGACY_PACK_PREFIX = 'com.paperandpetals.pack.'
 
+// Google Play (and App Store) product identifiers must be [a-z0-9._]; Sanity
+// collection ids are kebab-case (e.g. "col-spring"), so hyphens are swapped for
+// underscores in the product id and swapped back when we read a purchase.
+// Collection ids never contain underscores, so this round-trips cleanly, and
+// the reverse also accepts any older hyphenated product ids unchanged.
+function collectionProductId(collectionId: string): string {
+  return `${COLLECTION_PREFIX}${collectionId.replace(/-/g, '_')}`
+}
+
 export type StudioPlan = 'monthly' | 'annual'
 
 export interface Entitlements {
@@ -38,9 +47,11 @@ export function initRevenueCat() {
   }
 }
 
-/** Map a product identifier back to a collection id. */
+/** Map a product identifier back to a collection id (underscores → hyphens). */
 function collectionIdFromProduct(productId: string): string | null {
-  return productId.startsWith(COLLECTION_PREFIX) ? productId.slice(COLLECTION_PREFIX.length) : null
+  return productId.startsWith(COLLECTION_PREFIX)
+    ? productId.slice(COLLECTION_PREFIX.length).replace(/_/g, '-')
+    : null
 }
 
 /** Map a legacy product identifier back to the item id. */
@@ -100,11 +111,12 @@ export async function purchaseStudio(plan: StudioPlan): Promise<boolean> {
 /**
  * Buy a single collection — owned forever.
  * Product identifiers must be created in App Store Connect / Google Play as:
- *   com.paperandpetals.collection.<collectionId>
+ *   com.paperandpetals.collection.<collectionId with hyphens as underscores>
+ * e.g. Sanity id "col-spring" → product "com.paperandpetals.collection.col_spring"
  */
 export async function purchaseCollection(collectionId: string): Promise<boolean> {
   if (!Purchases) throw new Error('Store not available on this platform')
-  const productId = `${COLLECTION_PREFIX}${collectionId}`
+  const productId = collectionProductId(collectionId)
   const products = await Purchases.getProducts([productId])
   if (!products || products.length === 0) {
     throw new Error('This collection isn’t available to buy yet. You can unlock it with Studio.')
