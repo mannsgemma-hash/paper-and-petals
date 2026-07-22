@@ -35,6 +35,7 @@ web-build/
 *.pem
 *.jks
 *.mobileprovision
+*service-account*.json
 
 # misc
 .git/
