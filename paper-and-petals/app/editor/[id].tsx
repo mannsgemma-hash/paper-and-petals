@@ -45,6 +45,7 @@ import { JOURNAL_FONTS, familyForFontKey } from '../../src/theme/fonts';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../src/data/shop';
 import type { Upload } from '../../src/lib/uploads';
+import { persistUploadFile, deleteUploadFile } from '../../src/lib/uploadFiles';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchCatalogue } from '../../src/services/content';
 import { supabase, supabaseConfigured } from '../../src/lib/supabase';
@@ -1079,7 +1080,11 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
       'Remove from My Uploads?',
       'This takes it out of your holding area. Copies already placed in a journal stay put.',
     ).then((ok) => {
-      if (ok) removeUpload(upload.id);
+      if (ok) {
+        removeUpload(upload.id);
+        // Reclaim the durable file now that nothing references it.
+        deleteUploadFile(upload.uri);
+      }
     });
   };
 
@@ -2456,12 +2461,10 @@ export default function EditorScreen() {
       if (result.canceled || !result.assets?.length) return;
       const asset = result.assets[0];
       const aspect = asset.width && asset.height ? asset.width / asset.height : 1;
-      addUpload({
-        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        uri: asset.uri,
-        aspect,
-        addedAt: Date.now(),
-      });
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      // Copy out of the picker cache into durable storage before recording it.
+      const uri = await persistUploadFile(asset.uri, id);
+      addUpload({ id, uri, aspect, addedAt: Date.now() });
       track('upload_added');
     } catch (e) {
       Alert.alert('Could not add file', 'Something went wrong picking that file.');
