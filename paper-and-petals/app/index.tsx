@@ -155,7 +155,9 @@ const styles = StyleSheet.create({
   stage: {
     flex: 1,
     alignItems: 'center',
-    paddingTop: 96,
+    // Centre the logo cluster vertically so it stays centred on any screen —
+    // a fixed top padding floated it high on tall tablets (iPad Pro 13").
+    justifyContent: 'center',
   },
   logoWrap: { width: 260, height: 260 },
   logo: {
