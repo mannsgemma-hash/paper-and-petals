@@ -47,6 +47,26 @@ export function initRevenueCat() {
   }
 }
 
+/**
+ * Attach the person's details to their RevenueCat profile. This is the win-back
+ * source of truth: `$email`/`$displayName` power targeted campaigns, and the
+ * marketing_consent attribute records whether they opted in. Safe to call when
+ * the SDK is unavailable (web / Expo Go) — it just no-ops.
+ */
+export function setSubscriberInfo(info: { email?: string; name?: string; marketingConsent?: boolean }) {
+  if (!Purchases) return
+  try {
+    if (info.email) Purchases.setEmail(info.email)
+    if (info.name) Purchases.setDisplayName(info.name)
+    Purchases.setAttributes({
+      marketing_consent: info.marketingConsent ? 'true' : 'false',
+      signup_source: 'welcome',
+    })
+  } catch (e) {
+    console.warn('RevenueCat attribute set failed', e)
+  }
+}
+
 /** Map a product identifier back to a collection id (underscores → hyphens). */
 function collectionIdFromProduct(productId: string): string | null {
   return productId.startsWith(COLLECTION_PREFIX)

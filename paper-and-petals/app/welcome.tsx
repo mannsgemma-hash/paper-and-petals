@@ -3,6 +3,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -10,12 +11,14 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Screen } from '../src/components/Screen';
 import { Button } from '../src/components/Button';
 import { theme } from '../src/theme/theme';
 import { useAppStore } from '../src/store/app';
 import { markWelcomeComplete } from '../src/lib/storage';
+import { captureSubscriber } from '../src/lib/subscriber';
 import { track } from '../src/lib/analytics';
 
 // SCR-02 First-launch Welcome. Brand seal hero + intro form + onboarding CTAs.
@@ -31,12 +34,17 @@ export default function WelcomeScreen() {
   const phone = width < theme.layout.phoneBreakpoint;
 
   const [form, setForm] = useState({ name: '', zip: '', email: '', dob: '' });
+  const [consent, setConsent] = useState(false);
   const update = (k: keyof typeof form) => (v: string) =>
     setForm((f) => ({ ...f, [k]: v }));
   const canContinue = form.name.trim().length > 0;
 
   const finish = () => {
-    track('welcome_completed');
+    const email = form.email.trim();
+    track('welcome_completed', { gaveEmail: email.length > 0, consent });
+    // Records to RevenueCat (+ best-effort Supabase); fire-and-forget so the
+    // door never waits on the network.
+    captureSubscriber({ name: form.name, email: email || undefined, marketingConsent: consent });
     setLaunchState('returning');
     // Persist welcome completion so the next launch routes straight home.
     markWelcomeComplete();
@@ -112,6 +120,21 @@ export default function WelcomeScreen() {
               value={form.dob}
               onChangeText={update('dob')}
             />
+
+            {/* Marketing opt-in — unticked by default (consent must be given). */}
+            <Pressable
+              style={styles.consentRow}
+              onPress={() => setConsent((c) => !c)}
+              hitSlop={6}
+            >
+              <View style={[styles.checkbox, consent && styles.checkboxOn]}>
+                {consent && <Feather name="check" size={14} color={theme.palette.cream} />}
+              </View>
+              <Text style={styles.consentText}>
+                Send me new collections and journalling ideas. Now and then, never spam —
+                unsubscribe anytime.
+              </Text>
+            </Pressable>
           </View>
 
           {/* Actions */}
@@ -247,4 +270,33 @@ const styles = StyleSheet.create({
   },
   fullWidth: { width: '100%' },
   ghostText: { fontSize: 14, color: theme.color.fg2 },
+  consentRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginTop: 4,
+    paddingRight: 4,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: theme.radius.xs,
+    borderWidth: 1.5,
+    borderColor: theme.palette.hairline,
+    backgroundColor: theme.color.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 1,
+  },
+  checkboxOn: {
+    backgroundColor: theme.palette.forest,
+    borderColor: theme.palette.forest,
+  },
+  consentText: {
+    flex: 1,
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    lineHeight: 18,
+    color: theme.color.fg2,
+  },
 });
