@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { SHOP_CATALOGUE, FALLBACK_COLLECTIONS, ShopItem, Collection } from '../data/shop';
 import { randomCoverKey } from '../data/covers';
+import { Upload, loadUploads, persistUploads } from '../lib/uploads';
 
 /** Launch state drives where SCR-01 routes after the bar fills. */
 export type LaunchState = 'new' | 'returning';
@@ -40,6 +41,11 @@ interface AppState {
   pendingDelivery: ShopItem[];
   /** Most-recently placed item ids, newest first (capped). */
   recentItemIds: string[];
+  /**
+   * The user's own imported files. Not shop content: no category, rarity or
+   * ownership — a plain holding area, global across every journal and spread.
+   */
+  uploads: Upload[];
   setLaunchState: (s: LaunchState) => void;
   renameJournal: (id: string, name: string) => void;
   addJournal: (coverKey?: string) => Journal;
@@ -56,6 +62,12 @@ interface AppState {
   queueDeliveryMany: (items: ShopItem[]) => void;
   clearPendingDelivery: () => void;
   noteRecentItem: (id: string) => void;
+  /** Replace the whole uploads list (used by disk hydration). */
+  setUploads: (list: Upload[]) => void;
+  /** Add one imported file to the holding area (newest first). */
+  addUpload: (upload: Upload) => void;
+  /** Remove a file from the holding area (does not touch already-placed copies). */
+  removeUpload: (id: string) => void;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -66,6 +78,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   hasStudio: false,
   pendingDelivery: [],
   recentItemIds: [],
+  uploads: [],
   shopItems: SHOP_CATALOGUE,
   collections: FALLBACK_COLLECTIONS,
   setLaunchState: (launchState) => set({ launchState }),
@@ -127,4 +140,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       recentItemIds: [id, ...s.recentItemIds.filter((r) => r !== id)].slice(0, 16),
     })),
+  setUploads: (uploads) => set({ uploads }),
+  addUpload: (upload) =>
+    set((s) => {
+      const uploads = [upload, ...s.uploads];
+      // Write through so the holding area survives across sessions.
+      void persistUploads(uploads);
+      return { uploads };
+    }),
+  removeUpload: (id) =>
+    set((s) => {
+      const uploads = s.uploads.filter((u) => u.id !== id);
+      void persistUploads(uploads);
+      return { uploads };
+    }),
 }));
+
+// Hydrate the holding area from disk once, on first import of the store.
+void loadUploads().then((list) => {
+  if (list.length) useAppStore.setState({ uploads: list });
+});

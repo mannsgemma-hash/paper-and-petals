@@ -44,6 +44,7 @@ import { theme } from '../../src/theme/theme';
 import { JOURNAL_FONTS, familyForFontKey } from '../../src/theme/fonts';
 import { useAppStore } from '../../src/store/app';
 import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../src/data/shop';
+import type { Upload } from '../../src/lib/uploads';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchCatalogue } from '../../src/services/content';
 import { supabase } from '../../src/lib/supabase';
@@ -1052,17 +1053,34 @@ interface DrawerBodyProps {
   drawerCat: string;
   setDrawerCat: (cat: string) => void;
   placeItem: (item: { id: string; glyph: string; tone: string; flowerAsset?: number | { uri: string } }) => void;
+  pickUpload: () => void;
+  placeUpload: (upload: Upload) => void;
   hoveredCategory: string | null;
   setHoveredCategory: (id: string | null) => void;
 }
 
-function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
+/** The virtual tab id for My Uploads — kept out of the shop categories. */
+const UPLOADS_CAT = 'uploads';
+
+function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload, placeUpload, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const ownedCollections = useAppStore((s) => s.ownedCollections);
   const legacyOwnedItems = useAppStore((s) => s.legacyOwnedItems);
   const hasStudio = useAppStore((s) => s.hasStudio);
   const recentItemIds = useAppStore((s) => s.recentItemIds);
+  const uploads = useAppStore((s) => s.uploads);
+  const removeUpload = useAppStore((s) => s.removeUpload);
+  const uploadsMode = drawerCat === UPLOADS_CAT;
+
+  const confirmRemoveUpload = (upload: Upload) => {
+    confirmAsync(
+      'Remove from My Uploads?',
+      'This takes it out of your holding area. Copies already placed in a journal stay put.',
+    ).then((ok) => {
+      if (ok) removeUpload(upload.id);
+    });
+  };
 
   // Only items the player can actually use show in the drawer: free items,
   // items in an owned collection, grandfathered one-time buys, or everything
@@ -1167,6 +1185,7 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
 
   return (
     <View style={styles.drawerBody}>
+      {!uploadsMode ? (
       <View style={styles.drawerLeft}>
         {/* Search */}
         <View style={styles.drawerSearch}>
@@ -1214,6 +1233,47 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
           )}
         </ScrollView>
       </View>
+      ) : (
+        // My Uploads — the user's own files, stored globally and usable in any
+        // journal. Deliberately plain: no search, categories, tones or tags.
+        <View style={styles.drawerLeft}>
+          <Text style={styles.uploadsIntro}>
+            Your own photos and scraps, ready for any page in any journal.
+          </Text>
+          <ScrollView>
+            <View style={styles.drawerGrid}>
+              {/* Add is always first so importing is a single tap. */}
+              <Pressable style={styles.uploadAddTile} onPress={pickUpload}>
+                <Feather name="plus" size={22} color={theme.color.fg3} />
+                <Text style={styles.uploadAddLabel}>Add file</Text>
+              </Pressable>
+
+              {uploads.map((u) => (
+                <View key={u.id} style={styles.uploadTile}>
+                  <Pressable style={styles.uploadTilePress} onPress={() => placeUpload(u)}>
+                    <Image source={{ uri: u.uri }} style={styles.uploadThumb} resizeMode="cover" />
+                  </Pressable>
+                  <Pressable
+                    style={styles.uploadRemove}
+                    onPress={() => confirmRemoveUpload(u)}
+                    hitSlop={6}
+                  >
+                    <Feather name="x" size={12} color={theme.palette.cream} />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+
+            {uploads.length === 0 && (
+              <View style={styles.uploadsEmpty}>
+                <Text style={styles.drawerEmptyHint}>
+                  Tap “Add file” to bring in your own photos.
+                </Text>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Category tabs on the right edge */}
       <ScrollView style={styles.tabRail} contentContainerStyle={styles.tabRailContent}>
@@ -1238,10 +1298,38 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, hoveredCate
             </View>
           );
         })}
+
+        {/* My Uploads — set apart from the shop categories by a divider. */}
+        <View style={styles.tabRailDivider} />
+        <View style={styles.tabWrapper}>
+          <Pressable
+            style={[styles.tab, uploadsMode && styles.tabActive]}
+            onPress={() => setDrawerCat(UPLOADS_CAT)}
+            {...({
+              onPointerEnter: () => setHoveredCategory(UPLOADS_CAT),
+              onPointerLeave: () => setHoveredCategory(null),
+            } as any)}
+          >
+            <Feather
+              name="upload"
+              size={18}
+              color={uploadsMode ? theme.palette.forest : theme.color.fg3}
+            />
+          </Pressable>
+        </View>
       </ScrollView>
 
       {/* Category tooltip — sibling to both ScrollViews so it's never clipped */}
       {hoveredCategory && (() => {
+        if (hoveredCategory === UPLOADS_CAT) {
+          // Sits below the category tabs + divider (~13px).
+          const topOffset = 8 + EDITOR_CATEGORIES.length * 38 + 13 + 18;
+          return (
+            <View style={[styles.catTooltip, { top: topOffset, right: 44 }]} pointerEvents="none">
+              <Text style={styles.tooltipText}>My Uploads</Text>
+            </View>
+          );
+        }
         const idx = EDITOR_CATEGORIES.findIndex(c => c.id === hoveredCategory);
         const label = EDITOR_CATEGORIES[idx]?.label;
         if (!label) return null;
@@ -1766,6 +1854,7 @@ export default function EditorScreen() {
   const pendingDelivery = useAppStore((s) => s.pendingDelivery);
   const clearPendingDelivery = useAppStore((s) => s.clearPendingDelivery);
   const noteRecentItem = useAppStore((s) => s.noteRecentItem);
+  const addUpload = useAppStore((s) => s.addUpload);
 
   const { width: screenW, height: screenH } = useWindowDimensions();
 
@@ -2308,6 +2397,65 @@ export default function EditorScreen() {
     } catch (e) {
       Alert.alert('Could not add photo', 'Something went wrong picking that image.');
     }
+  }
+
+  // ── My Uploads ────────────────────────────────────────────────────────────
+  // Import a file into the holding area (does not place it yet). The same
+  // uploads are reusable on every spread of every journal.
+  async function pickUpload() {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        Alert.alert('Photos access needed', 'Allow photo access in Settings to bring in your own files.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['images'],
+        quality: 0.9,
+      });
+      if (result.canceled || !result.assets?.length) return;
+      const asset = result.assets[0];
+      const aspect = asset.width && asset.height ? asset.width / asset.height : 1;
+      addUpload({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        uri: asset.uri,
+        aspect,
+        addedAt: Date.now(),
+      });
+      track('upload_added');
+    } catch (e) {
+      Alert.alert('Could not add file', 'Something went wrong picking that file.');
+    }
+  }
+
+  // Place a held upload onto the current spread, at its true proportions.
+  function placeUpload(upload: Upload) {
+    const currentItems = pages[activePage - 1].items;
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+    const h = 180;
+    const w = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, h * (upload.aspect || 1)));
+    const newItem: PlacedItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      itemId: 'upload',
+      kind: 'photo',
+      glyph: 'image',
+      tone: 'cream',
+      flowerAsset: { uri: upload.uri },
+      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
+      y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
+      w,
+      h,
+      rotate: (Math.random() - 0.5) * 8,
+      z: maxZ + 1,
+    };
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    setSelectedId(newItem.id);
+    toggleDrawer(false);
+    track('upload_placed');
   }
 
   // ── Page navigation ───────────────────────────────────────────────────────
@@ -2887,9 +3035,13 @@ export default function EditorScreen() {
         >
           <View style={styles.drawerHeader}>
             <View>
-              <Text style={styles.drawerEyebrow}>YOUR COLLECTION</Text>
+              <Text style={styles.drawerEyebrow}>
+                {drawerCat === UPLOADS_CAT ? 'YOUR FILES' : 'YOUR COLLECTION'}
+              </Text>
               <Text style={styles.drawerTitle}>
-                {EDITOR_CATEGORIES.find((c) => c.id === drawerCat)?.label}
+                {drawerCat === UPLOADS_CAT
+                  ? 'My Uploads'
+                  : EDITOR_CATEGORIES.find((c) => c.id === drawerCat)?.label}
               </Text>
             </View>
             <Pressable onPress={() => toggleDrawer(false)} hitSlop={8}>
@@ -2902,6 +3054,8 @@ export default function EditorScreen() {
             drawerCat={drawerCat}
             setDrawerCat={setDrawerCat}
             placeItem={placeItem}
+            pickUpload={pickUpload}
+            placeUpload={placeUpload}
             hoveredCategory={hoveredCategory}
             setHoveredCategory={setHoveredCategory}
           />
@@ -3817,6 +3971,62 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabActive: { backgroundColor: 'rgba(78,102,82,0.12)' },
+  tabRailDivider: {
+    width: 20,
+    height: 1,
+    backgroundColor: theme.palette.hairlineSoft,
+    marginVertical: 6,
+  },
+  // ── My Uploads ──────────────────────────────────────────────────────────
+  uploadsIntro: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg3,
+    lineHeight: 17,
+    paddingHorizontal: 14,
+    paddingTop: 12,
+  },
+  uploadsEmpty: { paddingHorizontal: 24, paddingBottom: 20, alignItems: 'center' },
+  // Plainer than a shop tile: neutral surface, thin border, no tone or tags.
+  uploadTile: {
+    width: 78,
+    height: 92,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    backgroundColor: theme.color.surface,
+    overflow: 'hidden',
+  },
+  uploadTilePress: { flex: 1 },
+  uploadThumb: { width: '100%', height: '100%' },
+  uploadRemove: {
+    position: 'absolute',
+    top: 3,
+    right: 3,
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: 'rgba(43,38,33,0.66)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  uploadAddTile: {
+    width: 78,
+    height: 92,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+  },
+  uploadAddLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 10,
+    color: theme.color.fg3,
+    fontWeight: '600',
+  },
   // Tile wrapper for item tooltip positioning
   tileWrapper: {
     position: 'relative',
