@@ -27,3 +27,19 @@ export function identify(userId: string, traits?: Record<string, unknown>) {
 export function screen(name: string, props?: Record<string, unknown>) {
   try { client?.screen(name, props) } catch {}
 }
+
+/**
+ * Report a caught/uncaught error so release crashes leave a trail. Sends the
+ * message + stack to PostHog when available and always logs to the console.
+ */
+export function captureException(error: unknown, context?: Record<string, unknown>) {
+  const err = error instanceof Error ? error : new Error(String(error))
+  try {
+    client?.capture('app_error', {
+      message: err.message,
+      stack: err.stack,
+      ...context,
+    })
+  } catch {}
+  console.error('[captureException]', err, context)
+}

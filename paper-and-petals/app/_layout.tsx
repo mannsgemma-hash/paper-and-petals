@@ -6,6 +6,8 @@ import { theme } from '../src/theme/theme';
 import { initRevenueCat, syncEntitlements } from '../src/lib/revenuecat';
 import { initAnalytics } from '../src/lib/analytics';
 import { initNotifications } from '../src/lib/notifications';
+import { installGlobalErrorHandler } from '../src/lib/errorReporting';
+import { ErrorBoundary } from '../src/components/ErrorBoundary';
 import { useAppStore } from '../src/store/app';
 
 SplashScreen.preventAutoHideAsync();
@@ -18,22 +20,26 @@ export default function RootLayout() {
   }, [fontsLoaded]);
 
   useEffect(() => {
-    initRevenueCat();
+    // Install first so any error thrown by the inits below is still reported.
+    installGlobalErrorHandler();
     initAnalytics();
+    initRevenueCat();
     initNotifications();
     // Sync subscription + owned collections from RevenueCat into the store.
-    syncEntitlements().then(({ studio, ownedCollectionIds, legacyOwnedItemIds }) => {
-      const store = useAppStore.getState();
-      store.setHasStudio(studio);
-      if (ownedCollectionIds.length) store.setOwnedCollectionIds(ownedCollectionIds);
-      if (legacyOwnedItemIds.length) store.setLegacyOwnedItemIds(legacyOwnedItemIds);
-    });
+    syncEntitlements()
+      .then(({ studio, ownedCollectionIds, legacyOwnedItemIds }) => {
+        const store = useAppStore.getState();
+        store.setHasStudio(studio);
+        if (ownedCollectionIds.length) store.setOwnedCollectionIds(ownedCollectionIds);
+        if (legacyOwnedItemIds.length) store.setLegacyOwnedItemIds(legacyOwnedItemIds);
+      })
+      .catch(() => {});
   }, []);
 
   if (!fontsLoaded) return null;
 
   return (
-    <>
+    <ErrorBoundary>
       <StatusBar style="dark" />
       <Stack
         screenOptions={{
@@ -50,6 +56,6 @@ export default function RootLayout() {
         <Stack.Screen name="library" />
         <Stack.Screen name="feedback" />
       </Stack>
-    </>
+    </ErrorBoundary>
   );
 }

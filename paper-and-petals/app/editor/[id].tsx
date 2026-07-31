@@ -47,7 +47,7 @@ import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../s
 import type { Upload } from '../../src/lib/uploads';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchCatalogue } from '../../src/services/content';
-import { supabase } from '../../src/lib/supabase';
+import { supabase, supabaseConfigured } from '../../src/lib/supabase';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
 import { Tour, type TourStep } from '../../src/components/Tour';
 import { screen, track } from '../../src/lib/analytics';
@@ -1942,12 +1942,29 @@ export default function EditorScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    supabase
-      .from('spreads')
-      .select('page_number, scene')
-      .eq('journal_id', journalId)
-      .order('page_number', { ascending: true })
-      .then(({ data, error }) => {
+    // Seed the blank starter book and allow saving. Runs immediately when the
+    // backend isn't configured, and as the fallback if the load errors/rejects.
+    const seedBlank = () => {
+      if (cancelled) return;
+      setHistory((h) => (h.length === 0 ? [pagesRef.current] : h));
+      setHistoryIdx((i) => (i < 0 ? 0 : i));
+      loadedRef.current = true;
+    };
+
+    if (!supabaseConfigured) {
+      seedBlank();
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('spreads')
+          .select('page_number, scene')
+          .eq('journal_id', journalId)
+          .order('page_number', { ascending: true });
         if (cancelled) return;
         if (!error && data && data.length > 0) {
           const loaded: PageState[] = data.map((row: any) => ({
@@ -1956,13 +1973,15 @@ export default function EditorScreen() {
           setPages(loaded);
           setHistory([loaded]);
           setHistoryIdx(0);
+          loadedRef.current = true;
         } else {
-          // No saved spreads yet — seed history with the blank starter book.
-          setHistory((h) => (h.length === 0 ? [pagesRef.current] : h));
-          setHistoryIdx((i) => (i < 0 ? 0 : i));
+          seedBlank();
         }
-        loadedRef.current = true;
-      });
+      } catch {
+        // Never let a backend hiccup surface as an unhandled rejection / crash.
+        seedBlank();
+      }
+    })();
     return () => {
       cancelled = true;
     };
@@ -1970,21 +1989,23 @@ export default function EditorScreen() {
 
   function scheduleSave(pgs: PageState[]) {
     if (!loadedRef.current) return;
+    if (!supabaseConfigured) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(() => {
-      supabase
-        .from('spreads')
-        .upsert(
+    saveTimeout.current = setTimeout(async () => {
+      try {
+        const { error } = await supabase.from('spreads').upsert(
           pgs.map((pg, i) => ({
             journal_id: journalId,
             page_number: i + 1,
             scene: { items: pg.items },
             updated_at: new Date().toISOString(),
           })),
-        )
-        .then(({ error }) => {
-          if (error) console.warn('Save error', error);
-        });
+        );
+        if (error) console.warn('Save error', error);
+      } catch (e) {
+        // A failed save must never crash the editor via an unhandled rejection.
+        console.warn('Save failed', e);
+      }
     }, 1200);
   }
 
