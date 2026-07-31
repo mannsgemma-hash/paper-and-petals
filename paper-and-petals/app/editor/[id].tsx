@@ -48,6 +48,7 @@ import type { Upload } from '../../src/lib/uploads';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { fetchCatalogue } from '../../src/services/content';
 import { supabase, supabaseConfigured } from '../../src/lib/supabase';
+import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
 import { Tour, type TourStep } from '../../src/components/Tour';
 import { screen, track } from '../../src/lib/analytics';
@@ -1951,14 +1952,30 @@ export default function EditorScreen() {
       loadedRef.current = true;
     };
 
-    if (!supabaseConfigured) {
-      seedBlank();
-      return () => {
-        cancelled = true;
-      };
-    }
+    const adopt = (loaded: PageState[]) => {
+      if (cancelled) return;
+      setPages(loaded);
+      setHistory([loaded]);
+      setHistoryIdx(0);
+      loadedRef.current = true;
+    };
 
     (async () => {
+      // Local-first: the device copy is authoritative and loads instantly,
+      // offline. Once a journal has a local copy, that wins on this device.
+      const local = await loadLocalSpreads<PageState>(journalId);
+      if (cancelled) return;
+      if (local && local.length > 0) {
+        adopt(local);
+        return;
+      }
+
+      // No local copy yet (fresh install / new device). Restore from the cloud
+      // if it's configured, otherwise start a fresh book.
+      if (!supabaseConfigured) {
+        seedBlank();
+        return;
+      }
       try {
         const { data, error } = await supabase
           .from('spreads')
@@ -1970,10 +1987,9 @@ export default function EditorScreen() {
           const loaded: PageState[] = data.map((row: any) => ({
             items: (row.scene?.items ?? []) as PlacedItem[],
           }));
-          setPages(loaded);
-          setHistory([loaded]);
-          setHistoryIdx(0);
-          loadedRef.current = true;
+          adopt(loaded);
+          // Cache the restored book on-device for instant offline opens.
+          saveLocalSpreads(journalId, loaded);
         } else {
           seedBlank();
         }
@@ -1989,9 +2005,12 @@ export default function EditorScreen() {
 
   function scheduleSave(pgs: PageState[]) {
     if (!loadedRef.current) return;
-    if (!supabaseConfigured) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
     saveTimeout.current = setTimeout(async () => {
+      // Always persist on-device first — this is the source of truth and works
+      // offline. Cloud sync is a best-effort layer on top.
+      saveLocalSpreads(journalId, pgs);
+      if (!supabaseConfigured) return;
       try {
         const { error } = await supabase.from('spreads').upsert(
           pgs.map((pg, i) => ({
