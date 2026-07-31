@@ -1,0 +1,10 @@
+# Dev-only folders — not needed by the app or the EAS build, and the raw art in
+# project/ duplicates paper-and-petals/assets/. Kept out of git so they never
+# bloat the EAS upload (they caused a 94.6MB tarball that failed to upload).
+# Files remain on disk locally and stay recoverable from git history.
+/project/
+/chats/
+
+# OS / editor cruft
+.DS_Store
+*.log
