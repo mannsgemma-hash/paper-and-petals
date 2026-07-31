@@ -1,4 +1,4 @@
-import { supabase } from './supabase'
+import { supabase, supabaseConfigured } from './supabase'
 import { setSubscriberInfo } from './revenuecat'
 
 export interface SubscriberInput {
@@ -25,7 +25,7 @@ export async function captureSubscriber(input: SubscriberInput): Promise<void> {
 
   setSubscriberInfo({ email, name: name || undefined, marketingConsent: input.marketingConsent })
 
-  if (!email) return
+  if (!email || !supabaseConfigured) return
   try {
     await supabase.from('subscribers').upsert(
       {
