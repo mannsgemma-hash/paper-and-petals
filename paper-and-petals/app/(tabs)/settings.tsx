@@ -283,13 +283,73 @@ export default function SettingsScreen() {
 const LEGAL_COPY: Record<'terms' | 'privacy', { title: string; body: string }> = {
   terms: {
     title: 'Terms of Service',
-    body:
-      'Welcome to Paper & Petals. By using the app you agree to craft kindly: your journals are yours, and every item you buy from the shop is yours to keep forever.\n\nThe full terms — covering accounts, purchases, content rights, and acceptable use — live in cozy-craft-journal/ProjectDocumentation/Terms_of_Service.md and will be wired in with the backend phase.',
+    body: `Last updated 1 August 2026
+
+Welcome to Paper & Petals. By downloading or using the app you agree to these terms. Please read them.
+
+YOUR LICENCE
+We grant you a personal, non-transferable licence to use Paper & Petals to create your own journals. The app and its artwork, fonts and design are owned by us or our licensors and are protected by copyright.
+
+YOUR CONTENT
+Your journals and anything you import are yours — you keep all rights to them. You are responsible for the content you add, and you confirm you have the right to use any images you import.
+
+BUYING COLLECTIONS AND STUDIO
+• Collections you buy outright are yours to keep and use inside the app forever, including after a Studio subscription ends.
+• Studio is an auto-renewing subscription. Payment is charged to your Apple ID at confirmation of purchase, and it renews automatically unless cancelled at least 24 hours before the end of the current period. Manage or cancel it in your Apple ID settings — we cannot cancel it for you.
+• Prices are shown before purchase and may change for future purchases.
+• Purchases are processed by Apple; refunds are subject to Apple's policies.
+
+ARTWORK AND PRINTING
+Artwork you unlock may be used in your personal journals and printed for your own use. You may not redistribute, resell, or use the raw artwork as your own product.
+
+ACCEPTABLE USE
+Please do not misuse the app: do not attempt to break, copy, resell or reverse-engineer it, or use it to store or share unlawful content.
+
+AVAILABILITY AND CHANGES
+We work hard to keep the app running but cannot promise it will always be available or error-free. We may add, change or remove features over time.
+
+DISCLAIMER AND LIABILITY
+The app is provided "as is". To the extent permitted by law, we exclude implied warranties and are not liable for indirect or incidental losses, or for loss of content you have not backed up. Nothing in these terms limits rights you have under law that cannot be excluded.
+
+CHANGES TO THESE TERMS
+We may update these terms; we will change the date above and, for material changes, let you know in the app. Continuing to use the app means you accept the updated terms.
+
+CONTACT
+Questions: support@paperandpetals.app`,
   },
   privacy: {
     title: 'Privacy Policy',
-    body:
-      'We collect as little as possible. Your journal content never leaves your device unless you create an account and turn on sync. Anonymous analytics can be switched off at any time.\n\nThe full policy lives in cozy-craft-journal/ProjectDocumentation/Privacy_Policy.md and will be wired in with the backend phase.',
+    body: `Last updated 1 August 2026
+
+Paper & Petals makes a digital scrapbooking app. This policy explains what we collect, why, and the choices you have. We collect as little as possible.
+
+WHAT WE COLLECT
+• Your journals and uploads. The pages you make and the photos you import are stored on your device. If cloud sync is enabled for your account, a secure copy is stored so you can restore it — otherwise it never leaves your device.
+• Your name and email, only if you provide them. We use these to save your place and, if you opt in, to send occasional updates about new collections. You can unsubscribe at any time.
+• Purchase information. When you buy a collection or subscribe to Studio, Apple processes the payment. We receive a record of what you own (via RevenueCat) so we can unlock it — we never see your card details.
+• Anonymous usage analytics. We record which screens and features are used, and app errors, to fix bugs and improve the app. This never includes your journal content, and you can turn analytics off in Settings.
+• Push notifications. If you allow them, a device token is stored (via OneSignal) so we can send reminders and news. You can turn these off in your device settings.
+
+WHO WE SHARE WITH
+We do not sell your data. We use a small number of providers who process data on our behalf: Apple (payments), RevenueCat (purchase records), PostHog (analytics), OneSignal (notifications) and Supabase (optional cloud sync and mailing list). Each receives only what it needs.
+
+HOW LONG WE KEEP IT
+We keep your account data for as long as you use the app. You can ask us to delete your email and any synced content at any time.
+
+YOUR CHOICES
+• Turn analytics off in Settings.
+• Turn notifications off in your device settings.
+• Unsubscribe from emails via any email we send.
+• Request access to, or deletion of, your data by emailing us.
+
+CHILDREN
+Paper & Petals is not directed at children under 13, and we do not knowingly collect their data.
+
+CHANGES
+We may update this policy; we will change the date above and, for material changes, let you know in the app.
+
+CONTACT
+Questions or requests: support@paperandpetals.app`,
   },
 };
 

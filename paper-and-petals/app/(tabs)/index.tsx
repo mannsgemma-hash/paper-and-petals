@@ -29,9 +29,9 @@ import { Tour, type TourStep } from '../../src/components/Tour';
 
 const logoSage = require('../../assets/logos/logo_sage.png');
 
+// Base cover aspect ratio (300:420); actual size is computed responsively.
 const CARD_W = 300;
 const CARD_H = 420;
-const STEP = 280;
 
 /** First-open tour of the home screen. Rings sit over the fixed chrome. */
 const HOME_TOUR: TourStep[] = [
@@ -93,6 +93,13 @@ export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
   const compact = height < 560;
 
+  // Size the cover to ~74% of the screen height (kept in the 300:420 aspect and
+  // never wider than the screen) so journals feel substantial on large tablets
+  // instead of floating small. Neighbours step by most of a card width.
+  const cardH = Math.round(Math.min(height * 0.74, width * 0.9 * (CARD_H / CARD_W)));
+  const cardW = Math.round(cardH * (CARD_W / CARD_H));
+  const step = Math.round(cardW * 0.9);
+
   const next = () => setActive((a) => Math.min(a + 1, journals.length - 1));
   const prev = () => setActive((a) => Math.max(a - 1, 0));
 
@@ -151,7 +158,7 @@ export default function HomeScreen() {
     if (a > 2.4) return null;
     const sgn = Math.sign(offset);
     const scale = a < 0.5 ? 1 : a < 1.5 ? 0.74 : 0.52;
-    const tx = offset * STEP * (a < 1.5 ? 1 : 1.05);
+    const tx = offset * step * (a < 1.5 ? 1 : 1.05);
     const rot = a < 0.5 ? 0 : sgn * (a < 1.5 ? 5 : 9);
     const ty = a < 0.5 ? 0 : a < 1.5 ? 14 : 26;
     const opacity = a < 0.5 ? 1 : a < 1.5 ? 0.95 : 0.4;
@@ -203,8 +210,10 @@ export default function HomeScreen() {
               style={[
                 styles.cardWrap,
                 {
-                  marginLeft: -CARD_W / 2,
-                  marginTop: -CARD_H / 2,
+                  width: cardW,
+                  height: cardH,
+                  marginLeft: -cardW / 2,
+                  marginTop: -cardH / 2,
                   zIndex: p.z,
                   opacity: p.opacity,
                   transform: [

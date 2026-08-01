@@ -1509,12 +1509,6 @@ type TextPatch = Partial<
 >;
 
 /** Lettering size steps offered by the text tool (multiplier on box-based size). */
-const TEXT_SIZES: { key: string; label: string; scale: number }[] = [
-  { key: 's', label: 'Small', scale: 0.7 },
-  { key: 'm', label: 'Medium', scale: 1 },
-  { key: 'l', label: 'Large', scale: 1.35 },
-  { key: 'xl', label: 'Huge', scale: 1.8 },
-];
 
 interface TextEditorModalProps {
   item: PlacedItem;
@@ -1527,7 +1521,6 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
   const fontKey = item.fontKey ?? JOURNAL_FONTS[0].key;
   const color = item.color ?? theme.palette.charcoal;
   const align = item.align ?? 'center';
-  const textScale = item.textScale ?? 1;
 
   return (
     <View style={styles.textModalScrim}>
@@ -1601,22 +1594,10 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
           </View>
         </View>
 
-        {/* Size */}
-        <Text style={styles.textModalLabel}>SIZE</Text>
-        <View style={styles.textCtrlGroup}>
-          {TEXT_SIZES.map((s) => {
-            const active = Math.abs(textScale - s.scale) < 0.01;
-            return (
-              <Pressable
-                key={s.key}
-                style={[styles.sizeChip, active && styles.textCtrlBtnActive]}
-                onPress={() => onChange({ textScale: s.scale })}
-              >
-                <Text style={[styles.sizeChipLabel, active && styles.textCtrlGlyphActive]}>{s.label}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {/* Size is set by free-transform: drag the corner handles on the page. */}
+        <Text style={styles.textSizeHint}>
+          Tip: drag the corner handles on the page to resize your text.
+        </Text>
 
         {/* Font picker */}
         <Text style={styles.textModalLabel}>FONT</Text>
@@ -2073,7 +2054,7 @@ export default function EditorScreen() {
       y: SPREAD_H * 0.3 + Math.random() * SPREAD_H * 0.4,
       w: DEFAULT_ITEM_SIZE,
       h: DEFAULT_ITEM_SIZE,
-      rotate: (Math.random() - 0.5) * 20,
+      rotate: 0,
       z: maxZ + 1,
     };
 
@@ -2224,7 +2205,7 @@ export default function EditorScreen() {
       y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
       w: NEW_TEXT_W,
       h: NEW_TEXT_H,
-      rotate: (Math.random() - 0.5) * 8,
+      rotate: 0,
       z: maxZ + 1,
     };
     const newPages = pages.map((p, i) =>
@@ -2429,7 +2410,7 @@ export default function EditorScreen() {
         y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
         w,
         h,
-        rotate: (Math.random() - 0.5) * 8,
+        rotate: 0,
         z: maxZ + 1,
       };
       const newPages = pages.map((p, i) =>
@@ -2488,7 +2469,7 @@ export default function EditorScreen() {
       y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
       w,
       h,
-      rotate: (Math.random() - 0.5) * 8,
+      rotate: 0,
       z: maxZ + 1,
     };
     const newPages = pages.map((p, i) =>
@@ -2583,18 +2564,28 @@ export default function EditorScreen() {
   const containerH = SPREAD_H * spreadScale;
 
   // Toolbar position in (unscaled) container coords, from item spread coords.
-  const toolbarLeft = selectedItem
+  // Toolbar size used only to keep it clamped fully within the canvas.
+  const TB_W = 300;
+  const TB_H = 52;
+  const rawLeft = selectedItem
     ? containerW / 2 + (selectedItem.x - SPREAD_W / 2) * spreadScale - 56
     : 0;
+  const toolbarLeft = selectedItem
+    ? Math.max(8, Math.min(rawLeft, containerW - TB_W - 8))
+    : 0;
   // Prefer just above the item; if that would clip off the top of the canvas,
-  // flip the toolbar to just below the item instead.
+  // flip the toolbar to just below the item instead, then clamp so it never
+  // sits off the bottom (or top) of the visible canvas.
   const toolbarAbove = selectedItem
     ? containerH / 2 + (selectedItem.y - selectedItem.h / 2 - SPREAD_H / 2) * spreadScale - 56
     : 0;
   const toolbarBelow = selectedItem
     ? containerH / 2 + (selectedItem.y + selectedItem.h / 2 - SPREAD_H / 2) * spreadScale + 12
     : 0;
-  const toolbarTop = toolbarAbove < 4 ? toolbarBelow : toolbarAbove;
+  const rawTop = toolbarAbove < 4 ? toolbarBelow : toolbarAbove;
+  const toolbarTop = selectedItem
+    ? Math.max(8, Math.min(rawTop, containerH - TB_H - 8))
+    : 0;
 
   const flipSide: 'left' | 'right' = flipState
     ? (flipState.dir === 'next') === (flipState.phase === 'A')
@@ -4356,6 +4347,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: theme.color.fg3,
     marginTop: 4,
+  },
+  textSizeHint: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg3,
+    lineHeight: 17,
+    marginTop: 2,
   },
   textCtrlRow: {
     flexDirection: 'row',
