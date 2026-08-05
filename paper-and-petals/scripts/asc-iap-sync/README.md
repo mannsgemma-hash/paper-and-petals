@@ -44,7 +44,15 @@ export REVIEW_SCREENSHOT_PATH=/absolute/path/to/review.png
 # export APP_BUNDLE_ID=com.paperandpetals.app
 # export SANITY_PROJECT_ID=cv53e819
 # export SANITY_DATASET=production
+# export IAP_LOCALE=en-AU        # localization language (default en-AU)
+# export BASE_TERRITORY=AUS      # currency the `price` is matched in (default AUS = AUD)
 ```
+
+> **Localization is `en-AU` and prices are matched in `AUD` (base territory AUS)**
+> by default, for the Australian store. A Sanity `price` of `5.99` therefore maps
+> to the **AUD $5.99** tier, and Apple equalizes all other territories from there.
+> If your Sanity prices are actually meant as USD, set `BASE_TERRITORY=USA`.
+> Make sure this matches how you priced **Victorian Rose** manually.
 
 > Don't commit the `.p8` (the repo already gitignores `*.p8`). Keep it out of the repo.
 

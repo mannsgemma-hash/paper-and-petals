@@ -50,7 +50,11 @@ const {
 
 const DRY_RUN = process.argv.includes('--dry-run');
 const API = 'https://api.appstoreconnect.apple.com';
-const BASE_TERRITORY = 'USA';
+// Australian store defaults. IAP_LOCALE = the localization language; BASE_TERRITORY
+// = the territory whose price tier the Sanity `price` is matched against (i.e. the
+// currency of that number), from which Apple equalizes every other territory.
+const IAP_LOCALE = process.env.IAP_LOCALE || 'en-AU';
+const BASE_TERRITORY = process.env.BASE_TERRITORY || 'AUS';
 const PRODUCT_PREFIX = 'com.paperandpetals.collection.';
 const MAX_DISPLAY_NAME = 30; // App Store hard limit for the IAP display name
 const MAX_DESCRIPTION = 45; // conservative; bump if your account allows longer
@@ -164,7 +168,7 @@ async function ensureLocalization(iapId, displayName, description) {
     data: {
       type: 'inAppPurchaseLocalizations',
       attributes: {
-        locale: 'en-US',
+        locale: IAP_LOCALE,
         name: smartTruncate(displayName, MAX_DISPLAY_NAME),
         description: smartTruncate(description, MAX_DESCRIPTION),
       },
