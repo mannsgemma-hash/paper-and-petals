@@ -196,6 +196,53 @@ const BRUSHES: { key: string; label: string }[] = [
 /** Base stroke widths (spread px) offered by the pen size picker. */
 const PEN_WIDTHS = [2, 4, 7, 12];
 
+// ─── Shapes ─────────────────────────────────────────────────────────────────
+// Paths are authored in a 0..100 unit box and rendered with
+// preserveAspectRatio="none", so a shape stretches to fill its item box (e.g. a
+// circle becomes an oval when resized non-uniformly). `color` is the fill.
+function polyPath(pts: [number, number][]): string {
+  return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p[0].toFixed(2)} ${p[1].toFixed(2)}`).join(' ') + ' Z';
+}
+function regularPolygon(n: number, startDeg: number): string {
+  const cx = 50;
+  const cy = 50;
+  const r = 50;
+  const pts: [number, number][] = [];
+  for (let i = 0; i < n; i++) {
+    const a = ((startDeg + (i * 360) / n) * Math.PI) / 180;
+    pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+  }
+  return polyPath(pts);
+}
+function starPolygon(points: number, innerRatio: number): string {
+  const cx = 50;
+  const cy = 50;
+  const R = 50;
+  const r = R * innerRatio;
+  const pts: [number, number][] = [];
+  for (let i = 0; i < points * 2; i++) {
+    const rr = i % 2 === 0 ? R : r;
+    const a = ((-90 + (i * 180) / points) * Math.PI) / 180;
+    pts.push([cx + rr * Math.cos(a), cy + rr * Math.sin(a)]);
+  }
+  return polyPath(pts);
+}
+
+const SHAPES: { key: string; label: string; path: string }[] = [
+  { key: 'rect', label: 'Square', path: 'M0 0H100V100H0Z' },
+  { key: 'rounded', label: 'Rounded', path: 'M18 0H82Q100 0 100 18V82Q100 100 82 100H18Q0 100 0 82V18Q0 0 18 0Z' },
+  { key: 'circle', label: 'Circle', path: 'M0 50A50 50 0 1 0 100 50A50 50 0 1 0 0 50Z' },
+  { key: 'triangle', label: 'Triangle', path: 'M50 1L99 99H1Z' },
+  { key: 'diamond', label: 'Diamond', path: 'M50 0L100 50L50 100L0 50Z' },
+  { key: 'heart', label: 'Heart', path: 'M50 90C6 62 4 30 26 18C40 10 50 20 50 30C50 20 60 10 74 18C96 30 94 62 50 90Z' },
+  { key: 'star', label: 'Star', path: starPolygon(5, 0.42) },
+  { key: 'pentagon', label: 'Pentagon', path: regularPolygon(5, -90) },
+  { key: 'hexagon', label: 'Hexagon', path: regularPolygon(6, -90) },
+];
+
+const shapePathFor = (key?: string): string =>
+  SHAPES.find((s) => s.key === key)?.path ?? SHAPES[0].path;
+
 /** Deterministic pseudo-random in [0,1) so spray dots don't dance on re-render. */
 function jitter(i: number, salt: number): number {
   const s = Math.sin(i * 127.1 + salt * 311.7) * 43758.5453;
@@ -472,11 +519,13 @@ function noop() {}
 interface PlacedItem {
   id: string;
   itemId: string;
-  /** 'item' (shop art / glyph), 'text', 'photo', 'tape' (washi strip), 'doodle' (pen stroke). */
-  kind?: 'item' | 'text' | 'photo' | 'tape' | 'doodle';
+  /** 'item' (shop art / glyph), 'text', 'photo', 'tape' (washi strip), 'doodle' (pen stroke), 'shape'. */
+  kind?: 'item' | 'text' | 'photo' | 'tape' | 'doodle' | 'shape';
   glyph: string;
   tone: string;
   flowerAsset?: number | { uri: string };
+  /** Shape key (kind === 'shape'): see SHAPES. `color` is the fill. */
+  shape?: string;
   // Text-tool fields (kind === 'text')
   text?: string;
   fontKey?: string;
@@ -810,6 +859,7 @@ function PlacedItemView({
   const isPhoto = item.kind === 'photo';
   const isTape = item.kind === 'tape';
   const isDoodle = item.kind === 'doodle';
+  const isShape = item.kind === 'shape';
   const liftShadow = item.shadow ? ITEM_SHADOW : undefined;
 
   const CORNERS = [
@@ -877,6 +927,12 @@ function PlacedItemView({
                 brush={item.brush ?? 'fine'}
               />
             </Svg>
+          ) : isShape ? (
+            <View style={[styles.itemFill, liftShadow]}>
+              <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <SvgPath d={shapePathFor(item.shape)} fill={item.color ?? theme.palette.forest} />
+              </Svg>
+            </View>
           ) : item.flowerAsset && item.tornEdge && item.tornEdge !== 'none' ? (
             <View style={styles.tornFill}>
               <TornImage source={item.flowerAsset} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
@@ -1915,6 +1971,11 @@ export default function EditorScreen() {
   const [penMode, setPenMode] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [shapePickerOpen, setShapePickerOpen] = useState(false);
+  const [shapeColor, setShapeColor] = useState<string>(theme.palette.terracotta);
+  const [shapeColorPickerOpen, setShapeColorPickerOpen] = useState(false);
+  /** Id of a shape whose colour is being edited via the toolbar pencil. */
+  const [colorEditId, setColorEditId] = useState<string | null>(null);
   const [showTips, setShowTips] = useState(false);
   const [showSoundPanel, setShowSoundPanel] = useState(false);
   const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
@@ -2252,6 +2313,51 @@ export default function EditorScreen() {
     );
     pushHistory(newPages);
     scheduleSave(newPages);
+  }
+
+  // ── Shapes tool ───────────────────────────────────────────────────────────
+  function addShape(shapeKey: string) {
+    const currentItems = pages[activePage - 1].items;
+    const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
+    const newItem: PlacedItem = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      itemId: 'shape',
+      kind: 'shape',
+      shape: shapeKey,
+      glyph: 'square',
+      tone: 'sage',
+      color: shapeColor,
+      x: PAGE_W * 0.7 + (Math.random() - 0.5) * PAGE_W * 0.3,
+      y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
+      w: 140,
+      h: 140,
+      rotate: 0,
+      z: maxZ + 1,
+    };
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1 ? { ...p, items: [...p.items, newItem] } : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+    setSelectedId(newItem.id);
+    setShapePickerOpen(false);
+    track('shape_added', { shape: shapeKey });
+  }
+
+  // Live-update a shape's fill colour while the picker is open (no history churn),
+  // then record a single history entry when the picker closes.
+  function updateItemColorLive(id: string, color: string) {
+    const newPages = pagesRef.current.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, color } : it)) }
+        : p,
+    );
+    setPages(newPages);
+    scheduleSave(newPages);
+  }
+  function commitColorEdit() {
+    if (colorEditId) pushHistory(pagesRef.current);
+    setColorEditId(null);
   }
 
   function closeTextEditor() {
@@ -2849,16 +2955,20 @@ export default function EditorScreen() {
                         onEditText={
                           selectedItem.kind === 'text'
                             ? () => setTextEditorId(selectedItem.id)
-                            : undefined
+                            : selectedItem.kind === 'shape'
+                              ? () => setColorEditId(selectedItem.id)
+                              : undefined
                         }
                         onToggleShadow={
-                          selectedItem.kind !== 'text' && selectedItem.kind !== 'doodle'
+                          selectedItem.kind !== 'text' &&
+                          selectedItem.kind !== 'doodle' &&
+                          selectedItem.kind !== 'shape'
                             ? () => handleToggleShadow(selectedItem.id)
                             : undefined
                         }
                         shadowOn={!!selectedItem.shadow}
                         onFlip={
-                          selectedItem.kind !== 'text'
+                          selectedItem.kind !== 'text' && selectedItem.kind !== 'shape'
                             ? () => handleFlipSelected(selectedItem.id)
                             : undefined
                         }
@@ -2924,6 +3034,11 @@ export default function EditorScreen() {
               onPress={() => setShowSoundPanel((v) => !v)}
             >
               <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
+            </Pressable>
+
+            {/* Shapes */}
+            <Pressable style={[styles.miniFab, { top: 334 }]} onPress={() => setShapePickerOpen(true)}>
+              <Feather name="hexagon" size={20} color={theme.palette.forest} />
             </Pressable>
 
             {/* Pen options — brush, size, colour */}
@@ -3245,6 +3360,85 @@ export default function EditorScreen() {
               </ScrollView>
             </View>
           </View>
+        )}
+
+        {/* ── Shape picker ─────────────────────────────────────────── */}
+        {shapePickerOpen && (
+          <View style={styles.textModalScrim}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setShapePickerOpen(false)} />
+            <View style={styles.templateCard}>
+              <View style={styles.templateHeader}>
+                <View>
+                  <Text style={styles.drawerEyebrow}>SOLID SHAPES</Text>
+                  <Text style={styles.textModalTitle}>Add a shape</Text>
+                </View>
+                <Pressable onPress={() => setShapePickerOpen(false)} hitSlop={8}>
+                  <Feather name="x" size={20} color={theme.color.fg2} />
+                </Pressable>
+              </View>
+
+              {/* Fill colour for the shape */}
+              <View style={styles.colorRow}>
+                {TEXT_COLORS.map((c) => (
+                  <Pressable
+                    key={c}
+                    style={[
+                      styles.colorSwatch,
+                      { backgroundColor: c },
+                      c === theme.palette.cream && styles.colorSwatchLight,
+                      c === shapeColor && styles.colorSwatchActive,
+                    ]}
+                    onPress={() => setShapeColor(c)}
+                  />
+                ))}
+                <Pressable onPress={() => setShapeColorPickerOpen(true)}>
+                  <LinearGradient
+                    colors={['#ff0000', '#ffd400', '#00c853', '#00b8d4', '#2962ff', '#d500f9']}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={[
+                      styles.colorSwatch,
+                      styles.customSwatch,
+                      !(TEXT_COLORS as readonly string[]).includes(shapeColor) && styles.colorSwatchActive,
+                    ]}
+                  >
+                    <Feather name="plus" size={15} color="#fff" />
+                  </LinearGradient>
+                </Pressable>
+              </View>
+
+              <ScrollView contentContainerStyle={styles.shapeGrid}>
+                {SHAPES.map((s) => (
+                  <Pressable key={s.key} style={styles.shapeTile} onPress={() => addShape(s.key)}>
+                    <Svg width={52} height={52} viewBox="0 0 100 100" preserveAspectRatio="none">
+                      <SvgPath d={s.path} fill={shapeColor} />
+                    </Svg>
+                    <Text style={styles.shapeLabel}>{s.label}</Text>
+                  </Pressable>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        )}
+
+        {/* Shape fill colour — custom picker from the shape panel */}
+        <ColorPickerModal
+          visible={shapeColorPickerOpen}
+          value={shapeColor}
+          onChange={setShapeColor}
+          onClose={() => setShapeColorPickerOpen(false)}
+          presets={TEXT_COLORS as unknown as string[]}
+        />
+
+        {/* Recolour a placed shape — from the toolbar pencil */}
+        {colorEditId && (
+          <ColorPickerModal
+            visible
+            value={pages[activePage - 1]?.items.find((i) => i.id === colorEditId)?.color ?? theme.palette.forest}
+            onChange={(hex) => updateItemColorLive(colorEditId, hex)}
+            onClose={commitColorEdit}
+            presets={TEXT_COLORS as unknown as string[]}
+          />
         )}
 
         {/* ── Soundscape player ────────────────────────────────────── */}
@@ -4589,6 +4783,27 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: theme.color.fg3,
     lineHeight: 15,
+  },
+  shapeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    paddingTop: 6,
+  },
+  shapeTile: {
+    width: 84,
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: theme.radius.md,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.palette.hairlineSoft,
+  },
+  shapeLabel: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.color.fg3,
   },
 
   // Delivery / unboxing overlay
