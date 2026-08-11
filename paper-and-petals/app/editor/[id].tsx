@@ -25,6 +25,8 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
+import { ColorPickerModal } from '../../src/components/ColorPicker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
@@ -1518,6 +1520,7 @@ interface TextEditorModalProps {
 
 function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
   const [text, setText] = useState(item.text ?? '');
+  const [pickerOpen, setPickerOpen] = useState(false);
   const fontKey = item.fontKey ?? JOURNAL_FONTS[0].key;
   const color = item.color ?? theme.palette.charcoal;
   const align = item.align ?? 'center';
@@ -1637,12 +1640,35 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
               />
             );
           })}
+          {/* Custom colour — full picker (wheel + hex/RGB) */}
+          <Pressable onPress={() => setPickerOpen(true)}>
+            <LinearGradient
+              colors={['#ff0000', '#ffd400', '#00c853', '#00b8d4', '#2962ff', '#d500f9']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={[
+                styles.colorSwatch,
+                styles.customSwatch,
+                !(TEXT_COLORS as readonly string[]).includes(color) && styles.colorSwatchActive,
+              ]}
+            >
+              <Feather name="plus" size={15} color="#fff" />
+            </LinearGradient>
+          </Pressable>
         </View>
 
         <View style={styles.textModalActions}>
           <Button title="Done" onPress={onClose} />
         </View>
       </View>
+
+      <ColorPickerModal
+        visible={pickerOpen}
+        value={color}
+        onChange={(hex) => onChange({ color: hex })}
+        onClose={() => setPickerOpen(false)}
+        presets={TEXT_COLORS}
+      />
     </View>
   );
 }
@@ -1892,6 +1918,7 @@ export default function EditorScreen() {
   const [showTips, setShowTips] = useState(false);
   const [showSoundPanel, setShowSoundPanel] = useState(false);
   const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
+  const [penColorPickerOpen, setPenColorPickerOpen] = useState(false);
   const [penWidth, setPenWidth] = useState(4);
   const [penBrush, setPenBrush] = useState('fine');
   const spreadShotRef = useRef<View>(null);
@@ -2958,10 +2985,32 @@ export default function EditorScreen() {
                       />
                     );
                   })}
+                  {/* Custom colour — full picker */}
+                  <Pressable onPress={() => setPenColorPickerOpen(true)}>
+                    <LinearGradient
+                      colors={['#ff0000', '#ffd400', '#00c853', '#00b8d4', '#2962ff', '#d500f9']}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                      style={[
+                        styles.penSwatch,
+                        styles.penCustomSwatch,
+                        !(TEXT_COLORS as readonly string[]).includes(penColor) && styles.penSwatchActive,
+                      ]}
+                    >
+                      <Feather name="plus" size={11} color="#fff" />
+                    </LinearGradient>
+                  </Pressable>
                 </View>
                 <Text style={styles.penHintText}>Draw on the page · tap the pen again to finish</Text>
               </View>
             )}
+            <ColorPickerModal
+              visible={penColorPickerOpen}
+              value={penColor}
+              onChange={setPenColor}
+              onClose={() => setPenColorPickerOpen(false)}
+              presets={TEXT_COLORS}
+            />
 
             {/* Delete page — quiet affordance at the canvas bottom */}
             {!isCoverSpread && (
@@ -4279,6 +4328,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: theme.palette.cream,
   },
+  penCustomSwatch: { alignItems: 'center', justifyContent: 'center' },
   penHintText: {
     fontFamily: theme.font.ui,
     fontSize: 11,
@@ -4452,6 +4502,7 @@ const styles = StyleSheet.create({
     borderWidth: 3,
     borderColor: theme.palette.forest,
   },
+  customSwatch: { alignItems: 'center', justifyContent: 'center' },
   textModalActions: {
     marginTop: 8,
   },
