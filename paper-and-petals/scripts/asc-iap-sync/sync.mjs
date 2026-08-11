@@ -7,8 +7,9 @@
  * Zero dependencies — Node 18+ (uses global fetch + node:crypto).
  *
  * It drives off the SAME data and the SAME product-id rule the app uses, so the
- * IDs always match what the app asks StoreKit for:
- *   productId = "com.paperandpetals.collection." + <sanity _id minus "collection-", hyphens→underscores>
+ * IDs always match what the app asks StoreKit for: an explicit `productId` field
+ * on the Sanity collection wins; otherwise it's derived from the document id:
+ *   "com.paperandpetals.collection." + <sanity _id minus "collection-", hyphens→underscores>
  *
  * For each paid collection it ensures, in order:
  *   1. the in-app purchase exists (Non-Consumable)
@@ -103,8 +104,12 @@ async function api(method, url, body) {
 const one = (p) => api('GET', p).then((r) => r?.data ?? null).catch(() => null);
 
 // ── helpers ───────────────────────────────────────────────────────────────────
-function productIdFor(sanityId) {
-  return PRODUCT_PREFIX + sanityId.replace(/^collection-/, '').replace(/-/g, '_');
+// The product id the app will ask StoreKit for: an explicit Sanity `productId`
+// wins, otherwise it's derived from the document id (matches the app's rule).
+function productIdFor(c) {
+  const explicit = typeof c.productId === 'string' ? c.productId.trim() : '';
+  if (explicit) return explicit;
+  return PRODUCT_PREFIX + c._id.replace(/^collection-/, '').replace(/-/g, '_');
 }
 
 function smartTruncate(s, max) {
@@ -265,7 +270,7 @@ async function ensureScreenshot(iapId, filePath) {
 // ── Sanity source of truth ────────────────────────────────────────────────────
 async function fetchCollections() {
   // Published collections only (exclude drafts), skip free ones.
-  const query = `*[_type == "collection" && !(_id in path("drafts.**"))]{_id, name, price, free, whatYouGet}`;
+  const query = `*[_type == "collection" && !(_id in path("drafts.**"))]{_id, name, price, free, productId, whatYouGet}`;
   const url = `https://${SANITY_PROJECT_ID}.api.sanity.io/v2021-06-07/data/query/${SANITY_DATASET}?query=${encodeURIComponent(query)}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Sanity fetch failed: ${res.status} ${await res.text()}`);
@@ -293,9 +298,9 @@ async function main() {
 
   if (DRY_RUN) {
     for (const c of collections) {
-      const o = overrides[productIdFor(c._id)] || {};
+      const o = overrides[productIdFor(c)] || {};
       console.log(`• ${c.name}  ($${o.price ?? c.price ?? '—'})`);
-      console.log(`    ${productIdFor(c._id)}`);
+      console.log(`    ${productIdFor(c)}`);
       console.log(`    name: "${smartTruncate(o.displayName || c.name, MAX_DISPLAY_NAME)}"`);
     }
     console.log('\nDry run only — no changes made.');
@@ -307,7 +312,7 @@ async function main() {
   const results = { created: [], updated: [], ok: [], failed: [] };
 
   for (const c of collections) {
-    const productId = productIdFor(c._id);
+    const productId = productIdFor(c);
     const o = overrides[productId] || {};
     const displayName = o.displayName || c.name;
     const description = o.description || c.whatYouGet || `${c.name}.`;

@@ -22,6 +22,22 @@ export default defineType({
       hidden: ({ parent }) => parent?.free === true,
     }),
     defineField({
+      name: 'productId',
+      title: 'Store product ID',
+      type: 'string',
+      description:
+        'Full App Store / Google Play product identifier for this collection ' +
+        '(e.g. com.paperandpetals.collection.victorian_rose). Leave blank to ' +
+        'auto-derive it from this document’s id. Ignored when Free is on.',
+      hidden: ({ parent }) => parent?.free === true,
+      validation: r =>
+        r.custom(v =>
+          !v || /^[a-zA-Z0-9._]+$/.test(v)
+            ? true
+            : 'Only letters, numbers, dots and underscores are allowed.',
+        ),
+    }),
+    defineField({
       name: 'whatYouGet',
       title: 'What you get',
       type: 'text',

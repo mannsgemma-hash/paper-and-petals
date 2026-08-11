@@ -87,7 +87,7 @@ export default function LibraryScreen() {
           onPress: async () => {
             setBusyId(c.id);
             try {
-              const ok = await purchaseCollection(c.id);
+              const ok = await purchaseCollection(c.id, c.productId);
               if (ok) {
                 markCollectionOwned(c.id);
                 queueDeliveryMany(resolveMembers(c));

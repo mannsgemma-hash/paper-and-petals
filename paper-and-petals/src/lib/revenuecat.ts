@@ -130,13 +130,15 @@ export async function purchaseStudio(plan: StudioPlan): Promise<boolean> {
 
 /**
  * Buy a single collection — owned forever.
- * Product identifiers must be created in App Store Connect / Google Play as:
+ *
+ * Prefers an explicit `productId` set on the collection in Sanity; otherwise
+ * derives it from the collection id:
  *   com.paperandpetals.collection.<collectionId with hyphens as underscores>
  * e.g. Sanity id "col-spring" → product "com.paperandpetals.collection.col_spring"
  */
-export async function purchaseCollection(collectionId: string): Promise<boolean> {
+export async function purchaseCollection(collectionId: string, explicitProductId?: string): Promise<boolean> {
   if (!Purchases) throw new Error('Store not available on this platform')
-  const productId = collectionProductId(collectionId)
+  const productId = explicitProductId?.trim() || collectionProductId(collectionId)
   const products = await Purchases.getProducts([productId])
   if (!products || products.length === 0) {
     throw new Error('This collection isn’t available to buy yet. You can unlock it with Studio.')

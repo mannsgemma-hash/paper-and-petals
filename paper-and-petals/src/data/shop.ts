@@ -90,6 +90,8 @@ export interface Collection {
   whatYouGet: string;
   /** One-time price; ignored when `free`. */
   price: number;
+  /** Explicit store product id from Sanity; when unset the id is derived. */
+  productId?: string;
   free: boolean;
   isNew: boolean;
   /** Derived from `items.length` — never stored manually. */

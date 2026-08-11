@@ -30,6 +30,7 @@ const LIVE_COLLECTIONS_QUERY = `*[_type == "collection" && (!defined(publishAt) 
   palette,
   price,
   free,
+  productId,
   whatYouGet,
   publishAt,
   "coverUrl": cover.asset->url,
@@ -66,6 +67,8 @@ export interface SanityCollection {
   palette?: string
   price?: number
   free?: boolean
+  /** Explicit store product id set in Sanity; overrides the derived one. */
+  productId?: string
   whatYouGet?: string
   publishAt?: string
   coverUrl?: string
@@ -120,6 +123,7 @@ export function sanityCollectionToCollection(sc: SanityCollection): Collection {
     cover: sc.coverUrl ? ({ uri: sc.coverUrl } as any) : undefined,
     whatYouGet: sc.whatYouGet ?? '',
     price: sc.price ?? 0,
+    productId: sc.productId?.trim() || undefined,
     free: !!sc.free,
     isNew: false,
     pieceCount: items.length,

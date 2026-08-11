@@ -110,7 +110,7 @@ export default function ShopScreen() {
   const handleBuy = async (c: Collection) => {
     setPurchasing(true);
     try {
-      const ok = await purchaseCollection(c.id);
+      const ok = await purchaseCollection(c.id, c.productId);
       if (ok) {
         markCollectionOwned(c.id);
         queueDeliveryMany(resolveMembers(c));
