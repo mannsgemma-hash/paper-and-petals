@@ -782,12 +782,13 @@ function PlacedItemView({
       runOnJS(onMoveEnd)(item.id, tx.value, ty.value);
     });
 
-  // Two-finger pinch/rotate kept as a bonus for touch devices; the corner and
-  // rotate handles below are the primary (mouse-friendly) path.
+  // Two-finger pinch to resize (primary on touch); the corner handles are the
+  // mouse-friendly path. Selecting on begin shows the frame as you pinch.
   const pinchGesture = Gesture.Pinch()
     .onBegin(() => {
       startW.value = itemW.value;
       startH.value = itemH.value;
+      runOnJS(onSelect)(item.id);
     })
     .onUpdate((e) => {
       const newW = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startW.value * e.scale));
@@ -2966,10 +2967,14 @@ export default function EditorScreen() {
             <ScrollView
               style={styles.canvasScroll}
               contentContainerStyle={styles.canvasScrollVContent}
+              // Only scroll when zoomed in with nothing selected; otherwise the
+              // ScrollView would swallow two-finger pinch-to-resize on an item.
+              scrollEnabled={zoom > 1 && !selectedId}
             >
               <ScrollView
                 horizontal
                 contentContainerStyle={styles.canvasScrollHContent}
+                scrollEnabled={zoom > 1 && !selectedId}
               >
                 <View style={[styles.spreadContainer, { width: containerW, height: containerH }]}>
                   {/* The spread, laid out at full size and scaled in place around
