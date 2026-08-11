@@ -492,6 +492,58 @@ function TornImage({
   );
 }
 
+/**
+ * An image clipped to a geometric shape (circle/oval, heart, diamond, star …).
+ * The unit (0..100) shape path is scaled to the item box, and `focus` (a
+ * preserveAspectRatio align like "xMidYMid") chooses which part of the artwork
+ * shows through, so the user can pick what's framed.
+ */
+function ShapeMaskImage({
+  source,
+  w,
+  h,
+  shape,
+  focus,
+  id,
+}: {
+  source: number | { uri: string };
+  w: number;
+  h: number;
+  shape: string;
+  focus?: string;
+  id: string;
+}) {
+  const clipId = `clip-${id}-${shape}`;
+  return (
+    <Svg width="100%" height="100%" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none">
+      <Defs>
+        <ClipPath id={clipId}>
+          <SvgPath d={shapePathFor(shape)} transform={`scale(${w / 100}, ${h / 100})`} />
+        </ClipPath>
+      </Defs>
+      <SvgImage
+        href={source as any}
+        x={0}
+        y={0}
+        width={w}
+        height={h}
+        preserveAspectRatio={`${focus || 'xMidYMid'} slice`}
+        clipPath={`url(#${clipId})`}
+      />
+    </Svg>
+  );
+}
+
+/** Focal positions for cut-to-shape framing (preserveAspectRatio align values). */
+const CLIP_FOCI = [
+  ['xMinYMin', 'xMidYMin', 'xMaxYMin'],
+  ['xMinYMid', 'xMidYMid', 'xMaxYMid'],
+  ['xMinYMax', 'xMidYMax', 'xMaxYMax'],
+];
+
+/** Shapes offered as image masks (all shapes except the plain square). */
+const CLIP_SHAPES = SHAPES.filter((s) => s.key !== 'rect');
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /** Cross-platform confirm: window.confirm on web (Alert buttons are no-ops there). */
@@ -550,6 +602,10 @@ interface PlacedItem {
   flipX?: boolean;
   /** Torn-paper edge style (see TORN_STYLES); undefined = clean rectangle. */
   tornEdge?: string;
+  /** Geometric mask shape (see SHAPES) applied to an image; excludes tornEdge. */
+  clipShape?: string;
+  /** Which part of the artwork shows through the mask — a preserveAspectRatio align. */
+  clipFocus?: string;
   x: number;
   y: number;
   w: number;
@@ -898,7 +954,11 @@ function PlacedItemView({
               </Animated.Text>
             </View>
           ) : isPhoto ? (
-            item.tornEdge && item.tornEdge !== 'none' && item.flowerAsset != null ? (
+            item.clipShape && item.flowerAsset != null ? (
+              <View style={styles.tornFill}>
+                <ShapeMaskImage source={item.flowerAsset} w={item.w} h={item.h} shape={item.clipShape} focus={item.clipFocus} id={item.id} />
+              </View>
+            ) : item.tornEdge && item.tornEdge !== 'none' && item.flowerAsset != null ? (
               <View style={styles.tornFill}>
                 <TornImage source={item.flowerAsset} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
               </View>
@@ -932,6 +992,10 @@ function PlacedItemView({
               <Svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none">
                 <SvgPath d={shapePathFor(item.shape)} fill={item.color ?? theme.palette.forest} />
               </Svg>
+            </View>
+          ) : item.flowerAsset && item.clipShape ? (
+            <View style={styles.tornFill}>
+              <ShapeMaskImage source={item.flowerAsset} w={item.w} h={item.h} shape={item.clipShape} focus={item.clipFocus} id={item.id} />
             </View>
           ) : item.flowerAsset && item.tornEdge && item.tornEdge !== 'none' ? (
             <View style={styles.tornFill}>
@@ -2506,7 +2570,38 @@ export default function EditorScreen() {
     const tornEdge = style === 'none' ? undefined : style;
     const newPages = pages.map((p, i) =>
       i === activePage - 1
-        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, tornEdge } : it)) }
+        ? {
+            ...p,
+            // Torn paper and shape masks are mutually exclusive cuts.
+            items: p.items.map((it) => (it.id === id ? { ...it, tornEdge, clipShape: undefined } : it)),
+          }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleSetClipShape(id: string, shape: string | undefined) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? {
+            ...p,
+            items: p.items.map((it) =>
+              it.id === id
+                ? { ...it, clipShape: shape, tornEdge: undefined, clipFocus: it.clipFocus ?? 'xMidYMid' }
+                : it,
+            ),
+          }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  function handleSetClipFocus(id: string, focus: string) {
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, clipFocus: focus } : it)) }
         : p,
     );
     pushHistory(newPages);
@@ -3285,41 +3380,116 @@ export default function EditorScreen() {
           <View style={styles.textModalScrim}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setTornPickerId(null)} />
             <View style={styles.tornCard}>
-              <Text style={styles.textModalTitle}>Torn edge</Text>
-              <Text style={styles.textModalLabel}>RIP STYLE</Text>
-              <View style={styles.tornGrid}>
-                {TORN_STYLES.map((s) => {
-                  const active =
-                    (tornPickerItem.tornEdge ?? 'none') === s.key ||
-                    (s.key === 'none' && !tornPickerItem.tornEdge);
-                  return (
-                    <Pressable
-                      key={s.key}
-                      style={[styles.tornChip, active && styles.tornChipActive]}
-                      onPress={() => handleSetTorn(tornPickerItem.id, s.key)}
-                    >
-                      {tornPickerItem.flowerAsset != null && s.key !== 'none' ? (
+              <Text style={styles.textModalTitle}>Cut out</Text>
+              <ScrollView contentContainerStyle={styles.cutScroll}>
+                {/* Shape masks */}
+                <Text style={styles.textModalLabel}>CUT TO A SHAPE</Text>
+                <View style={styles.tornGrid}>
+                  {CLIP_SHAPES.map((s) => {
+                    const active = tornPickerItem.clipShape === s.key;
+                    return (
+                      <Pressable
+                        key={s.key}
+                        style={[styles.tornChip, active && styles.tornChipActive]}
+                        onPress={() =>
+                          handleSetClipShape(tornPickerItem.id, active ? undefined : s.key)
+                        }
+                      >
                         <View style={styles.tornPreview}>
-                          <TornImage
-                            source={tornPickerItem.flowerAsset}
-                            w={80}
-                            h={60}
-                            style={s.key}
-                            id={`prev-${s.key}`}
-                          />
+                          {tornPickerItem.flowerAsset != null ? (
+                            <ShapeMaskImage
+                              source={tornPickerItem.flowerAsset}
+                              w={80}
+                              h={60}
+                              shape={s.key}
+                              focus={tornPickerItem.clipFocus}
+                              id={`clipprev-${s.key}`}
+                            />
+                          ) : (
+                            <Svg width={44} height={44} viewBox="0 0 100 100" preserveAspectRatio="none">
+                              <SvgPath d={s.path} fill={theme.color.fg3} />
+                            </Svg>
+                          )}
                         </View>
-                      ) : (
-                        <View style={[styles.tornPreview, styles.tornPreviewNone]}>
-                          <Feather name="square" size={22} color={theme.color.fg3} />
+                        <Text style={[styles.tornChipLabel, active && styles.tornChipLabelActive]}>
+                          {s.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Focal grid — only when a shape mask is active */}
+                {tornPickerItem.clipShape && (
+                  <>
+                    <Text style={styles.textModalLabel}>MOVE THE ARTWORK — TAP WHAT SHOWS</Text>
+                    <View style={styles.focusGrid}>
+                      {CLIP_FOCI.map((row, ri) => (
+                        <View key={ri} style={styles.focusRow}>
+                          {row.map((f) => {
+                            const active = (tornPickerItem.clipFocus ?? 'xMidYMid') === f;
+                            return (
+                              <Pressable
+                                key={f}
+                                style={[styles.focusCell, active && styles.focusCellActive]}
+                                onPress={() => handleSetClipFocus(tornPickerItem.id, f)}
+                              >
+                                {tornPickerItem.flowerAsset != null && (
+                                  <ShapeMaskImage
+                                    source={tornPickerItem.flowerAsset}
+                                    w={54}
+                                    h={54}
+                                    shape={tornPickerItem.clipShape as string}
+                                    focus={f}
+                                    id={`focus-${f}`}
+                                  />
+                                )}
+                              </Pressable>
+                            );
+                          })}
                         </View>
-                      )}
-                      <Text style={[styles.tornChipLabel, active && styles.tornChipLabelActive]}>
-                        {s.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+                      ))}
+                    </View>
+                  </>
+                )}
+
+                {/* Torn paper edges */}
+                <Text style={styles.textModalLabel}>OR A TORN PAPER EDGE</Text>
+                <View style={styles.tornGrid}>
+                  {TORN_STYLES.map((s) => {
+                    const active =
+                      !tornPickerItem.clipShape &&
+                      ((tornPickerItem.tornEdge ?? 'none') === s.key ||
+                        (s.key === 'none' && !tornPickerItem.tornEdge));
+                    return (
+                      <Pressable
+                        key={s.key}
+                        style={[styles.tornChip, active && styles.tornChipActive]}
+                        onPress={() => handleSetTorn(tornPickerItem.id, s.key)}
+                      >
+                        {tornPickerItem.flowerAsset != null && s.key !== 'none' ? (
+                          <View style={styles.tornPreview}>
+                            <TornImage
+                              source={tornPickerItem.flowerAsset}
+                              w={80}
+                              h={60}
+                              style={s.key}
+                              id={`prev-${s.key}`}
+                            />
+                          </View>
+                        ) : (
+                          <View style={[styles.tornPreview, styles.tornPreviewNone]}>
+                            <Feather name="square" size={22} color={theme.color.fg3} />
+                          </View>
+                        )}
+                        <Text style={[styles.tornChipLabel, active && styles.tornChipLabelActive]}>
+                          {s.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
               <View style={styles.textModalActions}>
                 <Button title="Done" onPress={() => setTornPickerId(null)} />
               </View>
@@ -4387,11 +4557,25 @@ const styles = StyleSheet.create({
   tornCard: {
     width: '86%',
     maxWidth: 460,
+    maxHeight: '86%',
     backgroundColor: theme.color.surface,
     borderRadius: theme.radius.lg,
     padding: 18,
     ...theme.shadow.lift,
   },
+  cutScroll: { gap: 4, paddingBottom: 4 },
+  focusGrid: { gap: 4, marginTop: 8, alignSelf: 'flex-start' },
+  focusRow: { flexDirection: 'row', gap: 4 },
+  focusCell: {
+    width: 54,
+    height: 54,
+    borderRadius: theme.radius.xs,
+    overflow: 'hidden',
+    backgroundColor: theme.color.bg2,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  focusCellActive: { borderColor: theme.palette.forest },
   tornGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
