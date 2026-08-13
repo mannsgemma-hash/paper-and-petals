@@ -26,13 +26,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { getStroke } from 'perfect-freehand';
 import { ColorPickerModal } from '../../src/components/ColorPicker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { captureRef } from 'react-native-view-shot';
 import Svg, {
-  Polyline,
-  Line,
   Circle,
   Path as SvgPath,
   Defs,
@@ -249,10 +248,90 @@ function jitter(i: number, salt: number): number {
   return s - Math.floor(s);
 }
 
+/** Convert a perfect-freehand outline into a filled SVG path (quadratic joins). */
+function strokeToPath(pts: number[][]): string {
+  if (!pts.length) return '';
+  const d = pts.reduce(
+    (acc: (string | number)[], [x0, y0], i, arr) => {
+      const [x1, y1] = arr[(i + 1) % arr.length];
+      acc.push(x0, y0, (x0 + x1) / 2, (y0 + y1) / 2);
+      return acc;
+    },
+    ['M', pts[0][0], pts[0][1], 'Q'],
+  );
+  d.push('Z');
+  return d.join(' ');
+}
+
+/**
+ * Per-brush perfect-freehand tuning. `mult` scales the base width; `thinning`
+ * is how much the line narrows with speed (0 = uniform); `taper` fades the ends.
+ */
+const BRUSH_OPTS: Record<
+  string,
+  { mult: number; thinning: number; smoothing: number; streamline: number; opacity: number; taper: boolean; sim: boolean; square?: boolean }
+> = {
+  fine: { mult: 1.0, thinning: 0.55, smoothing: 0.5, streamline: 0.5, opacity: 1, taper: true, sim: true },
+  marker: { mult: 2.2, thinning: 0.08, smoothing: 0.55, streamline: 0.62, opacity: 0.82, taper: false, sim: false },
+  acrylic: { mult: 2.7, thinning: 0, smoothing: 0.5, streamline: 0.4, opacity: 1, taper: false, sim: false, square: true },
+  pencil: { mult: 1.15, thinning: 0.7, smoothing: 0.42, streamline: 0.4, opacity: 0.66, taper: true, sim: true },
+  calligraphy: { mult: 1.9, thinning: 0.85, smoothing: 0.5, streamline: 0.55, opacity: 1, taper: true, sim: true },
+};
+
 /**
  * Renders one pen stroke in the given brush style. Shared by the live drawing
- * canvas and placed doodle items so a stroke looks identical in both.
+ * canvas and placed doodle items so a stroke looks identical in both. Ink
+ * brushes use perfect-freehand for smooth, speed-tapered outlines; spray keeps
+ * its scatter of flecks.
  */
+/** Points shifted perpendicular to the stroke by `d` px — used for bristle streaks. */
+function offsetPoints(points: { x: number; y: number }[], d: number): number[][] {
+  return points.map((p, i) => {
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(points.length - 1, i + 1)];
+    const tx = b.x - a.x;
+    const ty = b.y - a.y;
+    const tl = Math.hypot(tx, ty) || 1;
+    return [p.x + (-ty / tl) * d, p.y + (tx / tl) * d];
+  });
+}
+
+/** A grainy band of specks along the stroke — charcoal / pencil / watercolour texture. */
+function grainStamps(
+  points: { x: number; y: number }[],
+  width: number,
+  color: string,
+  cfg: { step: number; density: number; band: number; rMin: number; rMax: number; opMin: number; opMax: number },
+  salt: number,
+): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let count = 0;
+  const MAX = 1400; // cap so long strokes stay responsive
+  for (let i = 0; i < points.length && count < MAX; i += cfg.step) {
+    const p = points[i];
+    const a = points[Math.max(0, i - 1)];
+    const b = points[Math.min(points.length - 1, i + 1)];
+    const tx = b.x - a.x;
+    const ty = b.y - a.y;
+    const tl = Math.hypot(tx, ty) || 1;
+    const nx = -ty / tl;
+    const ny = tx / tl;
+    for (let j = 0; j < cfg.density; j++) {
+      const off = (jitter(i, j * 7 + salt) - 0.5) * cfg.band * width;
+      const along = (jitter(i, j * 11 + salt + 1) - 0.5) * width * 0.7;
+      const cx = p.x + nx * off + (tx / tl) * along;
+      const cy = p.y + ny * off + (ty / tl) * along;
+      const r = (cfg.rMin + jitter(i, j * 13 + salt + 2) * (cfg.rMax - cfg.rMin)) * width;
+      const op = cfg.opMin + jitter(i, j * 17 + salt + 3) * (cfg.opMax - cfg.opMin);
+      out.push(
+        <Circle key={`g${salt}-${i}-${j}`} cx={cx} cy={cy} r={Math.max(0.3, r)} fill={color} fillOpacity={op} />,
+      );
+      count++;
+    }
+  }
+  return out;
+}
+
 function BrushStroke({
   points,
   color,
@@ -265,95 +344,121 @@ function BrushStroke({
   brush: string;
 }) {
   if (points.length < 2) return null;
-  const pts = points.map((p) => `${p.x},${p.y}`).join(' ');
-  const line = (w: number, opacity: number, dx = 0, dy = 0, cap: 'round' | 'square' = 'round') => (
-    <Polyline
-      points={dx || dy ? points.map((p) => `${p.x + dx},${p.y + dy}`).join(' ') : pts}
-      fill="none"
-      stroke={color}
-      strokeWidth={w}
-      strokeOpacity={opacity}
-      strokeLinecap={cap}
-      strokeLinejoin="round"
-    />
-  );
+  const input = points.map((p) => [p.x, p.y] as number[]);
+  const smooth = (opts: any) => strokeToPath(getStroke(input, opts));
 
-  switch (brush) {
-    case 'marker':
-      return line(width * 2, 0.8);
-    case 'acrylic':
-      // Flat, fully opaque paint laid on with a square-ended brush.
-      return line(width * 2.4, 1, 0, 0, 'square');
-    case 'pencil': {
-      // Grainy build-up: a soft main line plus a lighter ghost line offset a hair.
-      const off = Math.max(0.6, width * 0.3);
-      return (
-        <>
-          {line(width * 0.9, 0.55)}
-          {line(width * 0.45, 0.35, off, off)}
-        </>
-      );
-    }
-    case 'watercolour':
-      // Translucent washes stacked wide→narrow; overlaps pool darker like paint.
-      return (
-        <>
-          {line(width * 2.8, 0.1)}
-          {line(width * 1.9, 0.18)}
-          {line(width * 1.1, 0.3)}
-        </>
-      );
-    case 'calligraphy': {
-      // A 45° nib: segment width follows the stroke direction.
-      const segs = [];
-      for (let i = 1; i < points.length; i++) {
-        const a = points[i - 1];
-        const b = points[i];
-        const theta = Math.atan2(b.y - a.y, b.x - a.x);
-        const w = width * (0.25 + 1.5 * Math.abs(Math.sin(theta - Math.PI / 4)));
-        segs.push(
-          <Line
-            key={i}
-            x1={a.x}
-            y1={a.y}
-            x2={b.x}
-            y2={b.y}
-            stroke={color}
-            strokeWidth={w}
-            strokeLinecap="round"
+  if (brush === 'spray') {
+    // A scatter of flecks around the stroke path, deterministic per point.
+    const step = Math.max(1, Math.floor(points.length / 160));
+    const perPoint = Math.min(10, 3 + Math.round(width));
+    const radius = width * 2.2;
+    const dots: React.ReactNode[] = [];
+    for (let i = 0; i < points.length; i += step) {
+      for (let j = 0; j < perPoint; j++) {
+        const dx = (jitter(i, j * 2 + 1) - 0.5) * 2 * radius;
+        const dy = (jitter(i, j * 2 + 2) - 0.5) * 2 * radius;
+        dots.push(
+          <Circle
+            key={`${i}-${j}`}
+            cx={points[i].x + dx}
+            cy={points[i].y + dy}
+            r={0.4 + jitter(i, j * 3 + 5) * width * 0.35}
+            fill={color}
+            fillOpacity={0.45}
           />,
         );
       }
-      return <>{segs}</>;
     }
-    case 'spray': {
-      // A scatter of flecks around the stroke path, deterministic per point.
-      const step = Math.max(1, Math.floor(points.length / 160));
-      const perPoint = Math.min(10, 3 + Math.round(width));
-      const radius = width * 2.2;
-      const dots = [];
-      for (let i = 0; i < points.length; i += step) {
-        for (let j = 0; j < perPoint; j++) {
-          const dx = (jitter(i, j * 2 + 1) - 0.5) * 2 * radius;
-          const dy = (jitter(i, j * 2 + 2) - 0.5) * 2 * radius;
-          dots.push(
-            <Circle
-              key={`${i}-${j}`}
-              cx={points[i].x + dx}
-              cy={points[i].y + dy}
-              r={0.4 + jitter(i, j * 3 + 5) * width * 0.35}
-              fill={color}
-              fillOpacity={0.45}
-            />,
-          );
-        }
-      }
-      return <>{dots}</>;
-    }
-    default:
-      // Fine liner — the original clean uniform line.
-      return line(width, 1);
+    return <>{dots}</>;
   }
+
+  if (brush === 'pencil') {
+    // Soft graphite: a faint smooth core beneath a heavy grain band.
+    return (
+      <>
+        <SvgPath
+          d={smooth({ size: width * 1.05, thinning: 0.6, smoothing: 0.5, streamline: 0.5, simulatePressure: true, last: true })}
+          fill={color}
+          fillOpacity={0.22}
+        />
+        {grainStamps(points, width, color, { step: 1, density: 5, band: 1.0, rMin: 0.05, rMax: 0.2, opMin: 0.14, opMax: 0.5 }, 3)}
+      </>
+    );
+  }
+
+  if (brush === 'watercolour') {
+    // Layered translucent washes plus granulation specks pooling at the edges.
+    return (
+      <>
+        {[
+          { m: 2.8, o: 0.09 },
+          { m: 1.9, o: 0.14 },
+          { m: 1.1, o: 0.22 },
+        ].map((L, i) => (
+          <SvgPath
+            key={i}
+            d={smooth({ size: Math.max(1, width * L.m), thinning: 0.3, smoothing: 0.7, streamline: 0.7, simulatePressure: true, last: true })}
+            fill={color}
+            fillOpacity={L.o}
+          />
+        ))}
+        {grainStamps(points, width, color, { step: 2, density: 2, band: 2.6, rMin: 0.18, rMax: 0.55, opMin: 0.04, opMax: 0.12 }, 9)}
+      </>
+    );
+  }
+
+  if (brush === 'acrylic') {
+    // Thick paint with bristle streaks: a solid core plus thin parallel streaks.
+    const streaks = [
+      { d: 0, s: 2.7, o: 1 },
+      { d: -width * 0.6, s: 0.5, o: 0.5 },
+      { d: width * 0.5, s: 0.45, o: 0.5 },
+      { d: width * 1.0, s: 0.3, o: 0.32 },
+      { d: -width * 1.05, s: 0.28, o: 0.32 },
+    ];
+    return (
+      <>
+        {streaks.map((st, i) => (
+          <SvgPath
+            key={i}
+            d={strokeToPath(
+              getStroke(st.d ? offsetPoints(points, st.d) : input, {
+                size: Math.max(1, width * st.s),
+                thinning: 0.1,
+                smoothing: 0.5,
+                streamline: 0.4,
+                simulatePressure: false,
+                last: true,
+                start: { cap: false },
+                end: { cap: false },
+              }),
+            )}
+            fill={color}
+            fillOpacity={st.o}
+          />
+        ))}
+      </>
+    );
+  }
+
+  // fine / marker / calligraphy — smooth, speed-tapered outlines.
+  const o = BRUSH_OPTS[brush] ?? BRUSH_OPTS.fine;
+  return (
+    <SvgPath
+      d={smooth({
+        size: Math.max(1, width * o.mult),
+        thinning: o.thinning,
+        smoothing: o.smoothing,
+        streamline: o.streamline,
+        simulatePressure: o.sim,
+        last: true,
+        start: { taper: o.taper ? width * 6 : 0, cap: !o.square },
+        end: { taper: o.taper ? width * 6 : 0, cap: !o.square },
+      })}
+      fill={color}
+      fillOpacity={o.opacity}
+    />
+  );
 }
 
 // ─── Torn paper edges ─────────────────────────────────────────────────────────

@@ -87,26 +87,45 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
   const [hsv, setHsv] = useState(init);
   const [hexText, setHexText] = useState(value);
 
-  const hsvRef = useRef(hsv);
-  hsvRef.current = hsv;
+  // `latest` is the synchronous source of truth for gesture handlers (state
+  // updates lag a frame). `lastEmitted` lets the value-sync effect ignore the
+  // parent echoing back a colour this picker just sent.
+  const latest = useRef(hsv);
+  const lastEmitted = useRef(value.toLowerCase());
   const svDims = useRef({ w: 1, h: 1 });
   const hueW = useRef(1);
+  // The PanResponders are created once, so route commits through a ref to always
+  // call the latest onChange (which closes over the latest parent state).
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
-  // Sync when the value is changed from outside (e.g. a preset tapped upstream).
+  // Live preview inside the picker only — no parent update, so dragging stays
+  // smooth and doesn't spam the canvas / undo history.
+  const applyLocal = (next: { h: number; s: number; v: number }) => {
+    latest.current = next;
+    setHsv(next);
+    setHexText(hsvToHex(next.h, next.s, next.v));
+  };
+  // Push the chosen colour to the parent (on release, or a discrete tap/entry).
+  const commit = (next: { h: number; s: number; v: number }) => {
+    const hex = hsvToHex(next.h, next.s, next.v);
+    lastEmitted.current = hex.toLowerCase();
+    onChangeRef.current(hex);
+  };
+  const emit = (next: { h: number; s: number; v: number }) => {
+    applyLocal(next);
+    commit(next);
+  };
+
+  // Sync when the value is changed from outside (not by our own emission).
   useEffect(() => {
+    if (value.toLowerCase() === lastEmitted.current) return;
     const rgb = hexToRgb(value);
     if (!rgb) return;
-    if (value.toLowerCase() === hsvToHex(hsvRef.current.h, hsvRef.current.s, hsvRef.current.v).toLowerCase()) return;
-    setHsv(rgbToHsv(rgb.r, rgb.g, rgb.b));
-    setHexText(value);
+    lastEmitted.current = value.toLowerCase();
+    applyLocal(rgbToHsv(rgb.r, rgb.g, rgb.b));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value]);
-
-  const emit = (next: { h: number; s: number; v: number }) => {
-    setHsv(next);
-    const hex = hsvToHex(next.h, next.s, next.v);
-    setHexText(hex);
-    onChange(hex);
-  };
 
   const svPan = useRef(
     PanResponder.create({
@@ -114,20 +133,21 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (e) => {
         const { w, h } = svDims.current;
-        emit({
-          h: hsvRef.current.h,
+        applyLocal({
+          h: latest.current.h,
           s: clamp(e.nativeEvent.locationX / w, 0, 1),
           v: 1 - clamp(e.nativeEvent.locationY / h, 0, 1),
         });
       },
       onPanResponderMove: (e) => {
         const { w, h } = svDims.current;
-        emit({
-          h: hsvRef.current.h,
+        applyLocal({
+          h: latest.current.h,
           s: clamp(e.nativeEvent.locationX / w, 0, 1),
           v: 1 - clamp(e.nativeEvent.locationY / h, 0, 1),
         });
       },
+      onPanResponderRelease: () => commit(latest.current),
     }),
   ).current;
 
@@ -136,9 +156,10 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
       onStartShouldSetPanResponder: () => true,
       onMoveShouldSetPanResponder: () => true,
       onPanResponderGrant: (e) =>
-        emit({ ...hsvRef.current, h: clamp(e.nativeEvent.locationX / hueW.current, 0, 1) * 360 }),
+        applyLocal({ ...latest.current, h: clamp(e.nativeEvent.locationX / hueW.current, 0, 1) * 360 }),
       onPanResponderMove: (e) =>
-        emit({ ...hsvRef.current, h: clamp(e.nativeEvent.locationX / hueW.current, 0, 1) * 360 }),
+        applyLocal({ ...latest.current, h: clamp(e.nativeEvent.locationX / hueW.current, 0, 1) * 360 }),
+      onPanResponderRelease: () => commit(latest.current),
     }),
   ).current;
 
