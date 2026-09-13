@@ -13,6 +13,14 @@ const ANDROID_KEY = process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY || ''
 export const STUDIO_ENTITLEMENT = 'studio'
 
 const COLLECTION_PREFIX = 'com.paperandpetals.collection.'
+/**
+ * Product-id series. App Store identifiers can NEVER be reused — not even after
+ * deleting the product — so when the catalogue is wiped and rebuilt, the new
+ * products need fresh ids. Bumping this (r2 → r3) changes every derived id at
+ * once; ids from earlier series still map back on read, so restores keep working.
+ * Keep in step with PP_PRODUCT_SERIES in studio/pipeline/ingest.mjs.
+ */
+const COLLECTION_SERIES = 'r2'
 // Legacy one-time per-item products, kept only so existing buyers are grandfathered.
 const LEGACY_PACK_PREFIX = 'com.paperandpetals.pack.'
 
@@ -22,7 +30,7 @@ const LEGACY_PACK_PREFIX = 'com.paperandpetals.pack.'
 // Collection ids never contain underscores, so this round-trips cleanly, and
 // the reverse also accepts any older hyphenated product ids unchanged.
 function collectionProductId(collectionId: string): string {
-  return `${COLLECTION_PREFIX}${collectionId.replace(/-/g, '_')}`
+  return `${COLLECTION_PREFIX}${COLLECTION_SERIES}.${collectionId.replace(/-/g, '_')}`
 }
 
 export type StudioPlan = 'monthly' | 'annual'
@@ -69,9 +77,12 @@ export function setSubscriberInfo(info: { email?: string; name?: string; marketi
 
 /** Map a product identifier back to a collection id (underscores → hyphens). */
 function collectionIdFromProduct(productId: string): string | null {
-  return productId.startsWith(COLLECTION_PREFIX)
-    ? productId.slice(COLLECTION_PREFIX.length).replace(/_/g, '-')
-    : null
+  if (!productId.startsWith(COLLECTION_PREFIX)) return null
+  const rest = productId.slice(COLLECTION_PREFIX.length)
+  // Tolerate an optional series segment ("r2.", "r3.", …) so a purchase from any
+  // series — or a pre-series id — still resolves to its collection on restore.
+  const series = rest.match(/^r\d+\.(.+)$/)
+  return (series ? series[1] : rest).replace(/_/g, '-')
 }
 
 /** Map a legacy product identifier back to the item id. */

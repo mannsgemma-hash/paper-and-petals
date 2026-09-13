@@ -73,6 +73,16 @@ const DATASET = process.env.SANITY_DATASET || 'production'
 const SANITY_TOKEN = process.env.SANITY_WRITE_TOKEN
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY
 
+// ─── Store product ids ──────────────────────────────────────────────────────────
+// App Store identifiers can NEVER be reused, so a wiped-and-rebuilt catalogue
+// needs fresh ones. Every collection gets its id pinned into Sanity (the app and
+// the asc-iap-sync script both prefer the pinned value), namespaced by a series
+// token — bump PP_PRODUCT_SERIES if you ever wipe and rebuild again.
+// Keep in step with COLLECTION_SERIES in src/lib/revenuecat.ts.
+const PRODUCT_PREFIX = 'com.paperandpetals.collection.'
+const PRODUCT_SERIES = process.env.PP_PRODUCT_SERIES || 'r2'
+const productIdForSlug = (s) => `${PRODUCT_PREFIX}${PRODUCT_SERIES}.${s.replace(/-/g, '_')}`
+
 // ─── Clients ────────────────────────────────────────────────────────────────────
 const anthropic = ANTHROPIC_API_KEY ? new Anthropic({ apiKey: ANTHROPIC_API_KEY }) : null
 const sanity = !DRY_RUN
@@ -452,13 +462,29 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
     return
   }
 
+  const collectionSlug = slug(name)
+  const collectionDocId = docId(`collection-${collectionSlug}`)
+  // Pin the store product id. An explicit value wins (collection.json, or one
+  // already set in Sanity — never clobber a deliberate pin on a re-run);
+  // otherwise derive it from the slug within the current series.
+  let productId = overrides.productId
+  if (!productId) {
+    try {
+      productId = await sanity.fetch('*[_id == $id][0].productId', { id: collectionDocId })
+    } catch {
+      /* fetch failed — fall through to the derived id */
+    }
+  }
+  if (!productId) productId = productIdForSlug(collectionSlug)
+
   const doc = {
-    _id: docId(`collection-${slug(name)}`),
+    _id: collectionDocId,
     _type: 'collection',
     name,
     palette,
     free,
     price,
+    productId,
     whatYouGet,
     cover: coverAssetId ? imageField(coverAssetId) : undefined,
     // Weak refs so the draft validates before the member items are published.
@@ -466,6 +492,7 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   }
   await sanity.createOrReplace(doc)
   console.log(`  ↳ ${doc._id}  ${items.length} pieces · $${price} · ${palette}`)
+  console.log(`     product: ${productId}`)
 }
 
 async function processFreeFolder(dir, brandVoice) {

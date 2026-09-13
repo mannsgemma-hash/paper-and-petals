@@ -155,6 +155,31 @@ Output naming is top-to-bottom, left-to-right. Then just rename the output folde
 into `incoming/` and run `npm run ingest`. (Needs `@imgly/background-removal-node`
 installed for opaque art; transparent input is used as-is.)
 
+## Store product ids
+
+Every collection gets its App Store / Play product id **pinned into Sanity** on
+ingest, so the app and `scripts/asc-iap-sync` both use the exact same string:
+
+```
+com.paperandpetals.collection.<series>.<collection-slug-with-underscores>
+e.g.  com.paperandpetals.collection.r2.victorian_rose
+```
+
+**App Store product ids can never be reused** — not even after deleting the
+product. So if you wipe the catalogue and rebuild it, reusing a collection name
+would collide with a burned id. The `<series>` token (`r2`) exists for exactly
+that: bump `PP_PRODUCT_SERIES` (and `COLLECTION_SERIES` in
+`src/lib/revenuecat.ts`) and every id changes at once. Ids from earlier series
+still resolve on restore, so nothing breaks.
+
+```bash
+PP_PRODUCT_SERIES=r3 npm run ingest    # after another full wipe
+```
+
+An explicit id always wins, and a re-run never clobbers one you set by hand:
+put `"productId": "com.paperandpetals.collection.r2.my_id"` in `collection.json`,
+or edit the **Store product ID** field in Sanity Studio.
+
 ## Review & publish
 
 Everything lands as `drafts.*`, invisible to the app. Open `npm run dev`
