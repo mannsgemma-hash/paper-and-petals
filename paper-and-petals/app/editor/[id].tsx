@@ -2116,9 +2116,12 @@ export default function EditorScreen() {
   // Refresh live Sanity catalogue on mount (same as shop screen). Keep the
   // static fallback when a half is empty so the offline drawer stays usable.
   useEffect(() => {
-    fetchCatalogue().then(({ items, collections }) => {
-      if (items.length > 0) setShopItems(items);
-      if (collections.length > 0) setCollections(collections);
+    fetchCatalogue().then(({ items, collections, ok }) => {
+      // Only trust the live catalogue when the backend answered, so an
+      // unreachable Sanity keeps the offline drawer usable.
+      if (!ok) return;
+      setShopItems(items);
+      setCollections(collections);
     });
   }, []);
 

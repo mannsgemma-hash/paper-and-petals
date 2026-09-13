@@ -78,19 +78,19 @@ export interface SanityCollection {
 const stripItemId = (id: string) => id.replace(/^item-/, '')
 const stripCollectionId = (id: string) => id.replace(/^collection-/, '')
 
-export async function fetchLiveItems(): Promise<SanityItem[]> {
+export async function fetchLiveItems(): Promise<SanityItem[] | null> {
   try {
     return await sanity.fetch(LIVE_ITEMS_QUERY)
   } catch {
-    return []
+    return null
   }
 }
 
-export async function fetchLiveCollections(): Promise<SanityCollection[]> {
+export async function fetchLiveCollections(): Promise<SanityCollection[] | null> {
   try {
     return await sanity.fetch(LIVE_COLLECTIONS_QUERY)
   } catch {
-    return []
+    return null
   }
 }
 
@@ -158,6 +158,13 @@ export function sanityItemToShopItem(si: SanityItem, ctx: ItemContext): ShopItem
 export interface Catalogue {
   items: ShopItem[]
   collections: Collection[]
+  /**
+   * True when the backend actually answered. Lets callers tell "the shop is
+   * genuinely empty" (show nothing) from "we couldn't reach Sanity" (keep the
+   * offline fallback) — otherwise wiping the dataset makes the demo catalogue
+   * appear as if it were real, buyable content.
+   */
+  ok: boolean
 }
 
 /**
@@ -168,8 +175,10 @@ export interface Catalogue {
  */
 export async function fetchCatalogue(): Promise<Catalogue> {
   const [rawItems, rawCollections] = await Promise.all([fetchLiveItems(), fetchLiveCollections()])
+  // Both halves must have answered for the result to be authoritative.
+  const ok = rawItems !== null && rawCollections !== null
 
-  const collections = rawCollections.map(sanityCollectionToCollection)
+  const collections = (rawCollections ?? []).map(sanityCollectionToCollection)
 
   // Invert: itemId → [collectionId], plus the set of items in any free collection.
   const itemToCollections: Record<string, string[]> = {}
@@ -181,7 +190,7 @@ export async function fetchCatalogue(): Promise<Catalogue> {
     }
   }
 
-  const items = rawItems.map((si) => {
+  const items = (rawItems ?? []).map((si) => {
     const id = stripItemId(si._id)
     return sanityItemToShopItem(si, {
       collectionIds: itemToCollections[id] ?? [],
@@ -189,5 +198,5 @@ export async function fetchCatalogue(): Promise<Catalogue> {
     })
   })
 
-  return { items, collections }
+  return { items, collections, ok }
 }

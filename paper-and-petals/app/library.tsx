@@ -41,9 +41,12 @@ export default function LibraryScreen() {
   useEffect(() => {
     screen('Library');
     // Refresh so we have live collections (with print URLs) to download.
-    fetchCatalogue().then(({ items, collections: cols }) => {
-      if (items.length > 0) setShopItems(items);
-      if (cols.length > 0) setCollections(cols);
+    fetchCatalogue().then(({ items, collections: cols, ok }) => {
+      // Only trust the live catalogue when the backend answered; a failed fetch
+      // keeps the offline fallback rather than blanking the library.
+      if (!ok) return;
+      setShopItems(items);
+      setCollections(cols);
     });
   }, []);
 
