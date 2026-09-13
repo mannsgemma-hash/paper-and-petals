@@ -26,6 +26,31 @@ export function cleanBase(filename) {
   return filename.replace(/\.[^.]+$/, '').replace(TAG_RE, '')
 }
 
+// ─── Sheet companions ───────────────────────────────────────────────────────────
+// When prep splits a sheet it also keeps the whole page as "<base>.sheet.<ext>".
+// Ingest uses that page as the PRINT asset for each piece cut from it, so the
+// download a buyer gets is the full (e.g. 6-up) printable page. Sheets are never
+// ingested as items themselves.
+
+/** True for a "<base>.sheet.<ext>" full-page companion. */
+export function isSheetFile(filename) {
+  return /\.sheet$/i.test(filename.replace(/\.[^.]+$/, ''))
+}
+
+/** "<base>.sheet.png" → "<base>" (null if not a sheet). */
+export function sheetBase(filename) {
+  const base = filename.replace(/\.[^.]+$/, '')
+  const m = base.match(/^(.*)\.sheet$/i)
+  return m ? m[1] : null
+}
+
+/** Split piece "<base>-01.png" → "<base>" (null if not a numbered piece). */
+export function pieceBase(filename) {
+  const base = filename.replace(/\.[^.]+$/, '')
+  const m = base.match(/^(.*)-\d{2,}$/)
+  return m ? m[1] : null
+}
+
 // ─── Background removal ─────────────────────────────────────────────────────────
 
 let bgRemover

@@ -95,6 +95,13 @@ async function prepFolder(dir, folderName) {
           await fs.writeFile(path.join(dir, name), pieces[n])
           console.log(`    ↳ ${name}`)
         }
+        // Keep the whole page next to its pieces as "<base>.sheet.<ext>": ingest
+        // attaches it as every piece's PRINT asset, so the download people get is
+        // the full sheet (e.g. a 6-up fussy-cut page), not the individual cutout.
+        // Ingest never treats .sheet files as items.
+        const sheetName = `${base}.sheet${path.extname(filename).toLowerCase()}`
+        await fs.writeFile(path.join(dir, sheetName), buf)
+        console.log(`    ↳ ${sheetName} (printable full page)`)
         stats.split++
         stats.pieces += pieces.length
       } else {

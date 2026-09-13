@@ -104,9 +104,17 @@ export default function LibraryScreen() {
     );
   };
 
+  /**
+   * How many distinct print files a collection yields. Pieces cut from one
+   * sheet share that sheet as their print file, so this is usually fewer than
+   * the piece count — each printable page is downloaded once.
+   */
+  const printPageCount = (c: Collection) =>
+    new Set(c.items.map((i) => i.printUrl).filter(Boolean)).size;
+
   const runDownload = async (c: Collection) => {
     setBusyId(c.id);
-    setProgress({ done: 0, total: c.items.length });
+    setProgress({ done: 0, total: printPageCount(c) });
     try {
       await downloadCollectionZip(
         c.name,
@@ -122,9 +130,14 @@ export default function LibraryScreen() {
   };
 
   const onDownload = (c: Collection) => {
+    const pages = printPageCount(c);
+    const what =
+      pages > 0 && pages < c.pieceCount
+        ? `${c.pieceCount} pieces on ${pages} printable ${pages === 1 ? 'page' : 'pages'}`
+        : `${c.pieceCount} pieces`;
     Alert.alert(
       'Download for print',
-      `${c.name} — ${c.pieceCount} pieces, saved as a zip you can open on a computer.\n\nFor your own personal use (printing, crafting). Please don’t resell or share the files.`,
+      `${c.name} — ${what}, saved as a zip you can open on a computer.\n\nFor your own personal use (printing, crafting). Please don’t resell or share the files.`,
       [
         { text: 'Cancel', style: 'cancel' },
         { text: 'Download', onPress: () => runDownload(c) },

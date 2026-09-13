@@ -107,6 +107,27 @@ forget to prep, ingest refuses tagged files with a warning rather than uploading
 a whole sheet as one item. Default split gap is **0** (tuned for grid sheets) —
 raise it if one item breaks into pieces.
 
+### Printable pages (`.sheet`) — what buyers download
+
+When `prep` splits a sheet it also keeps the whole page beside the pieces as
+`<base>.sheet.png`. Ingest never treats that as an item; instead it becomes the
+**print asset for every piece cut from it**. So a 6-up fussy-cut page gives six
+placeable cut-outs in the app, while **Download** hands the buyer the full
+printable page — the thing you actually want to print and cut by hand.
+
+```
+incoming/Victorian Rose/
+  teapots_split.png        ← you drop this in
+  → teapots-01.png … -06.png   ← 6 placeable cut-outs (background already removed)
+  → teapots.sheet.png          ← the full page; what Download gives you
+```
+
+Downloads de-duplicate by page, so a 12-piece collection made of two sheets
+zips as **two pages**, not twelve copies. Anything without a sheet (a one-off
+`_cut` piece, already-ready art) still prints as itself, so mixed collections
+work unchanged. To ship a differently-laid-out print page than the one you cut
+from, just drop in your own `<base>.sheet.png`.
+
 ## Background removal & sheet splitting (`extract`)
 
 A prep tool for before ingest. Two modes:

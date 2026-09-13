@@ -34,7 +34,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
-import { fileTag } from './lib/image.mjs'
+import { fileTag, isSheetFile, sheetBase, pieceBase } from './lib/image.mjs'
 import { createClient } from '@sanity/client'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -257,10 +257,34 @@ async function listImages(dir) {
   // sheet as one "item" is never right, so warn and skip them.
   const ready = []
   for (const name of names) {
+    // "<base>.sheet.<ext>" is the printable full page kept beside its pieces —
+    // it's a print asset, never an item of its own.
+    if (isSheetFile(name)) continue
     if (fileTag(name)) console.warn(`  ⚠ ${name} is tagged "${fileTag(name)}" but unprocessed — run \`npm run prep\` first (skipped)`)
     else ready.push(name)
   }
   return ready
+}
+
+/**
+ * Map of "<base>" → sheet filename for every "<base>.sheet.<ext>" in a folder.
+ * A piece named "<base>-01.png" prints as its sheet, so a buyer downloading a
+ * fussy-cut gets the whole 6-up page rather than one lonely cut-out.
+ */
+async function listSheets(dir) {
+  let entries
+  try {
+    entries = await fs.readdir(dir, { withFileTypes: true })
+  } catch {
+    return {}
+  }
+  const map = {}
+  for (const e of entries) {
+    if (!e.isFile() || !IMAGE_EXTS.has(path.extname(e.name).toLowerCase())) continue
+    const base = sheetBase(e.name)
+    if (base) map[base] = e.name
+  }
+  return map
 }
 
 async function readOverrides(dir) {
@@ -301,13 +325,26 @@ async function readPromptNotes(dir) {
   return out
 }
 
-async function processOneImage(dir, filename, { free, brandVoice, hint, notes }) {
+async function processOneImage(dir, filename, { free, brandVoice, hint, notes, sheets }) {
   console.log(`  • ${filename}`)
   const raw = await fs.readFile(path.join(dir, filename))
   const hash = sha1(raw)
   const base = await prepareBase(raw)
   const display = await resizePng(base, MAX_DIM)
-  const print = await resizePng(base, PRINT_MAX)
+  // Print asset: the full sheet this piece was cut from, when prep kept one —
+  // so the download is the whole printable page, not the single cut-out.
+  let print
+  const sheetName = sheets?.[pieceBase(filename) ?? '']
+  if (sheetName) {
+    try {
+      const sheetRaw = await fs.readFile(path.join(dir, sheetName))
+      print = await resizePng(await prepareBase(sheetRaw), PRINT_MAX)
+      console.log(`    · print = ${sheetName} (full page)`)
+    } catch (e) {
+      console.warn(`    ⚠ sheet ${sheetName} unreadable (${e?.message ?? e}) — printing the piece instead`)
+    }
+  }
+  if (!print) print = await resizePng(base, PRINT_MAX)
   // Reuse cached metadata for unchanged art — no Claude call, no charge.
   let meta = metaCache[hash]
   if (meta) {
@@ -360,12 +397,13 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
     console.log('  (no images — skipped)')
     return
   }
+  const sheets = await listSheets(dir)
 
   const items = []
   const seenIds = new Set()
   for (const f of files) {
     try {
-      const it = await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection`, notes })
+      const it = await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection`, notes, sheets })
       // Skip duplicate art (same content hash → same id) so the collection never
       // references the same piece twice (which would collide on _key / React key).
       if (seenIds.has(it.id)) {
@@ -434,9 +472,10 @@ async function processFreeFolder(dir, brandVoice) {
   console.log(`\n🆓 Free items`)
   const notes = await readPromptNotes(dir)
   const files = await listImages(dir)
+  const sheets = await listSheets(dir)
   for (const f of files) {
     try {
-      await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece', notes })
+      await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece', notes, sheets })
     } catch (e) {
       console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
     }

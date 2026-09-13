@@ -46,7 +46,11 @@ export async function downloadCollectionZip(
   }
   if (!JSZip) throw new Error('Zip support is unavailable in this build.')
 
-  const usable = pieces.filter((p): p is Required<DownloadablePiece> => !!p.url)
+  const withUrl = pieces.filter((p): p is Required<DownloadablePiece> => !!p.url)
+  // Pieces cut from one sheet share that sheet as their print file, so several
+  // pieces can point at the same URL — download each page once.
+  const seen = new Set<string>()
+  const usable = withUrl.filter((p) => (seen.has(p.url) ? false : (seen.add(p.url), true)))
   if (usable.length === 0) {
     throw new Error('The print files for this collection aren’t ready yet — please try again later.')
   }
