@@ -8,6 +8,7 @@
     "deploy": "sanity deploy",
     "seed": "node --experimental-vm-modules scripts/seed.mjs",
     "clear": "node scripts/clear.mjs",
+    "publish-drafts": "node scripts/publish-drafts.mjs",
     "ingest": "node pipeline/ingest.mjs",
     "extract": "node pipeline/extract.mjs",
     "prep": "node pipeline/prep.mjs"

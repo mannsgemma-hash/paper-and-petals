@@ -213,6 +213,23 @@ Everything lands as `drafts.*`, invisible to the app. Open `npm run dev`
 its references resolve. Covers/art that fail to upload fall back to the glyph in
 the app, so a missing image never breaks the page.
 
+Studio has no "publish all", so to publish a whole ingest at once:
+
+```bash
+npm run publish-drafts                      # counts only, changes nothing
+npm run publish-drafts -- --yes             # publish every draft
+npm run publish-drafts -- --yes --type collection   # just one type
+```
+
+It publishes **items before collections**, so a collection never goes live
+pointing at pieces that aren't published yet.
+
+To skip review entirely, ingest straight to live documents:
+
+```bash
+npm run ingest -- --publish
+```
+
 ## Cost
 
 Metadata is generated per image. On Haiku 4.5 that's a fraction of a cent each;
