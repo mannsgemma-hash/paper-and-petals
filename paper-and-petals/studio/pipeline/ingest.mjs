@@ -35,6 +35,7 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import sharp from 'sharp'
 import { fileTag, isSheetFile, sheetBase, pieceBase } from './lib/image.mjs'
+import { assertSanityToken, preflightSanity } from './lib/auth.mjs'
 import { createClient } from '@sanity/client'
 import Anthropic from '@anthropic-ai/sdk'
 
@@ -679,9 +680,12 @@ async function main() {
     console.error('Missing ANTHROPIC_API_KEY — needed for metadata generation.')
     process.exit(1)
   }
-  if (!DRY_RUN && !SANITY_TOKEN) {
-    console.error('Missing SANITY_WRITE_TOKEN — needed to upload (or use --dry-run).')
-    process.exit(1)
+  if (!DRY_RUN) {
+    // Check credentials BEFORE any work: metadata is generated per item before
+    // its upload, so a bad token would otherwise burn a Claude call for every
+    // piece and fail 26 times over.
+    assertSanityToken(SANITY_TOKEN, 'upload (or use --dry-run)')
+    await preflightSanity(sanity, PROJECT_ID)
   }
 
   await loadCache()

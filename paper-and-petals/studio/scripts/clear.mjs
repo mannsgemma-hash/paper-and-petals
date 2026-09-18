@@ -14,48 +14,19 @@
 // On Windows PowerShell, set the token first:  $env:SANITY_WRITE_TOKEN="sk..."
 
 import { createClient } from '@sanity/client'
+import { assertSanityToken, explainSanityError } from '../pipeline/lib/auth.mjs'
 
 const projectId = process.env.SANITY_PROJECT_ID || 'cv53e819'
 const dataset = process.env.SANITY_DATASET || 'production'
 const token = process.env.SANITY_WRITE_TOKEN
-if (!token) {
-  console.error('Missing SANITY_WRITE_TOKEN — needed to delete.')
-  process.exit(1)
-}
-// Catch the classic copy-paste: the placeholder from the docs pasted verbatim.
-// Without this the token is "set" but junk, and Sanity answers with a 401 and a
-// 40-line stack trace that looks like the script is broken.
-if (/^(sk\.\.\.|sk_?xxx|<.*>|your.?token|paste.*here)$/i.test(token.trim())) {
-  console.error(`SANITY_WRITE_TOKEN is still the placeholder ("${token.trim()}").`)
-  console.error('Create a real token at https://sanity.io/manage → your project → API → Tokens (Editor),')
-  console.error('then set it, e.g. PowerShell:  $env:SANITY_WRITE_TOKEN="sk<the-rest-of-your-token>"')
-  process.exit(1)
-}
+assertSanityToken(token, 'delete')
 
 const YES = process.argv.includes('--yes')
 const ASSETS = process.argv.includes('--assets')
 
 const client = createClient({ projectId, dataset, token, apiVersion: '2024-10-01', useCdn: false })
 
-/** Turn Sanity auth/permission failures into one actionable line, not a stack trace. */
-function explain(err) {
-  const status = err?.statusCode ?? err?.response?.statusCode
-  if (status === 401) {
-    console.error('\nSanity rejected the token (401 Unauthorized — "Session not found").')
-    console.error('That means SANITY_WRITE_TOKEN is wrong, expired, revoked, or from another project.')
-    console.error(`\nFix: https://sanity.io/manage → project ${projectId} → API → Tokens → Add API token`)
-    console.error('     Give it Editor permissions, copy the value, then in this same terminal:')
-    console.error('       $env:SANITY_WRITE_TOKEN="<paste the token>"')
-    console.error('     (A token only lasts for the terminal session you set it in.)')
-  } else if (status === 403) {
-    console.error('\nSanity refused the request (403). The token is valid but lacks write access —')
-    console.error('create one with Editor permissions instead of Viewer.')
-  } else {
-    console.error('\nFailed:', err?.message ?? err)
-  }
-  console.error('\nNothing was deleted.')
-  process.exit(1)
-}
+const explain = (err, didWork = false) => explainSanityError(err, projectId, { didWork })
 
 const count = (type) => client.fetch('count(*[_type == $type])', { type })
 
