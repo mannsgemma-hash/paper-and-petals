@@ -51,21 +51,46 @@ npm run ingest
 
 ```
 studio/incoming/
-  Spring Meadow/          ← one folder = one collection (bundle)
-    cover.png             ← optional cover (otherwise the first piece is used)
-    collection.json       ← optional overrides (see below)
-    pressed-rose.png
-    linen-paper.png
-  Old Romance/
-    ...
-  _free/                  ← images here become standalone FREE items (no collection)
+  The Edwardian Seed Merchant's Catalogue/   ← one folder = one collection
+    prompts.md                               ← optional notes/prompts (context for naming)
+    cover.png                                ← optional cover (otherwise the first piece)
+    collection.json                          ← optional overrides (see below)
+    Papers/                                  ← optional CATEGORY subfolders
+      scrapbook-page-1.png
+      teapots_split.png                      ← sheet → pieces + teapots.sheet.png
+    Stickers/
+    Frames/
+  _free/                                     ← images here become standalone FREE items
     washi-sage.png
 ```
+
+Art can sit **loose in the collection folder, in category subfolders, or both**.
+A subfolder whose name matches a category *pins* that category — no guessing,
+and one less thing for the model to get wrong. Recognised names (the app's own
+categories, with `and`/`&`/bare-id variants all accepted):
+
+| Folder | Category |
+|---|---|
+| Papers · Papers and Backgrounds | `papers` |
+| Stickers | `stickers` |
+| Tape and Fasteners | `tape` |
+| Ephemera | `ephemera` |
+| Florals and Botanicals | `florals` |
+| Frames and Containers | `frames` |
+| Writing and Typography | `type` |
+| Paint and Artistic | `paint` |
+| Sewing and Fabric | `fabric` |
+| Photos and Memory Keeping | `photos` |
+| Decorative Details | `details` |
+
+A subfolder that *isn't* a category still gets ingested — it just warns and lets
+the model choose per item. Only one level deep is scanned; `_originals`, `_done`
+and dot-folders are skipped. `npm run prep` walks the same subfolders.
 
 `collection.json` (all fields optional — anything you set wins over the AI):
 
 ```json
-{ "name": "Spring Meadow", "palette": "sage", "price": 5.99, "free": false, "whatYouGet": "…" }
+{ "name": "Spring Meadow", "palette": "sage", "price": 5.99, "free": false, "whatYouGet": "…", "productId": "com.paperandpetals.collection.r2.spring_meadow" }
 ```
 
 Firefly exports with transparency are used as-is; opaque art (e.g. Midjourney)

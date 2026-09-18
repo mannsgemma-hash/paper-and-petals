@@ -45,6 +45,25 @@ const CATEGORIES = [
   'papers', 'stickers', 'tape', 'ephemera', 'florals',
   'frames', 'type', 'paint', 'fabric', 'photos', 'details',
 ]
+
+// A collection folder may group its art into one level of category subfolders
+// ("Papers", "Stickers", "Writing and Typography", …). The folder name then
+// *pins* the category instead of leaving it to the model — exact, and it saves
+// the model from guessing. Accepts the app's labels, "and"/"&", or the bare id.
+const CATEGORY_FOLDERS = {
+  papers: 'papers', 'papers and backgrounds': 'papers', 'papers & backgrounds': 'papers', backgrounds: 'papers',
+  stickers: 'stickers',
+  tape: 'tape', 'tape and fasteners': 'tape', 'tape & fasteners': 'tape', fasteners: 'tape',
+  ephemera: 'ephemera',
+  florals: 'florals', 'florals and botanicals': 'florals', 'florals & botanicals': 'florals', botanicals: 'florals',
+  frames: 'frames', 'frames and containers': 'frames', 'frames & containers': 'frames', containers: 'frames',
+  type: 'type', typography: 'type', 'writing and typography': 'type', 'writing & typography': 'type',
+  paint: 'paint', 'paint and artistic': 'paint', 'paint & artistic': 'paint', artistic: 'paint',
+  fabric: 'fabric', sewing: 'fabric', 'sewing and fabric': 'fabric', 'sewing & fabric': 'fabric',
+  photos: 'photos', 'photos and memory keeping': 'photos', 'photos & memory keeping': 'photos', 'memory keeping': 'photos',
+  details: 'details', 'decorative details': 'details', decorative: 'details',
+}
+const categoryForFolder = (name) => CATEGORY_FOLDERS[name.trim().toLowerCase()] ?? null
 const TONES = ['sage', 'forest', 'rose', 'mauve', 'blue', 'amber', 'cream', 'oxblood', 'gold']
 const MAX_DIM = 1200 // in-app display asset
 const PRINT_MAX = 3000 // high-res asset for print download (no enlargement past source)
@@ -297,6 +316,41 @@ async function listSheets(dir) {
   return map
 }
 
+/**
+ * Every ingestable image in a collection: loose files in the collection root,
+ * plus one level of category subfolders whose name pins the item's category.
+ * Each entry carries its own folder's sheet map, so a "<base>.sheet.png" beside
+ * the pieces in Papers/ prints those pieces, not something from another folder.
+ */
+async function listCollectionImages(dir) {
+  const out = []
+  const rootSheets = await listSheets(dir)
+  for (const filename of await listImages(dir)) {
+    out.push({ dir, filename, category: null, sheets: rootSheets, folder: null })
+  }
+
+  let entries = []
+  try {
+    entries = (await fs.readdir(dir, { withFileTypes: true })).filter((e) => e.isDirectory())
+  } catch {
+    return out
+  }
+  for (const e of entries) {
+    // _originals / _done / dotfolders are working folders, never content.
+    if (e.name.startsWith('.') || e.name.startsWith('_')) continue
+    const sub = path.join(dir, e.name)
+    const category = categoryForFolder(e.name)
+    if (!category) {
+      console.warn(`  ⚠ subfolder "${e.name}" isn't a known category — the model will pick one per item`)
+    }
+    const sheets = await listSheets(sub)
+    for (const filename of await listImages(sub)) {
+      out.push({ dir: sub, filename, category, sheets, folder: e.name })
+    }
+  }
+  return out
+}
+
 async function readOverrides(dir) {
   try {
     return JSON.parse(await fs.readFile(path.join(dir, 'collection.json'), 'utf8'))
@@ -320,7 +374,12 @@ async function readPromptNotes(dir) {
     return ''
   }
   const mds = entries
-    .filter((e) => e.isFile() && e.name.toLowerCase().endsWith('.md'))
+    .filter(
+      (e) =>
+        e.isFile() &&
+        // Notes are .md/.txt, or any file simply called "prompts" (no extension).
+        (/\.(md|txt)$/i.test(e.name) || /^prompts?$/i.test(e.name)),
+    )
     .map((e) => e.name)
     .sort()
   let out = ''
@@ -335,7 +394,7 @@ async function readPromptNotes(dir) {
   return out
 }
 
-async function processOneImage(dir, filename, { free, brandVoice, hint, notes, sheets }) {
+async function processOneImage(dir, filename, { free, brandVoice, hint, notes, sheets, category }) {
   console.log(`  • ${filename}`)
   const raw = await fs.readFile(path.join(dir, filename))
   const hash = sha1(raw)
@@ -356,18 +415,21 @@ async function processOneImage(dir, filename, { free, brandVoice, hint, notes, s
   }
   if (!print) print = await resizePng(base, PRINT_MAX)
   // Reuse cached metadata for unchanged art — no Claude call, no charge.
-  let meta = metaCache[hash]
-  if (meta) {
+  let cached = metaCache[hash]
+  if (cached) {
     console.log('    · cached metadata (no charge)')
   } else {
     // Send a small thumbnail (not the full display image) — image tokens scale
     // with pixel area, so this is the biggest cost lever.
     const thumb = await resizePng(base, VISION_MAX)
-    meta = await itemMetadata(thumb, brandVoice, hint, notes)
-    metaCache[hash] = meta
+    cached = await itemMetadata(thumb, brandVoice, hint, notes)
+    metaCache[hash] = cached
     cacheDirty = true
     await saveCache()
   }
+  // A category subfolder is authoritative — apply it to a copy so the shared
+  // cache keeps the model's own answer (the same art could sit elsewhere).
+  const meta = category && category !== cached.category ? { ...cached, category } : cached
   // Content-hash id → stable across renames/moves, so re-runs overwrite the same
   // draft instead of creating duplicates.
   const id = `${slug(meta.name) || 'item'}-${hash.slice(0, 8)}`
@@ -402,18 +464,31 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   const overrides = await readOverrides(dir)
   const notes = await readPromptNotes(dir)
   if (notes) console.log('  · using prompt notes (.md) as context')
-  const files = await listImages(dir)
-  if (files.length === 0) {
+  const entries = await listCollectionImages(dir)
+  if (entries.length === 0) {
     console.log('  (no images — skipped)')
     return
   }
-  const sheets = await listSheets(dir)
+  const foldered = entries.filter((e) => e.folder).length
+  if (foldered) {
+    const cats = [...new Set(entries.filter((e) => e.folder).map((e) => e.folder))]
+    console.log(`  · ${foldered} piece(s) across ${cats.length} category folder(s): ${cats.join(', ')}`)
+  }
 
   const items = []
   const seenIds = new Set()
-  for (const f of files) {
+  for (const entry of entries) {
     try {
-      const it = await processOneImage(dir, f, { free: overrides.free === true, brandVoice, hint: `part of the "${folderName}" collection`, notes, sheets })
+      const it = await processOneImage(entry.dir, entry.filename, {
+        free: overrides.free === true,
+        brandVoice,
+        hint: entry.folder
+          ? `a "${entry.folder}" piece in the "${folderName}" collection`
+          : `part of the "${folderName}" collection`,
+        notes,
+        sheets: entry.sheets,
+        category: entry.category,
+      })
       // Skip duplicate art (same content hash → same id) so the collection never
       // references the same piece twice (which would collide on _key / React key).
       if (seenIds.has(it.id)) {
@@ -422,8 +497,8 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
       }
       seenIds.add(it.id)
       items.push(it)
-    } catch (e) {
-      console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
+    } catch (err) {
+      console.warn(`    ⚠ skipped ${entry.filename}: ${err?.message ?? err}`)
     }
   }
   if (items.length === 0) {
@@ -498,13 +573,19 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
 async function processFreeFolder(dir, brandVoice) {
   console.log(`\n🆓 Free items`)
   const notes = await readPromptNotes(dir)
-  const files = await listImages(dir)
-  const sheets = await listSheets(dir)
-  for (const f of files) {
+  const entries = await listCollectionImages(dir)
+  for (const entry of entries) {
     try {
-      await processOneImage(dir, f, { free: true, brandVoice, hint: 'a free starter-set piece', notes, sheets })
-    } catch (e) {
-      console.warn(`    ⚠ skipped ${f}: ${e?.message ?? e}`)
+      await processOneImage(entry.dir, entry.filename, {
+        free: true,
+        brandVoice,
+        hint: 'a free starter-set piece',
+        notes,
+        sheets: entry.sheets,
+        category: entry.category,
+      })
+    } catch (err) {
+      console.warn(`    ⚠ skipped ${entry.filename}: ${err?.message ?? err}`)
     }
   }
 }
@@ -527,16 +608,16 @@ async function runBatchPrepass(folders, brandVoice) {
     const isFree = folder.name === '_free'
     const hint = isFree ? 'a free starter-set piece' : `part of the "${folder.name}" collection`
     const notes = await readPromptNotes(dir)
-    let files = []
+    let entries = []
     try {
-      files = await listImages(dir)
+      entries = await listCollectionImages(dir)
     } catch {
       continue
     }
-    for (const filename of files) {
+    for (const entry of entries) {
       let raw
       try {
-        raw = await fs.readFile(path.join(dir, filename))
+        raw = await fs.readFile(path.join(entry.dir, entry.filename))
       } catch {
         continue
       }
@@ -545,9 +626,10 @@ async function runBatchPrepass(folders, brandVoice) {
       seen.add(hash)
       try {
         const thumb = await resizePng(await prepareBase(raw), VISION_MAX)
-        requests.push({ custom_id: hash, params: itemParams(thumb, brandVoice, hint, notes) })
+        const itemHint = entry.folder ? `a "${entry.folder}" piece — ${hint}` : hint
+        requests.push({ custom_id: hash, params: itemParams(thumb, brandVoice, itemHint, notes) })
       } catch (e) {
-        console.warn(`  ⚠ ${filename}: ${e?.message ?? e}`)
+        console.warn(`  ⚠ ${entry.filename}: ${e?.message ?? e}`)
       }
     }
   }

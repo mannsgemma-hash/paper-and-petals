@@ -132,13 +132,30 @@ async function main() {
   console.log(`(gap ${OPTS.gap} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize})`)
 
   const totals = { split: 0, cut: 0, pieces: 0 }
-  for (const folder of folders) {
-    // Collections + _free are prepped; _originals/_done/dot-folders are not.
-    if (folder.name.startsWith('.') || (folder.name.startsWith('_') && folder.name !== '_free')) continue
-    const s = await prepFolder(path.join(INPUT_DIR, folder.name), folder.name)
+  const add = (s) => {
     totals.split += s.split
     totals.cut += s.cut
     totals.pieces += s.pieces
+  }
+  for (const folder of folders) {
+    // Collections + _free are prepped; _originals/_done/dot-folders are not.
+    if (folder.name.startsWith('.') || (folder.name.startsWith('_') && folder.name !== '_free')) continue
+    const dir = path.join(INPUT_DIR, folder.name)
+    add(await prepFolder(dir, folder.name))
+
+    // A collection may group its art into category subfolders ("Papers",
+    // "Stickers", …) — prep those too, in place, same as the root.
+    let subs = []
+    try {
+      subs = (await fs.readdir(dir, { withFileTypes: true })).filter(
+        (e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'),
+      )
+    } catch {
+      /* no subfolders */
+    }
+    for (const sub of subs) {
+      add(await prepFolder(path.join(dir, sub.name), `${folder.name} / ${sub.name}`))
+    }
   }
 
   if (totals.split + totals.cut === 0) {
