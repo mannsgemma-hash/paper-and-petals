@@ -123,8 +123,41 @@ collection folder**, tag the filename with what it needs, and run one command.
 
 ```bash
 npm run prep                 # processes every tagged file under incoming/, in place
-npm run prep -- --gap 10     # per-run overrides (same knobs as extract)
+npm run prep -- --gap 12     # per-run overrides (same knobs as extract)
+npm run prep -- --undo       # preview putting it all back
+npm run prep -- --undo --yes # restore originals + delete the pieces they made
 ```
+
+### Getting the split right
+
+Two knobs decide whether items hold together and how sharp they stay.
+
+**`--gap`** bridges thin breaks so one item doesn't shatter into several. The
+default (`0`) only suits sheets where every item is one solid connected shape.
+If an item has any detached part — a petal, a dangling tag, separate lettering —
+those become their own "pieces". Raise the gap until the count matches what you
+see on the page:
+
+| Symptom | Fix |
+|---|---|
+| More pieces than items (things broken up) | raise `--gap` (try 12, then 24) |
+| Fewer pieces than items (neighbours merged) | lower `--gap`, or raise `--alpha` to ~70 |
+| Stray specks becoming pieces | raise `--min-size` |
+
+**`--max-edge`** (default `4000`) is the resolution the pieces are cut at, so it
+sets the detail the art keeps **forever**. A 6-up page capped at 2400px yields
+only ~800px pieces, which look soft in the editor. Raise it to match your source
+art; it never enlarges past the original.
+
+`--gap`, `--min-size` and `--pad` are measured against a 2400px baseline and
+scaled to the working resolution, so changing `--max-edge` does **not** change
+how items group. Each run prints the effective gap (`gap≈20px`) so you can see
+what was actually applied.
+
+**Iterating is safe:** `--undo --yes` puts the originals back and deletes only
+the files that prep derived from them (`<base>-01…`, `<base>.sheet.*`), leaving
+your other art alone. So you can re-split with different settings as often as
+you like.
 
 Pieces land in the **same collection folder**; originals are moved to
 `incoming/_originals/` (kept, never deleted; ingest ignores that folder). If you

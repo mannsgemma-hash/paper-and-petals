@@ -66,8 +66,12 @@ const CATEGORY_FOLDERS = {
 }
 const categoryForFolder = (name) => CATEGORY_FOLDERS[name.trim().toLowerCase()] ?? null
 const TONES = ['sage', 'forest', 'rose', 'mauve', 'blue', 'amber', 'cream', 'oxblood', 'gold']
-const MAX_DIM = 1200 // in-app display asset
-const PRINT_MAX = 3000 // high-res asset for print download (no enlargement past source)
+// Resolution caps. The display asset is what you see (and enlarge) in the
+// editor, so too small a cap looks soft on a big iPad canvas; the print asset
+// is what buyers download. Both are env-tunable, and neither ever enlarges
+// past the source.
+const MAX_DIM = Number(process.env.PP_MAX_DIM || 1600) // in-app display asset
+const PRINT_MAX = Number(process.env.PP_PRINT_MAX || 3000) // high-res asset for print download
 const VISION_MAX = 640 // tiny thumbnail sent to Claude for metadata — image tokens scale with pixel area
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 

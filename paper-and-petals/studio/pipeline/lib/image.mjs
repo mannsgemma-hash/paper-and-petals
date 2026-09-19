@@ -202,6 +202,14 @@ async function cropBlob(rgba, w, blob, pad) {
  * Split a sheet into individual transparent PNGs.
  * Returns { pieces: Buffer[], blobs, width, height } in reading order.
  */
+/**
+ * Spatial thresholds (gap/min-size/pad) are expressed against a 2400px baseline
+ * so the same numbers behave the same whatever --max-edge is. Without this,
+ * raising the working resolution to keep detail would silently halve the
+ * effective gap and shatter items that used to hold together.
+ */
+const GAP_BASELINE = 2400
+
 export async function splitToPieces(
   buf,
   { gap = 4, alpha = 16, minSize = 28, pad = 12, maxEdge = 2400, forceBg = false, noBg = false } = {},
@@ -210,19 +218,23 @@ export async function splitToPieces(
     .raw()
     .toBuffer({ resolveWithObject: true })
   const { width: w, height: h, channels } = info
+  const scale = Math.max(w, h) / GAP_BASELINE
+  const effGap = Math.max(0, Math.round(gap * scale))
+  const effMinSize = Math.max(1, Math.round(minSize * scale))
+  const effPad = Math.max(0, Math.round(pad * scale))
   const mask = new Uint8Array(w * h)
   for (let i = 0; i < w * h; i++) mask[i] = data[i * channels + (channels - 1)] > alpha ? 1 : 0
-  const grown = dilate(mask, w, h, gap)
+  const grown = dilate(mask, w, h, effGap)
   const { labels, blobs } = connectedComponents(grown, w, h)
 
   const kept = blobs
-    .filter((b) => Math.max(b.maxx - b.minx + 1, b.maxy - b.miny + 1) >= minSize)
+    .filter((b) => Math.max(b.maxx - b.minx + 1, b.maxy - b.miny + 1) >= effMinSize)
     // reading order: top-to-bottom, then left-to-right (banded by ~rows)
     .sort((a, b) => (Math.abs(a.miny - b.miny) > h * 0.06 ? a.miny - b.miny : a.minx - b.minx))
 
   const pieces = []
   for (const blob of kept) {
-    pieces.push(await cropBlob(data, w, { ...blob, labels }, pad))
+    pieces.push(await cropBlob(data, w, { ...blob, labels }, effPad))
   }
-  return { pieces, blobs: blobs.length, width: w, height: h }
+  return { pieces, blobs: blobs.length, width: w, height: h, effGap, effMinSize }
 }
