@@ -107,6 +107,27 @@ const NO_BG = hasFlag('--no-bg')
 const BATCH = hasFlag('--batch') // generate all metadata via the Batch API (~50% cheaper, slower)
 const MODEL = getOpt('--model', 'claude-haiku-4-5')
 const INPUT_DIR = path.resolve(getOpt('--input', path.join(SCRIPT_DIR, '..', 'incoming')))
+const PRUNE = hasFlag('--prune')
+// --only <name> restricts the run to matching collection folders, so fixing one
+// collection doesn't mean re-walking the whole catalogue. Repeatable, and
+// comma-separated lists work too. Matching is loose: case, spaces, punctuation
+// and ordering prefixes all fold away, and a partial name matches
+// ("victorian" → "Victorian Rose").
+const ONLY = argv
+  .map((a, i) => (a === '--only' ? argv[i + 1] : null))
+  .filter(Boolean)
+  .flatMap((v) => v.split(','))
+  .map((v) => v.trim())
+  .filter(Boolean)
+const loosen = (s) => s.toLowerCase().replace(/^\d+[_\-. ]+/, '').replace(/[^a-z0-9]/g, '')
+const matchesOnly = (name) => {
+  if (ONLY.length === 0) return true
+  const n = loosen(name)
+  return ONLY.some((o) => {
+    const q = loosen(o)
+    return q.length > 0 && (n === q || n.includes(q))
+  })
+}
 const OUT_DIR = path.join(SCRIPT_DIR, 'out')
 
 const PROJECT_ID = process.env.SANITY_PROJECT_ID || 'cv53e819'
@@ -646,9 +667,45 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
     // Weak refs so the draft validates before the member items are published.
     items: items.map((i) => ({ _type: 'reference', _key: i.id, _ref: `item-${i.id}`, _weak: true })),
   }
+  // Pieces this collection used to have but no longer does — a re-prep that
+  // splits differently leaves the old cut-outs behind, and the app lists EVERY
+  // published item (not just referenced ones), so they'd still show in the shop.
+  let stale = []
+  try {
+    // Look at both the draft and the published copy: a collection first
+    // ingested as drafts and later re-run with --publish (or the reverse)
+    // still needs its old pieces found.
+    const bare = collectionDocId.replace(/^drafts\./, '')
+    const prev = await sanity.fetch('array::unique(*[_id in $ids].items[]._ref)', {
+      ids: [bare, `drafts.${bare}`],
+    })
+    const keep = new Set(items.map((i) => `item-${i.id}`))
+    stale = (prev ?? []).filter((ref) => ref && !keep.has(ref))
+  } catch {
+    /* no previous version — nothing to prune */
+  }
+
   await sanity.createOrReplace(doc)
   console.log(`  ↳ ${doc._id}  ${items.length} pieces · $${price} · ${palette}`)
   console.log(`     product: ${productId}`)
+
+  if (stale.length) {
+    if (PRUNE) {
+      // Delete both the published doc and any draft of it.
+      const tx = stale.reduce((t, ref) => t.delete(ref).delete(`drafts.${ref}`), sanity.transaction())
+      try {
+        await tx.commit()
+        console.log(`     pruned ${stale.length} piece(s) this collection no longer contains`)
+      } catch (e) {
+        console.warn(`     ⚠ prune failed (${e?.message ?? e}) — the old pieces are still in Sanity`)
+      }
+    } else {
+      console.log(
+        `     ⚠ ${stale.length} old piece(s) from a previous run are no longer in this collection,\n` +
+          `       but stay published and WILL still appear in the app. Re-run with --prune to delete them.`,
+      )
+    }
+  }
 }
 
 /**
@@ -716,7 +773,19 @@ async function listCollectionFolders() {
     if (e.name.startsWith('_')) continue // _originals, _done, _live, _not_using, …
     out.push({ dir: path.join(INPUT_DIR, e.name), name: e.name, free: false })
   }
-  return out
+  // Everything downstream (the batch pre-pass included) walks this list, so
+  // --only narrows the whole run from here.
+  return ONLY.length ? out.filter((c) => matchesOnly(c.name)) : out
+}
+
+/** Every collection folder name, ignoring --only — used for a helpful error. */
+async function listAllCollectionNames() {
+  const saved = ONLY.splice(0, ONLY.length)
+  try {
+    return (await listCollectionFolders()).map((c) => c.name)
+  } finally {
+    ONLY.push(...saved)
+  }
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -734,7 +803,7 @@ async function runBatchPrepass(folders, brandVoice) {
   // collections under _free/), plus loose standalone items in _free/ itself.
   const targets = [
     ...(await listCollectionFolders()),
-    { dir: path.join(INPUT_DIR, '_free'), name: '_free', free: true, loose: true },
+    ...(ONLY.length ? [] : [{ dir: path.join(INPUT_DIR, '_free'), name: '_free', free: true, loose: true }]),
   ]
   for (const target of targets) {
     const dir = target.dir
@@ -853,14 +922,26 @@ async function main() {
       `${BATCH ? ' · BATCH metadata' : ''} · model: ${MODEL}\n`,
   )
 
+  const collections = await listCollectionFolders()
+  if (ONLY.length) {
+    if (collections.length === 0) {
+      console.error(
+        `No collection folder in ${INPUT_DIR} matches --only ${ONLY.join(', ')}.\n` +
+          `Available: ${(await listAllCollectionNames()).join(', ') || '(none)'}`,
+      )
+      process.exit(1)
+    }
+    console.log(`Only: ${collections.map((c) => c.name).join(', ')}\n`)
+  }
+
   // Batch mode: pre-generate all new metadata cheaply, then the loop runs cache-only.
   if (BATCH) await runBatchPrepass(folders, brandVoice)
 
-  for (const c of await listCollectionFolders()) {
+  for (const c of collections) {
     await processCollectionFolder(c.dir, c.name, brandVoice, { forceFree: c.free })
   }
   // Loose images sitting directly in _free/ (standalone free items).
-  await processFreeFolder(path.join(INPUT_DIR, '_free'), brandVoice)
+  if (!ONLY.length) await processFreeFolder(path.join(INPUT_DIR, '_free'), brandVoice)
 
   await saveCache()
   console.log(`\n✓ Done.${DRY_RUN ? ` Review metadata in ${OUT_DIR}` : ' Review and publish the drafts in Sanity Studio.'}`)

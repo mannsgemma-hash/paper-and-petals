@@ -63,6 +63,27 @@ const OPTS = {
   forceBg: argv.includes('--remove-bg'),
   noBg: argv.includes('--no-bg'),
 }
+// --only <name> limits the run to matching folders, so re-prepping one
+// collection (or one category inside it) doesn't touch anything else.
+// Repeatable and comma-separated; matching ignores case, spaces, punctuation
+// and ordering prefixes, and a partial name matches. "Theme/Category" works
+// because the whole folder path is matched, not just the theme.
+const ONLY = argv
+  .map((a, i) => (a === '--only' ? argv[i + 1] : null))
+  .filter(Boolean)
+  .flatMap((v) => v.split(','))
+  .map((v) => v.trim())
+  .filter(Boolean)
+const loosen = (s) => s.toLowerCase().replace(/(^|[/\s])\d+[_\-. ]+/g, '$1').replace(/[^a-z0-9]/g, '')
+const matchesOnly = (label) => {
+  if (ONLY.length === 0) return true
+  const l = loosen(label)
+  return ONLY.some((o) => {
+    const q = loosen(o)
+    return q.length > 0 && l.includes(q)
+  })
+}
+
 const UNDO = argv.includes('--undo')
 const YES = argv.includes('--yes')
 
@@ -171,6 +192,9 @@ async function undoPrep() {
   const plan = []
   for (const abs of stashed) {
     const rel = path.relative(ORIGINALS_DIR, abs)
+    // --only narrows an undo the same way it narrows a prep, so one collection
+    // can be re-cut without putting the whole catalogue back.
+    if (!matchesOnly(path.dirname(rel))) continue
     const destDir = path.join(INPUT_DIR, path.dirname(rel))
     // "name (2).png" came from a repeat prep of "name.png".
     const filename = path.basename(rel).replace(/ \(\d+\)(\.[^.]+)$/, '$1')
@@ -194,8 +218,13 @@ async function undoPrep() {
     plan.push({ abs, destDir, filename, derived })
   }
 
+  if (plan.length === 0) {
+    console.log(`Nothing stashed matches --only ${ONLY.join(', ')} — nothing to undo.`)
+    return
+  }
+
   const totalDerived = plan.reduce((n, p) => n + p.derived.length, 0)
-  console.log(`Undo prep under ${INPUT_DIR}`)
+  console.log(`Undo prep under ${INPUT_DIR}${ONLY.length ? ` · only ${ONLY.join(', ')}` : ''}`)
   for (const p of plan) {
     console.log(`  ↩ ${path.relative(INPUT_DIR, path.join(p.destDir, p.filename))}`)
     if (p.derived.length) console.log(`      removes ${p.derived.length}: ${p.derived.slice(0, 4).join(', ')}${p.derived.length > 4 ? ', …' : ''}`)
@@ -221,11 +250,14 @@ async function undoPrep() {
       console.warn(`  ⚠ ${p.filename}: ${e?.message ?? e}`)
     }
   }
-  // Clean up the now-empty stash tree (best effort).
-  try {
-    await fs.rm(ORIGINALS_DIR, { recursive: true, force: true })
-  } catch {
-    /* leave it */
+  // Clean up the now-empty stash tree (best effort). Under --only other
+  // collections' originals are still in there, so leave it alone.
+  if (!ONLY.length) {
+    try {
+      await fs.rm(ORIGINALS_DIR, { recursive: true, force: true })
+    } catch {
+      /* leave it */
+    }
   }
   console.log(`\n✓ Restored ${restored} original(s), deleted ${deleted} derived file(s).`)
   console.log('  Re-run `npm run prep` with your new settings.')
@@ -304,8 +336,18 @@ async function main() {
     }
   }
 
-  for (const t of targets) add(await prepFolder(t.dir, t.label))
-  scanned = targets.length
+  const picked = ONLY.length ? targets.filter((t) => matchesOnly(t.label)) : targets
+  if (ONLY.length && picked.length === 0) {
+    console.error(
+      `Nothing under ${INPUT_DIR} matches --only ${ONLY.join(', ')}.\n` +
+        `Folders scanned: ${targets.map((t) => t.label).join(', ')}`,
+    )
+    process.exit(1)
+  }
+  if (ONLY.length) console.log(`Only: ${picked.map((t) => t.label).join(', ')}\n`)
+
+  for (const t of picked) add(await prepFolder(t.dir, t.label))
+  scanned = picked.length
 
   if (totals.split + totals.cut === 0) {
     console.log(`\nNothing tagged in the ${scanned} folder(s) scanned.`)
