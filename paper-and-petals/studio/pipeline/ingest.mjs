@@ -52,19 +52,36 @@ const CATEGORIES = [
 // *pins* the category instead of leaving it to the model — exact, and it saves
 // the model from guessing. Accepts the app's labels, "and"/"&", or the bare id.
 const CATEGORY_FOLDERS = {
-  papers: 'papers', 'papers and backgrounds': 'papers', 'papers & backgrounds': 'papers', backgrounds: 'papers',
+  papers: 'papers', 'papers and backgrounds': 'papers', backgrounds: 'papers',
   stickers: 'stickers',
-  tape: 'tape', 'tape and fasteners': 'tape', 'tape & fasteners': 'tape', fasteners: 'tape',
+  tape: 'tape', 'tape and fasteners': 'tape', fasteners: 'tape',
   ephemera: 'ephemera',
-  florals: 'florals', 'florals and botanicals': 'florals', 'florals & botanicals': 'florals', botanicals: 'florals',
-  frames: 'frames', 'frames and containers': 'frames', 'frames & containers': 'frames', containers: 'frames',
-  type: 'type', typography: 'type', 'writing and typography': 'type', 'writing & typography': 'type',
-  paint: 'paint', 'paint and artistic': 'paint', 'paint & artistic': 'paint', artistic: 'paint',
-  fabric: 'fabric', sewing: 'fabric', 'sewing and fabric': 'fabric', 'sewing & fabric': 'fabric',
-  photos: 'photos', 'photos and memory keeping': 'photos', 'photos & memory keeping': 'photos', 'memory keeping': 'photos',
+  florals: 'florals', 'florals and botanicals': 'florals', botanicals: 'florals',
+  frames: 'frames', 'frames and containers': 'frames', containers: 'frames',
+  type: 'type', typography: 'type', 'writing and typography': 'type', writing: 'type',
+  paint: 'paint', 'paint and artistic': 'paint', artistic: 'paint',
+  fabric: 'fabric', sewing: 'fabric', 'sewing and fabric': 'fabric',
+  photos: 'photos', 'photos and memory keeping': 'photos', 'memory keeping': 'photos',
   details: 'details', 'decorative details': 'details', decorative: 'details',
 }
-const categoryForFolder = (name) => CATEGORY_FOLDERS[name.trim().toLowerCase()] ?? null
+
+/**
+ * Fold a folder name to the form the table is keyed in, so the same category
+ * survives however the generator spells it. Handles an ordering prefix
+ * ("01_Papers", "10. Photos"), underscores/hyphens for spaces, and "&" for
+ * "and" — i.e. "06_Tape_And_Fasteners" → "tape and fasteners".
+ */
+function normaliseFolderName(name) {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/^\d+\s*[._)\-]*\s*/, '') // leading "01_", "10. ", "3 - "
+    .replace(/&/g, ' and ')
+    .replace(/[_\-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+const categoryForFolder = (name) => CATEGORY_FOLDERS[normaliseFolderName(name)] ?? null
 const TONES = ['sage', 'forest', 'rose', 'mauve', 'blue', 'amber', 'cream', 'oxblood', 'gold']
 // Resolution caps. The display asset is what you see (and enlarge) in the
 // editor, so too small a cap looks soft on a big iPad canvas; the print asset

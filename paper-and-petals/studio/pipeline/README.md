@@ -94,6 +94,9 @@ categories, with `and`/`&`/bare-id variants all accepted):
 | Photos and Memory Keeping | `photos` |
 | Decorative Details | `details` |
 
+Names are matched loosely: an ordering prefix, underscores and `&` all fold away,
+so `01_Papers`, `06_Tape_And_Fasteners` and `Photos & Memory Keeping` all match.
+
 A subfolder that *isn't* a category still gets ingested — it just warns and lets
 the model choose per item. Only one level deep is scanned; `_originals`, `_done`
 and dot-folders are skipped. `npm run prep` walks the same subfolders.

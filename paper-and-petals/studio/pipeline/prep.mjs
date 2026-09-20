@@ -24,7 +24,11 @@
 //                    if soft edges glue neighbouring items together)
 //   --min-size <px>  ignore blobs smaller than this (default 28)
 //   --pad <px>       transparent padding around pieces (default 12)
-//   --max-edge <px>  working resolution cap (default 2400)
+//   --max-edge <px>  working resolution cap (default 4000) — sets the detail
+//                    the cut pieces keep forever
+//   --no-bg          never run background removal (art already has alpha)
+//   --remove-bg      force background removal even on transparent art
+//   --undo [--yes]   restore originals + delete the pieces they made
 
 import fs from 'node:fs/promises'
 import path from 'node:path'
@@ -54,6 +58,10 @@ const OPTS = {
   // look soft in the editor. gap/min-size/pad are scaled to a 2400 baseline, so
   // raising this keeps detail WITHOUT changing how items group.
   maxEdge: Number(getOpt('--max-edge', 4000)),
+  // Background removal. Art that already has alpha (the usual case now that
+  // removal happens upstream) needs none, so _cut only forces it when asked.
+  forceBg: argv.includes('--remove-bg'),
+  noBg: argv.includes('--no-bg'),
 }
 const UNDO = argv.includes('--undo')
 const YES = argv.includes('--yes')
@@ -122,7 +130,11 @@ async function prepFolder(dir, folderName) {
         stats.split++
         stats.pieces += pieces.length
       } else {
-        const png = await cutoutPng(buf, { forceBg: true, maxEdge: OPTS.maxEdge })
+        const png = await cutoutPng(buf, {
+          forceBg: OPTS.forceBg,
+          noBg: OPTS.noBg,
+          maxEdge: OPTS.maxEdge,
+        })
         await fs.writeFile(path.join(dir, `${base}.png`), png)
         console.log(`  ✂ ${filename} → ${base}.png`)
         stats.cut++
@@ -245,7 +257,7 @@ async function main() {
 
   console.log(`Prepping tagged art under ${INPUT_DIR}`)
   console.log(
-    `(${OPTS.gapPx != null ? `gap-px ${OPTS.gapPx} (absolute)` : `gap ${OPTS.gap}`} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize} · max-edge ${OPTS.maxEdge})`,
+    `(${OPTS.gapPx != null ? `gap-px ${OPTS.gapPx} (absolute)` : `gap ${OPTS.gap}`} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize} · max-edge ${OPTS.maxEdge}${OPTS.noBg ? ' · no-bg' : OPTS.forceBg ? ' · remove-bg' : ''})`,
   )
 
   const totals = { split: 0, cut: 0, pieces: 0 }
