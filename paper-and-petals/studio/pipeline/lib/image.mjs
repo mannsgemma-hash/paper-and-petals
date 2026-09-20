@@ -212,14 +212,16 @@ const GAP_BASELINE = 2400
 
 export async function splitToPieces(
   buf,
-  { gap = 4, alpha = 16, minSize = 28, pad = 12, maxEdge = 2400, forceBg = false, noBg = false } = {},
+  { gap = 4, gapPx = null, alpha = 16, minSize = 28, pad = 12, maxEdge = 2400, forceBg = false, noBg = false } = {},
 ) {
   const { data, info } = await (await toTransparent(buf, { forceBg, noBg, maxEdge }))
     .raw()
     .toBuffer({ resolveWithObject: true })
   const { width: w, height: h, channels } = info
   const scale = Math.max(w, h) / GAP_BASELINE
-  const effGap = Math.max(0, Math.round(gap * scale))
+  // --gap-px sets the bridge distance in real working pixels (what the run
+  // prints), skipping the baseline scaling — handy when dialling a sheet in.
+  const effGap = gapPx != null ? Math.max(0, Math.round(gapPx)) : Math.max(0, Math.round(gap * scale))
   const effMinSize = Math.max(1, Math.round(minSize * scale))
   const effPad = Math.max(0, Math.round(pad * scale))
   const mask = new Uint8Array(w * h)

@@ -43,6 +43,9 @@ const INPUT_DIR = path.resolve(getOpt('--input', path.join(SCRIPT_DIR, '..', 'in
 const ORIGINALS_DIR = path.join(INPUT_DIR, '_originals')
 const OPTS = {
   gap: Number(getOpt('--gap', 0)),
+  // Absolute bridge distance in working pixels — exactly the "gap≈Npx" a run
+  // prints. Overrides --gap, so you can dial a sheet in without the arithmetic.
+  gapPx: argv.includes('--gap-px') ? Number(getOpt('--gap-px', 0)) : null,
   alpha: Number(getOpt('--alpha', 16)),
   minSize: Number(getOpt('--min-size', 28)),
   pad: Number(getOpt('--pad', 12)),
@@ -241,7 +244,9 @@ async function main() {
   }
 
   console.log(`Prepping tagged art under ${INPUT_DIR}`)
-  console.log(`(gap ${OPTS.gap} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize})`)
+  console.log(
+    `(${OPTS.gapPx != null ? `gap-px ${OPTS.gapPx} (absolute)` : `gap ${OPTS.gap}`} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize} · max-edge ${OPTS.maxEdge})`,
+  )
 
   const totals = { split: 0, cut: 0, pieces: 0 }
   const add = (s) => {

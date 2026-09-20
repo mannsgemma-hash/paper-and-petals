@@ -144,6 +144,14 @@ see on the page:
 | Fewer pieces than items (neighbours merged) | lower `--gap`, or raise `--alpha` to ~70 |
 | Stray specks becoming pieces | raise `--min-size` |
 
+`--gap` is measured against a 2400px baseline and scaled to the sheet, so each
+run prints what it actually used (`gap≈15px` on a 3000px sheet from `--gap 12`).
+To set that number directly instead, use `--gap-px`:
+
+```bash
+npm run prep -- --gap-px 13     # exactly 13 working pixels, no scaling
+```
+
 **`--max-edge`** (default `4000`) is the resolution the pieces are cut at, so it
 sets the detail the art keeps **forever**. A 6-up page capped at 2400px yields
 only ~800px pieces, which look soft in the editor. Raise it to match your source
