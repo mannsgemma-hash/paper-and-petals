@@ -804,6 +804,8 @@ interface PlacedItemViewProps {
   onSelect: (id: string) => void;
   onMoveEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, w: number, h: number) => void;
+  /** Text grew/shrank: box height + compensating scale so the letters stay put. */
+  onTextFit: (id: string, h: number, textScale: number) => void;
   onRotateEnd: (id: string, rotate: number) => void;
   onRequestEdit: (id: string) => void;
 }
@@ -815,6 +817,7 @@ function PlacedItemView({
   onSelect,
   onMoveEnd,
   onResizeEnd,
+  onTextFit,
   onRotateEnd,
   onRequestEdit,
 }: PlacedItemViewProps) {
@@ -901,6 +904,7 @@ function PlacedItemView({
     .onBegin(() => {
       startW.value = itemW.value;
       startH.value = itemH.value;
+      runOnJS(setGestureBusy)(true);
       runOnJS(onSelect)(item.id);
     })
     .onUpdate((e) => {
@@ -911,6 +915,10 @@ function PlacedItemView({
     })
     .onEnd(() => {
       runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
+      runOnJS(fitAfterGesture)(itemH.value);
+    })
+    .onFinalize(() => {
+      runOnJS(setGestureBusy)(false);
     });
 
   const rotationGesture = Gesture.Rotation()
@@ -946,6 +954,7 @@ function PlacedItemView({
       .onBegin(() => {
         startW.value = itemW.value;
         startH.value = itemH.value;
+        runOnJS(setGestureBusy)(true);
         const rad = (rot.value * Math.PI) / 180;
         const lx = (hx * itemW.value) / 2;
         const ly = (hy * itemH.value) / 2;
@@ -977,6 +986,10 @@ function PlacedItemView({
       })
       .onEnd(() => {
         runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
+        runOnJS(fitAfterGesture)(itemH.value);
+      })
+      .onFinalize(() => {
+        runOnJS(setGestureBusy)(false);
       });
   }
 
@@ -1023,6 +1036,48 @@ function PlacedItemView({
     fontSize: Math.max(8, itemH.value * TEXT_FILL * textScale),
   }));
 
+  /**
+   * Grow (or shrink) a text box to fit what's actually in it.
+   *
+   * The font is derived from the box height (F = h · TEXT_FILL · textScale), so
+   * a taller box would mean bigger letters. textScale absorbs the change
+   * instead — set to h·textScale / h' it leaves F exactly where it was, and the
+   * pair is idempotent, so the re-measure that follows an update settles rather
+   * than looping.
+   *
+   * The target keeps the breathing room a single line has today: one line sits
+   * in a box F / TEXT_FILL tall while the line itself is only `lineH`, so the
+   * difference is the padding to carry over to n lines. Both heights are
+   * measured rather than assumed, since line height varies by font.
+   */
+  const textMetrics = useRef<{ contentH: number; lineH: number; atH: number } | null>(null);
+  const gestureBusy = useRef(false);
+  const setGestureBusy = (v: boolean) => {
+    gestureBusy.current = v;
+  };
+
+  function fitTextBox(contentH: number, lineH: number, h: number) {
+    if (item.kind !== 'text' || h <= 0 || contentH <= 0 || lineH <= 0) return;
+    const font = h * TEXT_FILL * textScale;
+    const pad = font / TEXT_FILL - lineH; // what one line gets above + below
+    const target = Math.max(MIN_ITEM_SIZE, Math.min(contentH + pad, MAX_ITEM_SIZE));
+    if (Math.abs(target - h) < 1) return;
+    onTextFit(item.id, target, (h * textScale) / target);
+  }
+
+  /**
+   * After a resize gesture the box is committed but the text hasn't been
+   * re-measured (the font stopped changing, so no new layout pass fires).
+   * The last measurement still applies, scaled by how much the box grew.
+   */
+  const fitAfterGesture = (h: number) => {
+    gestureBusy.current = false;
+    const m = textMetrics.current;
+    if (!m || m.atH <= 0) return;
+    const f = h / m.atH;
+    fitTextBox(m.contentH * f, m.lineH * f, h);
+  };
+
   const toneKey = item.tone as keyof typeof SHOP_TONES;
   const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
   const isText = item.kind === 'text';
@@ -1063,6 +1118,17 @@ function PlacedItemView({
                   },
                   textAnimStyle,
                 ]}
+                onTextLayout={(e) => {
+                  const lines = e.nativeEvent.lines ?? [];
+                  if (lines.length === 0) return;
+                  const contentH = lines.reduce((t, l) => t + l.height, 0);
+                  const lineH = contentH / lines.length;
+                  textMetrics.current = { contentH, lineH, atH: item.h };
+                  // Mid-gesture the font is scaling live while item.h is still
+                  // the old value, so the maths would be off — the gesture's
+                  // own end handler refits from this measurement instead.
+                  if (!gestureBusy.current) fitTextBox(contentH, lineH, item.h);
+                }}
               >
                 {item.text || ' '}
               </Animated.Text>
@@ -1617,6 +1683,7 @@ function SpreadHalf({ pages, page, side }: { pages: PageState[]; page: number; s
           onSelect={noop}
           onMoveEnd={noop}
           onResizeEnd={noop}
+          onTextFit={noop}
           onRotateEnd={noop}
           onRequestEdit={noop}
         />
@@ -1676,6 +1743,8 @@ interface SpreadViewProps {
   onSelect: (id: string) => void;
   onMoveEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, w: number, h: number) => void;
+  /** Text grew/shrank: box height + compensating scale so the letters stay put. */
+  onTextFit: (id: string, h: number, textScale: number) => void;
   onRotateEnd: (id: string, rotate: number) => void;
   onRequestEdit: (id: string) => void;
 }
@@ -1689,6 +1758,7 @@ function SpreadView({
   onSelect,
   onMoveEnd,
   onResizeEnd,
+  onTextFit,
   onRotateEnd,
   onRequestEdit,
 }: SpreadViewProps) {
@@ -1729,6 +1799,7 @@ function SpreadView({
             onSelect={onSelect}
             onMoveEnd={onMoveEnd}
             onResizeEnd={onResizeEnd}
+            onTextFit={onTextFit}
             onRotateEnd={onRotateEnd}
             onRequestEdit={onRequestEdit}
           />
@@ -2163,6 +2234,8 @@ export default function EditorScreen() {
   const [penColorPickerOpen, setPenColorPickerOpen] = useState(false);
   const [penWidth, setPenWidth] = useState(4);
   const [layerDrag, setLayerDrag] = useState<{ id: string; from: number; to: number; dy: number } | null>(null);
+  /** Set when a text refit changed `pages`, so the save uses the merged result. */
+  const fitDirty = useRef(false);
   const penTrackW = useRef(0);
   const penTrackX = useRef(0);
   const penSizeFromX = useCallback((x: number) => {
@@ -2277,6 +2350,14 @@ export default function EditorScreen() {
     };
   }, [journalId]);
 
+  // A refit changes `pages` through a functional update, so the save has to
+  // run off the committed value rather than whatever the handler could see.
+  useEffect(() => {
+    if (!fitDirty.current) return;
+    fitDirty.current = false;
+    scheduleSave(pages);
+  }, [pages]);
+
   function scheduleSave(pgs: PageState[]) {
     if (!loadedRef.current) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
@@ -2376,6 +2457,29 @@ export default function EditorScreen() {
     );
     pushHistory(newPages);
     scheduleSave(newPages);
+  }
+
+  /**
+   * A text box reporting the height it needs. This is derived layout, not an
+   * edit the user made, so it saves but never adds an undo step — otherwise
+   * simply opening a journal would fill the history with refits.
+   */
+  function handleTextFit(id: string, h: number, textScale: number) {
+    // Functional update: several text boxes can report at once (opening a
+    // journal measures them all), and a stale closure would let the last one
+    // wipe out the others' fits.
+    setPages((prev) => {
+      const pageIdx = activePage - 1;
+      const current = prev[pageIdx]?.items.find((it) => it.id === id);
+      if (!current) return prev;
+      if (Math.abs(current.h - h) < 1 && (current.textScale ?? 1) === textScale) return prev;
+      fitDirty.current = true;
+      return prev.map((p, i) =>
+        i === pageIdx
+          ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, h, textScale } : it)) }
+          : p,
+      );
+    });
   }
 
   function handleRotateEnd(id: string, rotate: number) {
@@ -3178,6 +3282,7 @@ export default function EditorScreen() {
                         onSelect={setSelectedId}
                         onMoveEnd={handleMoveEnd}
                         onResizeEnd={handleResizeEnd}
+                        onTextFit={handleTextFit}
                         onRotateEnd={handleRotateEnd}
                         onRequestEdit={(id) => { setSelectedId(id); setTextEditorId(id); }}
                       />
