@@ -261,34 +261,57 @@ async function main() {
   )
 
   const totals = { split: 0, cut: 0, pieces: 0 }
+  let scanned = 0
   const add = (s) => {
     totals.split += s.split
     totals.cut += s.cut
     totals.pieces += s.pieces
   }
-  for (const folder of folders) {
-    // Collections + _free are prepped; _originals/_done/dot-folders are not.
-    if (folder.name.startsWith('.') || (folder.name.startsWith('_') && folder.name !== '_free')) continue
-    const dir = path.join(INPUT_DIR, folder.name)
-    add(await prepFolder(dir, folder.name))
-
-    // A collection may group its art into category subfolders ("Papers",
-    // "Stickers", …) — prep those too, in place, same as the root.
-    let subs = []
+  // Walk exactly what ingest treats as content, so nothing tagged is missed:
+  //   incoming/<Theme>/ + its category subfolders
+  //   incoming/_free/ (loose items)
+  //   incoming/_free/<Theme>/ + its category subfolders   ← free collections
+  // Everything else beginning with "_" or "." is a staging folder and skipped.
+  const subfoldersOf = async (dir) => {
     try {
-      subs = (await fs.readdir(dir, { withFileTypes: true })).filter(
+      return (await fs.readdir(dir, { withFileTypes: true })).filter(
         (e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'),
       )
     } catch {
-      /* no subfolders */
-    }
-    for (const sub of subs) {
-      add(await prepFolder(path.join(dir, sub.name), `${folder.name} / ${sub.name}`))
+      return []
     }
   }
 
+  const targets = []
+  for (const folder of folders) {
+    if (folder.name.startsWith('.')) continue
+    const dir = path.join(INPUT_DIR, folder.name)
+    if (folder.name === '_free') {
+      targets.push({ dir, label: '_free' })
+      for (const theme of await subfoldersOf(dir)) {
+        const themeDir = path.join(dir, theme.name)
+        targets.push({ dir: themeDir, label: `_free / ${theme.name}` })
+        for (const cat of await subfoldersOf(themeDir)) {
+          targets.push({ dir: path.join(themeDir, cat.name), label: `_free / ${theme.name} / ${cat.name}` })
+        }
+      }
+      continue
+    }
+    if (folder.name.startsWith('_')) continue // _originals, _live, _not_using, …
+    targets.push({ dir, label: folder.name })
+    for (const cat of await subfoldersOf(dir)) {
+      targets.push({ dir: path.join(dir, cat.name), label: `${folder.name} / ${cat.name}` })
+    }
+  }
+
+  for (const t of targets) add(await prepFolder(t.dir, t.label))
+  scanned = targets.length
+
   if (totals.split + totals.cut === 0) {
-    console.log('\nNothing tagged — name sheets "…_split.png" and cut-outs "…_cut.png".')
+    console.log(`\nNothing tagged in the ${scanned} folder(s) scanned.`)
+    console.log('  Sheets are "…_split.png" / "…-split.png", cut-outs "…_cut.png" / "…-cut.png".')
+    console.log('  Already prepped? The originals move to _originals/ — that is the normal')
+    console.log('  end state. Use `npm run prep -- --undo` to put them back and re-split.')
   } else {
     console.log(
       `\n✓ Prepped ${totals.split} sheet(s) + ${totals.cut} cut-out(s) → ${totals.pieces} piece(s).`,
