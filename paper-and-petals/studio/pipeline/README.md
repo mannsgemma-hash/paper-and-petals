@@ -120,7 +120,38 @@ npm run ingest -- --model claude-opus-4-8   # higher-quality metadata (default: 
 npm run ingest -- --remove-bg        # force background removal even on transparent PNGs
 npm run ingest -- --no-bg            # never remove background
 npm run ingest -- --publish          # write live docs instead of drafts (skip review)
+npm run ingest -- --only "Victorian Rose"   # just this collection (see below)
 ```
+
+### Re-doing one collection
+
+Fixed one collection's art after an ingest? `--only` narrows the run to the
+folders that match, so you don't re-walk the whole catalogue. It's repeatable,
+takes comma-separated lists, and matching is loose — case, spaces, punctuation
+and `01_` prefixes all fold away, and a partial name matches:
+
+```bash
+npm run prep   -- --only "Victorian Rose"            # re-cut just that collection
+npm run prep   -- --only "Victorian Rose/Stickers"   # or just one category in it
+npm run prep   -- --undo --yes --only "Victorian Rose"
+npm run ingest -- --only "Victorian Rose" --publish
+```
+
+A typo matches nothing, and both tools then stop and list what *is* there
+rather than silently doing nothing.
+
+**Re-ingesting does not remove the old pieces.** The app lists every published
+item, not just the ones a collection references, so cut-outs from the previous
+prep stay visible in the shop even once the collection points elsewhere. Ingest
+warns when it spots them; `--prune` deletes them (both the published doc and any
+draft of it):
+
+```bash
+npm run ingest -- --only "Victorian Rose" --publish --prune
+```
+
+Nothing else is touched — only pieces that *this* collection used to contain and
+no longer does.
 
 ## Tag-driven prep (`prep`) — the easy way
 
