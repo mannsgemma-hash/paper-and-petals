@@ -1,7 +1,8 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   Image,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -192,8 +193,15 @@ const BRUSHES: { key: string; label: string }[] = [
   { key: 'spray', label: 'Spray' },
 ];
 
-/** Base stroke widths (spread px) offered by the pen size picker. */
-const PEN_WIDTHS = [2, 4, 7, 12];
+/** Pen size range (px). The pen is fineliner-only; size is freely chosen. */
+/** Height of one layers-panel row — the step size when dragging to reorder. */
+const LAYER_ROW_H = 49;
+
+/** Starter templates need more work — off until a later release. */
+const TEMPLATES_ENABLED = false;
+
+const PEN_MIN = 1;
+const PEN_MAX = 40;
 
 // ─── Shapes ─────────────────────────────────────────────────────────────────
 // Paths are authored in a 0..100 unit box and rendered with
@@ -2154,7 +2162,26 @@ export default function EditorScreen() {
   const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
   const [penColorPickerOpen, setPenColorPickerOpen] = useState(false);
   const [penWidth, setPenWidth] = useState(4);
-  const [penBrush, setPenBrush] = useState('fine');
+  const [layerDrag, setLayerDrag] = useState<{ id: string; from: number; to: number; dy: number } | null>(null);
+  const penTrackW = useRef(0);
+  const penTrackX = useRef(0);
+  const penSizeFromX = useCallback((x: number) => {
+    const w = penTrackW.current || 1;
+    const t = Math.max(0, Math.min(1, x / w));
+    setPenWidth(Math.round(PEN_MIN + t * (PEN_MAX - PEN_MIN)));
+  }, []);
+  const penSizePan = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onMoveShouldSetPanResponder: () => true,
+        onPanResponderGrant: (e) => penSizeFromX(e.nativeEvent.locationX),
+        onPanResponderMove: (e, g) => penSizeFromX(g.x0 - penTrackX.current + g.dx),
+        onPanResponderTerminationRequest: () => false,
+      }),
+    [penSizeFromX],
+  );
+  const penBrush = 'fine'; // fineliner only — other BRUSHES remain for legacy doodles
   const spreadShotRef = useRef<View>(null);
   const [history, setHistory] = useState<PageState[][]>([]);
   const [historyIdx, setHistoryIdx] = useState(-1);
@@ -2395,6 +2422,27 @@ export default function EditorScreen() {
               it.id === id ? { ...it, z: below.z } : it.id === below.id ? { ...it, z: item.z } : it,
             ),
           }
+        : p,
+    );
+    pushHistory(newPages);
+    scheduleSave(newPages);
+  }
+
+  /**
+   * Apply a whole new stacking order. `orderedIds` is TOP-FIRST, as the layers
+   * panel shows it; z is reassigned so the last entry sits at the bottom.
+   */
+  function reorderLayers(orderedIds: string[]) {
+    const pageItems = pages[activePage - 1].items;
+    const zPool = pageItems.map((it) => it.z).sort((a, b) => a - b);
+    const zFor = new Map<string, number>();
+    orderedIds.forEach((id, i) => {
+      // top-first list ↔ highest z first
+      zFor.set(id, zPool[zPool.length - 1 - i] ?? i);
+    });
+    const newPages = pages.map((p, i) =>
+      i === activePage - 1
+        ? { ...p, items: p.items.map((it) => (zFor.has(it.id) ? { ...it, z: zFor.get(it.id)! } : it)) }
         : p,
     );
     pushHistory(newPages);
@@ -3231,68 +3279,61 @@ export default function EditorScreen() {
               <Feather name="edit-3" size={20} color={penMode ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
-            {/* Starter templates */}
-            <Pressable style={[styles.miniFab, { top: 234 }]} onPress={() => setTemplatePickerOpen(true)}>
-              <Feather name="grid" size={20} color={theme.palette.forest} />
-            </Pressable>
+            {/* Starter templates — hidden until the template set is finished
+                (TEMPLATES_ENABLED); the picker and apply logic stay put. */}
+            {TEMPLATES_ENABLED && (
+              <Pressable style={[styles.miniFab, { top: 234 }]} onPress={() => setTemplatePickerOpen(true)}>
+                <Feather name="grid" size={20} color={theme.palette.forest} />
+              </Pressable>
+            )}
 
             {/* Ambient soundscapes */}
             <Pressable
-              style={[styles.miniFab, { top: 284 }, showSoundPanel && styles.miniFabActive]}
+              style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 284 : 234 }, showSoundPanel && styles.miniFabActive]}
               onPress={() => setShowSoundPanel((v) => !v)}
             >
               <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
             </Pressable>
 
             {/* Shapes */}
-            <Pressable style={[styles.miniFab, { top: 334 }]} onPress={() => setShapePickerOpen(true)}>
+            <Pressable style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 334 : 284 }]} onPress={() => setShapePickerOpen(true)}>
               <Feather name="hexagon" size={20} color={theme.palette.forest} />
             </Pressable>
 
             {/* Pen options — brush, size, colour */}
             {penMode && (
               <View style={styles.penPanel}>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.penBrushRow}
-                >
-                  {BRUSHES.map((b) => {
-                    const active = b.key === penBrush;
-                    return (
-                      <Pressable
-                        key={b.key}
-                        style={[styles.penBrushChip, active && styles.penBrushChipActive]}
-                        onPress={() => setPenBrush(b.key)}
-                      >
-                        <Text style={[styles.penBrushLabel, active && styles.penBrushLabelActive]}>
-                          {b.label}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </ScrollView>
+                {/* Size: drag the track or type an exact px value. */}
+                <View style={styles.penSizeRow}>
+                  <Text style={styles.penSizeLabel}>SIZE</Text>
+                  <View
+                    style={styles.penSizeTrack}
+                    onLayout={(e) => {
+                      penTrackW.current = e.nativeEvent.layout.width;
+                      e.currentTarget.measure?.((_x, _y, _w, _h, pageX) => { penTrackX.current = pageX; });
+                    }}
+                    {...penSizePan.panHandlers}
+                  >
+                    <View style={[styles.penSizeFill, { width: `${((penWidth - PEN_MIN) / (PEN_MAX - PEN_MIN)) * 100}%` }]} />
+                    <View
+                      pointerEvents="none"
+                      style={[styles.penSizeKnob, { left: `${((penWidth - PEN_MIN) / (PEN_MAX - PEN_MIN)) * 100}%` }]}
+                    />
+                  </View>
+                  <TextInput
+                    style={styles.penSizeInput}
+                    value={String(penWidth)}
+                    onChangeText={(t) => {
+                      const n = parseInt(t.replace(/[^0-9]/g, '') || '0', 10);
+                      if (!Number.isNaN(n)) setPenWidth(Math.max(PEN_MIN, Math.min(PEN_MAX, n)));
+                    }}
+                    keyboardType="number-pad"
+                    maxLength={2}
+                    selectTextOnFocus
+                  />
+                  <Text style={styles.penSizeLabel}>PX</Text>
+                </View>
                 <View style={styles.penOptRow}>
-                  {PEN_WIDTHS.map((w, i) => {
-                    const active = w === penWidth;
-                    return (
-                      <Pressable
-                        key={w}
-                        style={[styles.penSizeBtn, active && styles.penSizeBtnActive]}
-                        onPress={() => setPenWidth(w)}
-                      >
-                        <View
-                          style={{
-                            width: 4 + i * 4,
-                            height: 4 + i * 4,
-                            borderRadius: (4 + i * 4) / 2,
-                            backgroundColor: active ? theme.palette.cream : theme.color.fg1,
-                          }}
-                        />
-                      </Pressable>
-                    );
-                  })}
-                  <View style={styles.penOptDivider} />
                   {TEXT_COLORS.map((c) => {
                     const active = c === penColor;
                     return (
@@ -3368,8 +3409,20 @@ export default function EditorScreen() {
                   <Feather name="x" size={16} color={theme.color.fg2} />
                 </Pressable>
               </View>
-              <ScrollView>
-                {[...currentPageItems].sort((a, b) => b.z - a.z).map((item, idx, arr) => {
+              <ScrollView scrollEnabled={!layerDrag}>
+                {(() => {
+                  const stacked = [...currentPageItems].sort((a, b) => b.z - a.z);
+                  // While dragging, show the list as it will end up so the gap
+                  // follows the finger.
+                  const arr = layerDrag
+                    ? (() => {
+                        const next = [...stacked];
+                        const [moved] = next.splice(layerDrag.from, 1);
+                        if (moved) next.splice(layerDrag.to, 0, moved);
+                        return next;
+                      })()
+                    : stacked;
+                  return arr.map((item, idx) => {
                   const toneKey = item.tone as keyof typeof SHOP_TONES;
                   const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
                   const isSelected = item.id === selectedId;
@@ -3383,10 +3436,51 @@ export default function EditorScreen() {
                           : item.kind === 'doodle'
                             ? 'Doodle'
                             : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
+                  const dragging = layerDrag?.id === item.id;
+                  const pan = PanResponder.create({
+                    onStartShouldSetPanResponder: () => true,
+                    onMoveShouldSetPanResponder: () => true,
+                    onPanResponderGrant: () => {
+                      const from = stacked.findIndex((it) => it.id === item.id);
+                      setLayerDrag({ id: item.id, from, to: from, dy: 0 });
+                    },
+                    onPanResponderMove: (_e, g) => {
+                      setLayerDrag((d) => {
+                        if (!d) return d;
+                        const to = Math.max(
+                          0,
+                          Math.min(stacked.length - 1, d.from + Math.round(g.dy / LAYER_ROW_H)),
+                        );
+                        return { ...d, to, dy: g.dy };
+                      });
+                    },
+                    onPanResponderTerminationRequest: () => false,
+                    onPanResponderRelease: () => {
+                      setLayerDrag((d) => {
+                        if (d && d.to !== d.from) {
+                          const ids = stacked.map((it) => it.id);
+                          const [moved] = ids.splice(d.from, 1);
+                          ids.splice(d.to, 0, moved);
+                          reorderLayers(ids);
+                        }
+                        return null;
+                      });
+                    },
+                    onPanResponderTerminate: () => setLayerDrag(null),
+                  });
                   return (
                     <Pressable
                       key={item.id}
-                      style={[styles.layerRow, isSelected && styles.layerRowActive]}
+                      style={[
+                        styles.layerRow,
+                        isSelected && styles.layerRowActive,
+                        dragging && styles.layerRowDragging,
+                        dragging && {
+                          transform: [
+                            { translateY: layerDrag!.dy - (layerDrag!.to - layerDrag!.from) * LAYER_ROW_H },
+                          ],
+                        },
+                      ]}
                       onPress={() => { setSelectedId(item.id); setLayerPanelOpen(false); }}
                     >
                       <View style={[styles.layerThumb, { backgroundColor: item.flowerAsset ? theme.palette.cream : tone.bg }]}>
@@ -3397,27 +3491,14 @@ export default function EditorScreen() {
                         )}
                       </View>
                       <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
-                      <View style={styles.layerActions}>
-                        <Pressable
-                          style={styles.layerBtn}
-                          onPress={() => handleBringForward(item.id)}
-                          disabled={idx === 0}
-                          hitSlop={4}
-                        >
-                          <Feather name="chevron-up" size={14} color={idx === 0 ? theme.color.fg4 : theme.color.fg2} />
-                        </Pressable>
-                        <Pressable
-                          style={styles.layerBtn}
-                          onPress={() => handleSendBack(item.id)}
-                          disabled={idx === arr.length - 1}
-                          hitSlop={4}
-                        >
-                          <Feather name="chevron-down" size={14} color={idx === arr.length - 1 ? theme.color.fg4 : theme.color.fg2} />
-                        </Pressable>
+                      {/* Drag handle — hold and move to restack. */}
+                      <View style={styles.layerHandle} {...pan.panHandlers}>
+                        <Feather name="menu" size={16} color={dragging ? theme.palette.forest : theme.color.fg3} />
                       </View>
                     </Pressable>
                   );
-                })}
+                  });
+                })()}
                 {currentPageItems.length === 0 && (
                   <View style={styles.layerEmpty}>
                     <Text style={styles.layerEmptyText}>No items on this page</Text>
@@ -4016,6 +4097,22 @@ const styles = StyleSheet.create({
   },
   layerRowActive: {
     backgroundColor: 'rgba(78,102,82,0.08)',
+  },
+  layerRowDragging: {
+    backgroundColor: theme.palette.cream,
+    borderRadius: 10,
+    zIndex: 10,
+    elevation: 6,
+    shadowColor: '#2b2621',
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+  },
+  layerHandle: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   layerThumb: {
     width: 32,
@@ -4763,42 +4860,10 @@ const styles = StyleSheet.create({
     gap: 8,
     maxWidth: 520,
   },
-  penBrushRow: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  penBrushChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: theme.radius.pill,
-    backgroundColor: 'rgba(255,253,246,0.14)',
-  },
-  penBrushChipActive: {
-    backgroundColor: theme.palette.forest,
-  },
-  penBrushLabel: {
-    fontFamily: theme.font.ui,
-    fontSize: 11,
-    color: theme.palette.cream,
-  },
-  penBrushLabelActive: {
-    fontWeight: '700',
-  },
   penOptRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-  },
-  penSizeBtn: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255,253,246,0.14)',
-  },
-  penSizeBtnActive: {
-    backgroundColor: theme.palette.forest,
   },
   penOptDivider: {
     width: 1,
@@ -4820,6 +4885,56 @@ const styles = StyleSheet.create({
     borderColor: theme.palette.cream,
   },
   penCustomSwatch: { alignItems: 'center', justifyContent: 'center' },
+  penSizeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  penSizeLabel: {
+    fontSize: 9,
+    letterSpacing: 1,
+    color: theme.color.fg2,
+    fontWeight: '700',
+  },
+  penSizeTrack: {
+    flex: 1,
+    height: 26,
+    justifyContent: 'center',
+    borderRadius: 13,
+    backgroundColor: 'rgba(43,38,33,0.08)',
+    overflow: 'visible',
+  },
+  penSizeFill: {
+    position: 'absolute',
+    left: 0,
+    top: 11,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: theme.palette.forest,
+  },
+  penSizeKnob: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    marginLeft: -9,
+    borderRadius: 9,
+    backgroundColor: theme.palette.cream,
+    borderWidth: 2,
+    borderColor: theme.palette.forest,
+  },
+  penSizeInput: {
+    width: 44,
+    height: 30,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(43,38,33,0.15)',
+    backgroundColor: theme.palette.cream,
+    textAlign: 'center',
+    fontSize: 13,
+    color: theme.color.fg1,
+    paddingVertical: 0,
+  },
   penHintText: {
     fontFamily: theme.font.ui,
     fontSize: 11,

@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
-  Modal,
   PanResponder,
   Pressable,
   StyleSheet,
@@ -79,19 +78,22 @@ interface Props {
  * entry, and optional quick-pick presets. Any colour the user can express.
  */
 export function ColorPicker({ value, onChange, presets = [] }: Props) {
+  // Never trust the incoming value: a missing/odd colour must not take the app
+  // down, it should just fall back to black.
+  const safeValue = typeof value === 'string' && value ? value : '#000000';
   const init = useMemo(() => {
-    const rgb = hexToRgb(value) ?? { r: 0, g: 0, b: 0 };
+    const rgb = hexToRgb(safeValue) ?? { r: 0, g: 0, b: 0 };
     return rgbToHsv(rgb.r, rgb.g, rgb.b);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [hsv, setHsv] = useState(init);
-  const [hexText, setHexText] = useState(value);
+  const [hexText, setHexText] = useState(safeValue);
 
   // `latest` is the synchronous source of truth for gesture handlers (state
   // updates lag a frame). `lastEmitted` lets the value-sync effect ignore the
   // parent echoing back a colour this picker just sent.
   const latest = useRef(hsv);
-  const lastEmitted = useRef(value.toLowerCase());
+  const lastEmitted = useRef(safeValue.toLowerCase());
   const svDims = useRef({ w: 1, h: 1 });
   const hueW = useRef(1);
   // The PanResponders are created once, so route commits through a ref to always
@@ -119,13 +121,13 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
 
   // Sync when the value is changed from outside (not by our own emission).
   useEffect(() => {
-    if (value.toLowerCase() === lastEmitted.current) return;
-    const rgb = hexToRgb(value);
+    if (safeValue.toLowerCase() === lastEmitted.current) return;
+    const rgb = hexToRgb(safeValue);
     if (!rgb) return;
-    lastEmitted.current = value.toLowerCase();
+    lastEmitted.current = safeValue.toLowerCase();
     applyLocal(rgbToHsv(rgb.r, rgb.g, rgb.b));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [safeValue]);
 
   const svPan = useRef(
     PanResponder.create({
@@ -268,7 +270,7 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
       {/* Quick presets */}
       {presets.length > 0 && (
         <View style={styles.presetRow}>
-          {presets.map((p) => (
+          {presets.filter((p) => typeof p === 'string' && !!hexToRgb(p)).map((p) => (
             <Pressable
               key={p}
               style={[
@@ -288,7 +290,16 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
   );
 }
 
-/** The picker inside a tap-to-dismiss modal card, with a Done button. */
+/**
+ * The picker as a tap-to-dismiss overlay card.
+ *
+ * Deliberately NOT an RN <Modal>: every other overlay in the editor (the text
+ * panel, shape picker, torn picker) is a plain absolute View, and this one sits
+ * *inside* those — stacking a native modal on top of an existing overlay is a
+ * well-known iOS crash, and a failure inside a Modal also escapes the app's
+ * ErrorBoundary. As a normal view it composes like everything else, and
+ * unmounting when hidden means each open starts fresh from `value`.
+ */
 export function ColorPickerModal({
   visible,
   value,
@@ -302,18 +313,18 @@ export function ColorPickerModal({
   onClose: () => void;
   presets?: string[];
 }) {
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.modalScrim} onPress={onClose}>
-        <Pressable style={styles.modalCard} onPress={() => {}}>
-          <Text style={styles.modalTitle}>Colour</Text>
-          <ColorPicker value={value} onChange={onChange} presets={presets} />
-          <Pressable style={styles.doneBtn} onPress={onClose}>
-            <Text style={styles.doneText}>Done</Text>
-          </Pressable>
+    <View style={styles.overlay}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <View style={styles.modalCard}>
+        <Text style={styles.modalTitle}>Colour</Text>
+        <ColorPicker value={value} onChange={onChange} presets={presets} />
+        <Pressable style={styles.doneBtn} onPress={onClose}>
+          <Text style={styles.doneText}>Done</Text>
         </Pressable>
-      </Pressable>
-    </Modal>
+      </View>
+    </View>
   );
 }
 
@@ -388,12 +399,15 @@ const styles = StyleSheet.create({
     borderColor: theme.palette.hairline,
   },
   presetActive: { borderWidth: 3, borderColor: theme.palette.forest },
-  modalScrim: {
-    flex: 1,
+  overlay: {
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(43,38,33,0.45)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
+    // Sit above whatever panel opened it (text panel, shape picker, …).
+    zIndex: 1000,
+    elevation: 30,
   },
   modalCard: {
     width: '100%',
