@@ -523,7 +523,7 @@ async function processOneImage(dir, filename, { free, brandVoice, hint, notes, s
   return { id, meta, assetId, free }
 }
 
-async function processCollectionFolder(dir, folderName, brandVoice) {
+async function processCollectionFolder(dir, folderName, brandVoice, { forceFree = false } = {}) {
   console.log(`\n📦 Collection: ${folderName}`)
   const overrides = await readOverrides(dir)
   const notes = await readPromptNotes(dir)
@@ -544,7 +544,7 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   for (const entry of entries) {
     try {
       const it = await processOneImage(entry.dir, entry.filename, {
-        free: overrides.free === true,
+        free: forceFree || overrides.free === true,
         brandVoice,
         hint: entry.folder
           ? `a "${entry.folder}" piece in the "${folderName}" collection`
@@ -581,7 +581,7 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   const palette = overrides.palette ?? ai.palette ?? items[0]?.meta.tone ?? 'sage'
   const whatYouGet = overrides.whatYouGet ?? ai.whatYouGet ?? ''
   const price = overrides.price ?? ai.suggestedPrice ?? 4.99
-  const free = overrides.free === true
+  const free = forceFree || overrides.free === true
 
   // Cover: explicit cover.* file → upload; else reuse the first item's asset.
   let coverAssetId = items[0]?.assetId ?? null
@@ -634,24 +634,72 @@ async function processCollectionFolder(dir, folderName, brandVoice) {
   console.log(`     product: ${productId}`)
 }
 
+/**
+ * Loose images sitting directly in _free/ become standalone free items (no
+ * collection). Theme SUBfolders of _free are handled as free collections by
+ * listCollectionFolders, not here.
+ */
 async function processFreeFolder(dir, brandVoice) {
-  console.log(`\n🆓 Free items`)
   const notes = await readPromptNotes(dir)
-  const entries = await listCollectionImages(dir)
-  for (const entry of entries) {
+  const sheets = await listSheets(dir)
+  let files = []
+  try {
+    files = await listImages(dir)
+  } catch {
+    return
+  }
+  if (files.length === 0) return
+  console.log(`\n🆓 Free items (${files.length} standalone piece(s))`)
+  for (const filename of files) {
     try {
-      await processOneImage(entry.dir, entry.filename, {
+      await processOneImage(dir, filename, {
         free: true,
         brandVoice,
         hint: 'a free starter-set piece',
         notes,
-        sheets: entry.sheets,
-        category: entry.category,
+        sheets,
+        category: null,
       })
     } catch (err) {
-      console.warn(`    ⚠ skipped ${entry.filename}: ${err?.message ?? err}`)
+      console.warn(`    ⚠ skipped ${filename}: ${err?.message ?? err}`)
     }
   }
+}
+
+/**
+ * Every collection folder to process, in order:
+ *   incoming/<Theme>/            → a paid collection
+ *   incoming/_free/<Theme>/      → a FREE collection (whole theme free, no product)
+ * Loose images in _free/ are standalone free items and are handled separately.
+ */
+async function listCollectionFolders() {
+  const out = []
+  let entries = []
+  try {
+    entries = (await fs.readdir(INPUT_DIR, { withFileTypes: true })).filter((e) => e.isDirectory())
+  } catch {
+    return out
+  }
+  for (const e of entries) {
+    if (e.name.startsWith('.')) continue
+    if (e.name === '_free') {
+      let subs = []
+      try {
+        subs = (await fs.readdir(path.join(INPUT_DIR, e.name), { withFileTypes: true })).filter(
+          (s) => s.isDirectory() && !s.name.startsWith('.') && !s.name.startsWith('_'),
+        )
+      } catch {
+        /* no free collections */
+      }
+      for (const s of subs) {
+        out.push({ dir: path.join(INPUT_DIR, e.name, s.name), name: s.name, free: true })
+      }
+      continue
+    }
+    if (e.name.startsWith('_')) continue // _originals, _done, _live, _not_using, …
+    out.push({ dir: path.join(INPUT_DIR, e.name), name: e.name, free: false })
+  }
+  return out
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -665,16 +713,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 async function runBatchPrepass(folders, brandVoice) {
   const requests = []
   const seen = new Set()
-  for (const folder of folders) {
-    // Skip working folders (_done, _originals, dotfolders) — _free is content.
-    if (folder.name.startsWith('.') || (folder.name.startsWith('_') && folder.name !== '_free')) continue
-    const dir = path.join(INPUT_DIR, folder.name)
-    const isFree = folder.name === '_free'
-    const hint = isFree ? 'a free starter-set piece' : `part of the "${folder.name}" collection`
+  // Same set the real run walks: every collection folder (including free
+  // collections under _free/), plus loose standalone items in _free/ itself.
+  const targets = [
+    ...(await listCollectionFolders()),
+    { dir: path.join(INPUT_DIR, '_free'), name: '_free', free: true, loose: true },
+  ]
+  for (const target of targets) {
+    const dir = target.dir
+    const hint = target.loose
+      ? 'a free starter-set piece'
+      : `part of the "${target.name}" collection`
     const notes = await readPromptNotes(dir)
     let entries = []
     try {
-      entries = await listCollectionImages(dir)
+      entries = target.loose
+        ? (await listImages(dir)).map((filename) => ({ dir, filename, folder: null }))
+        : await listCollectionImages(dir)
     } catch {
       continue
     }
@@ -784,12 +839,11 @@ async function main() {
   // Batch mode: pre-generate all new metadata cheaply, then the loop runs cache-only.
   if (BATCH) await runBatchPrepass(folders, brandVoice)
 
-  for (const folder of folders) {
-    const dir = path.join(INPUT_DIR, folder.name)
-    if (folder.name === '_free') await processFreeFolder(dir, brandVoice)
-    else if (folder.name.startsWith('_') || folder.name.startsWith('.')) continue // _done, _originals, …
-    else await processCollectionFolder(dir, folder.name, brandVoice)
+  for (const c of await listCollectionFolders()) {
+    await processCollectionFolder(c.dir, c.name, brandVoice, { forceFree: c.free })
   }
+  // Loose images sitting directly in _free/ (standalone free items).
+  await processFreeFolder(path.join(INPUT_DIR, '_free'), brandVoice)
 
   await saveCache()
   console.log(`\n✓ Done.${DRY_RUN ? ` Review metadata in ${OUT_DIR}` : ' Review and publish the drafts in Sanity Studio.'}`)

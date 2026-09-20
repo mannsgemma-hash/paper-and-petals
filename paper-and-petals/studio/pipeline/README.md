@@ -60,9 +60,20 @@ studio/incoming/
       teapots_split.png                      ← sheet → pieces + teapots.sheet.png
     Stickers/
     Frames/
-  _free/                                     ← images here become standalone FREE items
-    washi-sage.png
+  _free/                                     ← FREE content
+    washi-sage.png                           ← a loose image = a standalone free item
+    Spring Pastels/                          ← a FOLDER = a whole free collection
+      Stickers/
 ```
+
+Anything else starting with `_` (`_originals`, `_live`, `_not_using`,
+`_unprocessed`, …) is ignored entirely, so it's a handy staging area.
+
+**Free collections:** put the whole theme folder inside `_free/` and it becomes
+a normal collection that happens to be free — same category subfolders, same
+cover, shown in the shop with a FREE pill instead of a price. No `collection.json`
+needed, and no App Store product is created for it. (Setting `"free": true` in
+`collection.json` on a normal theme does the same thing.)
 
 Art can sit **loose in the collection folder, in category subfolders, or both**.
 A subfolder whose name matches a category *pins* that category — no guessing,
