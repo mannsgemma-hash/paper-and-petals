@@ -28,6 +28,7 @@ import { fetchCatalogue } from '../../src/services/content';
 import { screen, track } from '../../src/lib/analytics';
 import { purchaseCollection } from '../../src/lib/revenuecat';
 import { downloadCollectionZip } from '../../src/lib/downloads';
+import { thumbSource, PREVIEW_PX } from '../../src/lib/images';
 
 // SCR-06 Shop. Collection-first (bundles only): a grid of collection cards is the
 // primary browse, with a free-items area below filtered by the category chips.
@@ -37,6 +38,12 @@ import { downloadCollectionZip } from '../../src/lib/downloads';
 const logoSage = require('../../assets/logos/logo_sage.png');
 
 type CollectionStatus = 'free' | 'owned' | 'studio' | 'buy';
+
+// A whole free COLLECTION can now be published at once, so "Free to use" went
+// from a handful of loose pieces to potentially hundreds. This screen is a
+// plain ScrollView, which mounts every card it is given — so the list is paged
+// rather than rendered whole.
+const FREE_PAGE = 24;
 
 export default function ShopScreen() {
   const router = useRouter();
@@ -52,18 +59,23 @@ export default function ShopScreen() {
 
   const [category, setCategory] = useState('all');
   const [query, setQuery] = useState('');
+  const [freeShown, setFreeShown] = useState(FREE_PAGE);
   const [openCollection, setOpenCollection] = useState<Collection | null>(null);
   const [openItem, setOpenItem] = useState<ShopItem | null>(null);
 
   useEffect(() => {
     screen('Shop');
-    fetchCatalogue().then(({ items, collections: cols, ok }) => {
-      // Only trust the live catalogue when the backend answered; a failed fetch
-      // keeps the offline fallback rather than emptying the shop.
-      if (!ok) return;
-      setShopItems(items);
-      setCollections(cols);
-    });
+    fetchCatalogue()
+      .then(({ items, collections: cols, ok }) => {
+        // Only trust the live catalogue when the backend answered; a failed
+        // fetch keeps the offline fallback rather than emptying the shop.
+        if (!ok) return;
+        setShopItems(items);
+        setCollections(cols);
+      })
+      // Nothing here is worth taking the screen down for — an unhandled
+      // rejection would, and the offline catalogue is already on screen.
+      .catch((e) => console.warn('Shop catalogue load failed', e));
   }, []);
 
   const { width } = useWindowDimensions();
@@ -75,6 +87,11 @@ export default function ShopScreen() {
     c.free ? 'free' : ownedCollections[c.id] ? 'owned' : hasStudio ? 'studio' : 'buy';
 
   const q = query.trim().toLowerCase();
+
+  // Changing the filter starts the paging over, so you never land mid-list.
+  useEffect(() => {
+    setFreeShown(FREE_PAGE);
+  }, [category, q]);
 
   const visibleCollections = useMemo(
     () => collections.filter((c) => !q || c.name.toLowerCase().includes(q)),
@@ -244,13 +261,26 @@ export default function ShopScreen() {
         {freeItems.length === 0 ? (
           <Text style={styles.empty}>No free pieces in this category yet.</Text>
         ) : (
-          <View style={styles.grid}>
-            {freeItems.map((it) => (
-              <View key={it.id} style={{ width: `${100 / columns}%` as const, padding: 7 }}>
-                <FreeItemCard item={it} onOpen={() => setOpenItem(it)} />
-              </View>
-            ))}
-          </View>
+          <>
+            <View style={styles.grid}>
+              {freeItems.slice(0, freeShown).map((it) => (
+                <View key={it.id} style={{ width: `${100 / columns}%` as const, padding: 7 }}>
+                  <FreeItemCard item={it} onOpen={() => setOpenItem(it)} />
+                </View>
+              ))}
+            </View>
+            {freeItems.length > freeShown && (
+              <Pressable
+                style={styles.showMore}
+                onPress={() => setFreeShown((n) => n + FREE_PAGE)}
+              >
+                <Text style={styles.showMoreText}>
+                  Show more · {freeItems.length - freeShown} left
+                </Text>
+                <Feather name="chevron-down" size={16} color={theme.palette.forest} />
+              </Pressable>
+            )}
+          </>
         )}
       </ScrollView>
 
@@ -281,7 +311,11 @@ function ItemArt({ item, large }: { item: ShopItem; large?: boolean }) {
   if (item.flowerAsset) {
     return (
       <View style={[styles.art, { backgroundColor: theme.palette.cream }]}>
-        <Image source={item.flowerAsset} style={large ? styles.flowerLarge : styles.flower} resizeMode="contain" />
+        <Image
+          source={thumbSource(item.flowerAsset, large ? PREVIEW_PX : undefined)}
+          style={large ? styles.flowerLarge : styles.flower}
+          resizeMode="contain"
+        />
       </View>
     );
   }
@@ -298,7 +332,11 @@ function CollectionArt({ collection, large }: { collection: Collection; large?: 
   if (collection.cover) {
     return (
       <View style={[styles.art, { backgroundColor: theme.palette.cream }]}>
-        <Image source={collection.cover} style={large ? styles.flowerLarge : styles.flower} resizeMode="contain" />
+        <Image
+          source={thumbSource(collection.cover, large ? PREVIEW_PX : undefined)}
+          style={large ? styles.flowerLarge : styles.flower}
+          resizeMode="contain"
+        />
       </View>
     );
   }
@@ -308,7 +346,7 @@ function CollectionArt({ collection, large }: { collection: Collection; large?: 
       {members.map((m, i) => (
         <View key={m.id + i} style={styles.collageCell}>
           {m.flowerAsset ? (
-            <Image source={m.flowerAsset} style={styles.collageImg} resizeMode="contain" />
+            <Image source={thumbSource(m.flowerAsset)} style={styles.collageImg} resizeMode="contain" />
           ) : (
             <Feather name={m.glyph} size={large ? 34 : 22} color={tone.accent} />
           )}
@@ -323,7 +361,7 @@ function GalleryArt({ item }: { item: CollectionItemRef }) {
   if (item.flowerAsset) {
     return (
       <View style={[styles.galleryArt, { backgroundColor: theme.palette.cream }]}>
-        <Image source={item.flowerAsset} style={styles.galleryImg} resizeMode="contain" />
+        <Image source={thumbSource(item.flowerAsset)} style={styles.galleryImg} resizeMode="contain" />
       </View>
     );
   }
@@ -774,6 +812,25 @@ const styles = StyleSheet.create({
     letterSpacing: 1.8,
     color: theme.color.fg3,
     fontWeight: '600',
+  },
+  showMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.palette.hairlineSoft,
+    backgroundColor: theme.palette.cream,
+  },
+  showMoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.palette.forest,
   },
   empty: {
     paddingVertical: 30,

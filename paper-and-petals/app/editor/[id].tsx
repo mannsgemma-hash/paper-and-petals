@@ -49,6 +49,7 @@ import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../s
 import type { Upload } from '../../src/lib/uploads';
 import { persistUploadFile, deleteUploadFile } from '../../src/lib/uploadFiles';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
+import { thumbSource } from '../../src/lib/images';
 import { fetchCatalogue } from '../../src/services/content';
 import { supabase, supabaseConfigured } from '../../src/lib/supabase';
 import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
@@ -1366,9 +1367,13 @@ interface DrawerBodyProps {
 /** The virtual tab id for My Uploads — kept out of the shop categories. */
 const UPLOADS_CAT = 'uploads';
 
+/** Tiles mounted per page in the item drawer (see visibleItems). */
+const DRAWER_PAGE = 30;
+
 function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload, placeUpload, hoveredCategory, setHoveredCategory }: DrawerBodyProps) {
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [drawerShown, setDrawerShown] = useState(DRAWER_PAGE);
   const ownedCollections = useAppStore((s) => s.ownedCollections);
   const legacyOwnedItems = useAppStore((s) => s.legacyOwnedItems);
   const hasStudio = useAppStore((s) => s.hasStudio);
@@ -1376,6 +1381,10 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
   const uploads = useAppStore((s) => s.uploads);
   const removeUpload = useAppStore((s) => s.removeUpload);
   const uploadsMode = drawerCat === UPLOADS_CAT;
+
+  useEffect(() => {
+    setDrawerShown(DRAWER_PAGE);
+  }, [drawerCat, query]);
 
   const confirmRemoveUpload = (upload: Upload) => {
     confirmAsync(
@@ -1431,11 +1440,14 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
 
   const q = query.trim().toLowerCase();
   // Search spans the whole owned collection; otherwise show the active category.
-  const visibleItems = q
+  const allVisibleItems = q
     ? allOwned.filter((item) => item.name.toLowerCase().includes(q))
     : (itemsByCategory[drawerCat] ?? []).filter(
         (item) => item.category !== 'collections' && isOwned(item),
       );
+  // Owning a free collection can mean hundreds of pieces in one category, and
+  // this is a plain ScrollView that mounts every tile it is handed.
+  const visibleItems = allVisibleItems.slice(0, drawerShown);
 
   // Recently used — only when not searching and we have history.
   const recents = !q
@@ -1472,7 +1484,7 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
           } as any)}
         >
           {item.flowerAsset ? (
-            <Image source={item.flowerAsset} style={styles.tileFlower} resizeMode="contain" />
+            <Image source={thumbSource(item.flowerAsset)} style={styles.tileFlower} resizeMode="contain" />
           ) : (
             <Feather name={item.glyph as any} size={28} color={tone.accent} />
           )}
@@ -1537,7 +1549,20 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
               </Text>
             </View>
           ) : (
-            <View style={styles.drawerGrid}>{visibleItems.map((it) => renderTile(it))}</View>
+            <>
+              <View style={styles.drawerGrid}>{visibleItems.map((it) => renderTile(it))}</View>
+              {allVisibleItems.length > visibleItems.length && (
+                <Pressable
+                  style={styles.drawerMore}
+                  onPress={() => setDrawerShown((n) => n + DRAWER_PAGE)}
+                >
+                  <Text style={styles.drawerMoreText}>
+                    Show more · {allVisibleItems.length - visibleItems.length} left
+                  </Text>
+                  <Feather name="chevron-down" size={15} color={theme.palette.forest} />
+                </Pressable>
+              )}
+            </>
           )}
         </ScrollView>
       </View>
@@ -2133,7 +2158,7 @@ function DeliveryOverlay({ items, onDone }: { items: ShopItem[]; onDone: () => v
                   ]}
                 >
                   {it.flowerAsset ? (
-                    <Image source={it.flowerAsset as any} style={styles.deliveryTileImg} resizeMode="contain" />
+                    <Image source={thumbSource(it.flowerAsset) as any} style={styles.deliveryTileImg} resizeMode="contain" />
                   ) : (
                     <Feather name={it.glyph as any} size={30} color={tone.accent} />
                   )}
@@ -3590,7 +3615,7 @@ export default function EditorScreen() {
                     >
                       <View style={[styles.layerThumb, { backgroundColor: item.flowerAsset ? theme.palette.cream : tone.bg }]}>
                         {item.flowerAsset ? (
-                          <Image source={item.flowerAsset as any} style={styles.layerThumbImg} resizeMode="contain" />
+                          <Image source={thumbSource(item.flowerAsset) as any} style={styles.layerThumbImg} resizeMode="contain" />
                         ) : (
                           <Feather name={item.glyph as any} size={13} color={tone.accent} />
                         )}
@@ -4663,6 +4688,26 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   drawerEmpty: { flexGrow: 1 },
+  drawerMore: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    alignSelf: 'center',
+    marginTop: 10,
+    marginBottom: 4,
+    paddingVertical: 9,
+    paddingHorizontal: 18,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.palette.hairlineSoft,
+    backgroundColor: theme.palette.cream,
+  },
+  drawerMoreText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: theme.palette.forest,
+  },
   drawerEmptyInner: {
     flex: 1,
     alignItems: 'center',
