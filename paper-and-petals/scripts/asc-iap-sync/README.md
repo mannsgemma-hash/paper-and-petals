@@ -4,12 +4,19 @@ Create/complete an App Store **Non-Consumable** in-app purchase for every paid
 Paper & Petals collection in Sanity — idempotently. Run it whenever you add
 collections; it skips anything already done and only fills what's missing.
 
-It uses the **same** product-id rule the app uses, so the IDs always match what
-the app asks StoreKit for:
+It uses the **same** product ids the app uses, so they always match what the app
+asks StoreKit for. Ingest pins a `productId` onto every collection in Sanity and
+this script prefers that value; the derived form is only a fallback for a
+collection that somehow has none:
 
 ```
-com.paperandpetals.collection.<sanity _id, minus "collection-", hyphens → underscores>
+pinned:   collection.productId in Sanity   e.g. com.paperandpetals.collection.r2.victorian_rose
+fallback: com.paperandpetals.collection.<sanity _id, minus "collection-", hyphens → underscores>
 ```
+
+The `r2` in a pinned id is the product **series** (see the pipeline README) —
+App Store ids can never be reused, so a wiped-and-rebuilt catalogue needs a new
+series. Never hand-edit these to match an older series.
 
 For each paid collection it ensures: the IAP exists → en-US localization →
 availability (all territories) → price (from the collection's Sanity `price`) →
@@ -60,7 +67,9 @@ export REVIEW_SCREENSHOT_PATH=/absolute/path/to/review.png
 
 ## Run it
 
-Preview first — lists what it would create, makes **no** changes:
+Preview first — lists what it would create, makes **no** changes. It reads only
+public Sanity data, so it needs no Apple credentials and is the cheapest way to
+confirm the ids and prices are what you expect:
 ```bash
 node sync.mjs --dry-run
 ```
@@ -103,10 +112,21 @@ different location.)
 
 ## Notes & troubleshooting
 
-- **Prices** are matched to an App Store price point in USD (base territory USA),
-  then Apple auto-equalizes the other territories. If a collection's Sanity
-  `price` doesn't line up with an available price tier, that one reports
-  `No $X.XX price point` — pick the nearest tier via an override.
+- **Prices** are matched to an App Store price point in AUD (base territory
+  `AUS`, override with `BASE_TERRITORY`), then Apple auto-equalizes the other
+  territories. Apple's tiers are a fixed ladder per currency, **not** a
+  continuous range — the Australian store has no A$4.99, for example — so a
+  Sanity price can legitimately have no exact match. When that happens the
+  script stops for that product and prints the nearest tier plus the ones
+  around it, rather than quietly charging a different amount than the app
+  shows. Fix it either way:
+
+  ```bash
+  node sync.mjs --snap-prices     # take the nearest tier for everything
+  ```
+
+  …or set an exact, valid price per product in `overrides.json` (and match it
+  in Sanity so the shop displays the same number).
 - **App Store product IDs can never be reused** once created, so double-check a
   new collection's Sanity `_id` is what you want before the first run.
 - The App Store API for in-app purchases is multi-step; if any endpoint returns

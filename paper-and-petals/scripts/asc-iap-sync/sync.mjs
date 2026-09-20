@@ -20,8 +20,9 @@
  * When all are present the product reaches "Ready to Submit".
  *
  * Usage:
- *   node sync.mjs --dry-run     # preview: list what it would create, no writes
- *   node sync.mjs               # do it
+ *   node sync.mjs --dry-run       # preview: list what it would create, no writes
+ *   node sync.mjs                 # do it
+ *   node sync.mjs --snap-prices   # accept the nearest tier when a price has no exact one
  *
  * Required env (see README.md):
  *   ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH  (App Store Connect API key)
@@ -50,6 +51,10 @@ const {
 } = process.env;
 
 const DRY_RUN = process.argv.includes('--dry-run');
+// App Store price tiers are a fixed per-currency ladder, so a Sanity price can
+// legitimately have no exact match. Default is to stop and say so rather than
+// quietly charge a different amount than the app displays.
+const SNAP_PRICES = process.argv.includes('--snap-prices');
 const API = 'https://api.appstoreconnect.apple.com';
 // Australian store defaults. IAP_LOCALE = the localization language; BASE_TERRITORY
 // = the territory whose price tier the Sanity `price` is matched against (i.e. the
@@ -198,24 +203,54 @@ async function ensureAvailability(iapId, territoryIds) {
   return true;
 }
 
-async function findPricePointId(iapId, price) {
-  const target = Number(price).toFixed(2);
+/**
+ * Every price point Apple offers for this product in the base territory.
+ * Tiers are per-currency and are NOT a continuous range — the Australian store
+ * has no A$4.99, for instance — so an exact match can legitimately not exist.
+ */
+async function listPricePoints(iapId) {
+  const out = [];
   let url = `/v2/inAppPurchases/${iapId}/pricePoints?filter[territory]=${BASE_TERRITORY}&limit=200`;
   while (url) {
     const r = await api('GET', url);
-    for (const p of r.data || []) {
-      if (Number(p.attributes.customerPrice).toFixed(2) === target) return p.id;
-    }
+    for (const p of r.data || []) out.push({ id: p.id, price: Number(p.attributes.customerPrice) });
     url = r.links?.next || null;
   }
-  return null;
+  return out.sort((a, b) => a.price - b.price);
+}
+
+async function findPricePointId(iapId, price, { snap = false } = {}) {
+  const points = await listPricePoints(iapId);
+  const target = Number(price).toFixed(2);
+  const exact = points.find((p) => p.price.toFixed(2) === target);
+  if (exact) return { id: exact.id, price: exact.price, exact: true };
+  if (!points.length) return null;
+  const near = points.reduce((a, b) =>
+    Math.abs(b.price - price) < Math.abs(a.price - price) ? b : a,
+  );
+  if (snap) return { id: near.id, price: near.price, exact: false };
+  // Not snapping: fail, but say what IS available so the fix is one line.
+  const around = points
+    .filter((p) => Math.abs(p.price - price) <= Math.max(2, price * 0.4))
+    .slice(0, 6)
+    .map((p) => p.price.toFixed(2))
+    .join(', ');
+  throw new Error(
+    `No ${BASE_TERRITORY} price point at ${target}. Nearest is ${near.price.toFixed(2)}` +
+      (around ? ` (available near it: ${around})` : '') +
+      `. Re-run with --snap-prices to take the nearest, or set an exact price in overrides.json.`,
+  );
 }
 
 async function ensurePrice(iapId, price) {
   if (!price) return false;
   if (await one(`/v2/inAppPurchases/${iapId}/iapPriceSchedule`)) return false;
-  const pricePointId = await findPricePointId(iapId, price);
-  if (!pricePointId) throw new Error(`No $${price} price point in ${BASE_TERRITORY}`);
+  const point = await findPricePointId(iapId, price, { snap: SNAP_PRICES });
+  if (!point) throw new Error(`No price points available in ${BASE_TERRITORY}`);
+  const pricePointId = point.id;
+  if (!point.exact) {
+    console.log(`  · no ${BASE_TERRITORY} tier at ${Number(price).toFixed(2)} — snapped to ${point.price.toFixed(2)}`);
+  }
   await api('POST', '/v1/inAppPurchasePriceSchedules', {
     data: {
       type: 'inAppPurchasePriceSchedules',
@@ -302,6 +337,7 @@ async function main() {
       console.log(`• ${c.name}  ($${o.price ?? c.price ?? '—'})`);
       console.log(`    ${productIdFor(c)}`);
       console.log(`    name: "${smartTruncate(o.displayName || c.name, MAX_DISPLAY_NAME)}"`);
+      if (!(o.price ?? c.price)) console.log('    ⚠ no price — set one in Sanity or overrides.json');
     }
     console.log('\nDry run only — no changes made.');
     return;
@@ -318,6 +354,9 @@ async function main() {
     const description = o.description || c.whatYouGet || `${c.name}.`;
     const price = o.price ?? c.price;
     process.stdout.write(`• ${c.name}\n  ${productId}\n`);
+    if (!price) {
+      console.log('  ⚠ no price in Sanity — the product will stay incomplete until one is set');
+    }
     try {
       let iap = await findIap(appId, productId);
       let touched = false;
