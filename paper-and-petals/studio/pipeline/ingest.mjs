@@ -322,6 +322,65 @@ async function listSheets(dir) {
 }
 
 /**
+ * Guard against dropping a WRAPPER folder into incoming/ — e.g. moving the
+ * Dropbox "Art" folder in, so every theme becomes a "category" of one giant
+ * collection and the real category folders sit a level too deep to be scanned.
+ *
+ * The tell is precise: a subfolder that isn't a category but which itself
+ * contains category folders is a theme, not a category — so its parent is a
+ * wrapper, not a collection. Returns the theme folders found inside `dir`.
+ */
+async function themesInsideOf(dir) {
+  let subs = []
+  try {
+    subs = (await fs.readdir(dir, { withFileTypes: true })).filter(
+      (e) => e.isDirectory() && !e.name.startsWith('.') && !e.name.startsWith('_'),
+    )
+  } catch {
+    return []
+  }
+  const themes = []
+  for (const s of subs) {
+    if (categoryForFolder(s.name)) continue // a real category folder
+    let inner = []
+    try {
+      inner = (await fs.readdir(path.join(dir, s.name), { withFileTypes: true })).filter((e) => e.isDirectory())
+    } catch {
+      continue
+    }
+    if (inner.some((i) => categoryForFolder(i.name))) themes.push(s.name)
+  }
+  return themes
+}
+
+/** Abort before any work if incoming/ holds wrapper folders instead of collections. */
+async function assertNoWrapperFolders(folders) {
+  const problems = []
+  for (const folder of folders) {
+    if (folder.name.startsWith('.') || folder.name.startsWith('_')) continue
+    const themes = await themesInsideOf(path.join(INPUT_DIR, folder.name))
+    if (themes.length > 0) problems.push({ wrapper: folder.name, themes })
+  }
+  if (problems.length === 0) return
+
+  console.error('\n✖ incoming/ has a folder level too many.\n')
+  for (const p of problems) {
+    console.error(`  "${p.wrapper}" isn't a collection — it holds ${p.themes.length} theme(s):`)
+    for (const t of p.themes) console.error(`      ${t}`)
+  }
+  console.error('\nEach THEME should sit directly in incoming/, with its category folders inside:')
+  console.error('    incoming/')
+  console.error(`      ${problems[0].themes[0]}/`)
+  console.error('        Papers/  Stickers/  Frames/  …')
+  console.error('\nAs it stands each wrapper would become ONE collection, its themes would')
+  console.error('be treated as categories, and art inside the real category folders would')
+  console.error('be skipped entirely.')
+  console.error(`\nFix: move the theme folders up one level, out of "${problems[0].wrapper}".`)
+  console.error('Nothing was uploaded.')
+  process.exit(1)
+}
+
+/**
  * Every ingestable image in a collection: loose files in the collection root,
  * plus one level of category subfolders whose name pins the item's category.
  * Each entry carries its own folder's sheet map, so a "<base>.sheet.png" beside
@@ -712,6 +771,9 @@ async function main() {
     console.log(`Nothing to ingest in ${INPUT_DIR}.`)
     return
   }
+
+  // Catch a wrapper folder before spending anything on metadata.
+  await assertNoWrapperFolders(folders)
 
   console.log(`Ingesting from ${INPUT_DIR}`)
   console.log(
