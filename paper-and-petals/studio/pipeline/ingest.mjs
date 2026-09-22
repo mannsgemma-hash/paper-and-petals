@@ -155,6 +155,21 @@ const sanity = !DRY_RUN
 const slug = (s) =>
   s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 48)
 const sha1 = (buf) => crypto.createHash('sha1').update(buf).digest('hex')
+
+// Sanity's content lake is schemaless — the Studio schema governs what the
+// EDITOR writes, not what the API accepts. A price that arrives as the string
+// "5.99" (from a hand-written collection.json, or a model that quoted the
+// number) is stored verbatim, and the app's `price.toFixed(2)` then throws.
+// Everything written below is coerced to the type the schema promises.
+const asNumber = (v, fallback) => {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? Number(v.replace(/[^0-9.-]/g, '')) : NaN
+  return Number.isFinite(n) ? n : fallback
+}
+const asString = (v, fallback = '') => {
+  if (typeof v === 'string') return v.trim() || fallback
+  if (typeof v === 'number' && Number.isFinite(v)) return String(v)
+  return fallback
+}
 const docId = (id) => (PUBLISH ? id : `drafts.${id}`)
 
 // ─── Metadata cache ──────────────────────────────────────────────────────────────
@@ -615,10 +630,14 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
   } catch (e) {
     console.warn(`  ⚠ collection metadata failed (${e?.message ?? e}) — using folder name + defaults`)
   }
-  const name = overrides.name ?? ai.name ?? folderName
-  const palette = overrides.palette ?? ai.palette ?? items[0]?.meta.tone ?? 'sage'
-  const whatYouGet = overrides.whatYouGet ?? ai.whatYouGet ?? ''
-  const price = overrides.price ?? ai.suggestedPrice ?? 4.99
+  const name = asString(overrides.name ?? ai.name, folderName)
+  const palette = asString(overrides.palette ?? ai.palette, items[0]?.meta.tone ?? 'sage')
+  const whatYouGet = asString(overrides.whatYouGet ?? ai.whatYouGet)
+  const rawPrice = overrides.price ?? ai.suggestedPrice
+  const price = asNumber(rawPrice, 4.99)
+  if (rawPrice != null && typeof rawPrice !== 'number') {
+    console.log(`  · price ${JSON.stringify(rawPrice)} wasn't a number — stored as ${price}`)
+  }
   const free = forceFree || overrides.free === true
 
   // Cover: explicit cover.* file → upload; else reuse the first item's asset.
