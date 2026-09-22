@@ -45,6 +45,9 @@ type CollectionStatus = 'free' | 'owned' | 'studio' | 'buy';
 // rather than rendered whole.
 const FREE_PAGE = 24;
 
+/** Never let a malformed price take the screen down — show it or show nothing. */
+const money = (v: unknown): string => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '—');
+
 export default function ShopScreen() {
   const router = useRouter();
   const ownedCollections = useAppStore((s) => s.ownedCollections);
@@ -94,7 +97,7 @@ export default function ShopScreen() {
   }, [category, q]);
 
   const visibleCollections = useMemo(
-    () => collections.filter((c) => !q || c.name.toLowerCase().includes(q)),
+    () => collections.filter((c) => !q || String(c.name ?? '').toLowerCase().includes(q)),
     [collections, q],
   );
 
@@ -104,7 +107,7 @@ export default function ShopScreen() {
         (it) =>
           it.free &&
           (category === 'all' || it.category === category) &&
-          (!q || it.name.toLowerCase().includes(q)),
+          (!q || String(it.name ?? '').toLowerCase().includes(q)),
       ),
     [shopItems, category, q],
   );
@@ -340,7 +343,7 @@ function CollectionArt({ collection, large }: { collection: Collection; large?: 
       </View>
     );
   }
-  const members = collection.items.slice(0, 4);
+  const members = (collection.items ?? []).filter(Boolean).slice(0, 4);
   return (
     <View style={[styles.art, styles.collage, { backgroundColor: tone.bg }]}>
       {members.map((m, i) => (
@@ -400,7 +403,7 @@ function CollectionStatusPill({ status, price }: { status: CollectionStatus; pri
   }
   return (
     <View style={styles.priceTag}>
-      <Text style={styles.priceText}>${price.toFixed(2)}</Text>
+      <Text style={styles.priceText}>${money(price)}</Text>
     </View>
   );
 }
@@ -571,7 +574,7 @@ function CollectionDetail({
                     >
                       <Text style={styles.buyGreenText}>{purchasing ? 'Adding…' : 'Buy'}</Text>
                     </Pressable>
-                    <Text style={styles.colPrice}>${collection.price.toFixed(2)}</Text>
+                    <Text style={styles.colPrice}>${money(collection.price)}</Text>
                     <Pressable onPress={onUnlockStudio} hitSlop={6}>
                       <Text style={styles.orStudio}>or unlock all with Studio</Text>
                     </Pressable>
@@ -599,7 +602,7 @@ function CollectionDetail({
                     >
                       <Feather name="download" size={13} color={theme.palette.forest} />
                       <Text style={styles.ownForPrintText}>
-                        {purchasing ? 'Adding…' : `Own it to download & print · $${collection.price.toFixed(2)}`}
+                        {purchasing ? 'Adding…' : `Own it to download & print · $${money(collection.price)}`}
                       </Text>
                     </Pressable>
                     <Text style={styles.ownForPrintNote}>
@@ -641,7 +644,7 @@ function CollectionDetail({
                   <CollectionArt collection={collection} large />
                 </View>
                 <View style={styles.galleryWrap}>
-                  {collection.items.map((m) => (
+                  {(collection.items ?? []).filter(Boolean).map((m) => (
                     <View key={m.id} style={styles.galleryCell}>
                       <GalleryArt item={m} />
                     </View>

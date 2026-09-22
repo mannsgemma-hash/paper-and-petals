@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { theme } from '../theme/theme';
 import { captureException } from '../lib/analytics';
 
@@ -9,6 +9,8 @@ interface Props {
 
 interface State {
   error: Error | null;
+  stack: string | null;
+  showDetail: boolean;
 }
 
 /**
@@ -18,20 +20,33 @@ interface State {
  * — with its stack — so we can see the real cause of production crashes.
  */
 export class ErrorBoundary extends React.Component<Props, State> {
-  state: State = { error: null };
+  state: State = { error: null, stack: null, showDetail: false };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
 
   componentDidCatch(error: Error, info: { componentStack?: string }) {
     captureException(error, { componentStack: info.componentStack, boundary: 'root' });
+    // Keep the stack on screen too. Analytics only helps if it's configured and
+    // the device reached the network; a tester reading the message back is the
+    // one reporting channel that always works.
+    this.setState({ stack: info.componentStack ?? null });
+    console.error('[ErrorBoundary]', error?.message, error?.stack, info.componentStack);
   }
 
-  reset = () => this.setState({ error: null });
+  reset = () => this.setState({ error: null, stack: null, showDetail: false });
 
   render() {
-    if (!this.state.error) return this.props.children;
+    const { error, stack, showDetail } = this.state;
+    if (!error) return this.props.children;
+    const detail = [
+      error.message || String(error),
+      error.stack ?? '',
+      stack ? `\nComponent stack:${stack}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
     return (
       <View style={styles.wrap}>
         <Text style={styles.title}>A little snag</Text>
@@ -41,6 +56,20 @@ export class ErrorBoundary extends React.Component<Props, State> {
         <Pressable style={styles.button} onPress={this.reset}>
           <Text style={styles.buttonText}>Try again</Text>
         </Pressable>
+
+        {/* The whole point of a beta: the message that says WHY. Tucked behind a
+            tap so it never greets an ordinary reader, selectable so it can be
+            copied straight into a bug report. */}
+        <Pressable onPress={() => this.setState({ showDetail: !showDetail })} hitSlop={8}>
+          <Text style={styles.detailToggle}>{showDetail ? 'Hide details' : 'Show details'}</Text>
+        </Pressable>
+        {showDetail && (
+          <ScrollView style={styles.detailBox} contentContainerStyle={styles.detailInner}>
+            <Text style={styles.detailText} selectable>
+              {detail}
+            </Text>
+          </ScrollView>
+        )}
       </View>
     );
   }
@@ -81,5 +110,30 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: theme.palette.cream,
+  },
+  detailToggle: {
+    marginTop: 18,
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    color: theme.color.fg3,
+    textDecorationLine: 'underline',
+  },
+  detailBox: {
+    maxHeight: 260,
+    alignSelf: 'stretch',
+    marginTop: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.palette.hairlineSoft,
+    backgroundColor: theme.palette.cream,
+  },
+  detailInner: {
+    padding: 12,
+  },
+  detailText: {
+    fontFamily: Platform.select({ ios: 'Menlo', default: 'monospace' }),
+    fontSize: 11,
+    lineHeight: 16,
+    color: theme.color.fg2,
   },
 });
