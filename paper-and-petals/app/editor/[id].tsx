@@ -196,6 +196,13 @@ const BRUSHES: { key: string; label: string }[] = [
 
 /** Pen size range (px). The pen is fineliner-only; size is freely chosen. */
 /**
+ * Stacking position of the selection frame and handles: above every item, so
+ * the controls are reachable whatever layer the selected item is on. Items use
+ * their own `z`, which the editor keeps far below this.
+ */
+const SELECTION_Z = 100000;
+
+/**
  * Height of one layers-panel row. It is the step size when dragging to reorder,
  * so the row is given this height explicitly — derived from padding and content
  * it would drift the moment either changes, and a couple of px of drift is a
@@ -1028,12 +1035,29 @@ function PlacedItemView({
     width: itemW.value,
     height: itemH.value,
     transform: [{ rotate: `${rot.value}deg` }],
-    // Render order doubles every item's z so the selected one can be lifted
-    // exactly half a layer (×2 + 1) above its own position — enough that its
-    // frame/handles clear the item directly beneath it, while still respecting
-    // the real z-order against everything else. (Pinning it to a flat 9999
-    // made bring-forward/send-back invisible while an item was selected.)
-    zIndex: isSelected ? item.z * 2 + 1 : item.z * 2,
+    // Plain depth. The selected item used to be lifted half a layer so its own
+    // frame and handles would clear whatever sat beneath it — the controls are
+    // a separate sibling layer now (see overlayStyle), so the art can simply
+    // stay where the user put it.
+    zIndex: item.z,
+  }));
+
+  /**
+   * The selection controls track the item exactly, but render as a SIBLING of
+   * it rather than a child. zIndex only orders views against their own
+   * siblings, so controls nested inside the item could never rise above an
+   * item stacked on top of it — selecting something buried left its handles
+   * hidden under whatever covered it. As a sibling at SELECTION_Z they clear
+   * every item, while the art itself keeps its real depth.
+   */
+  const overlayStyle = useAnimatedStyle(() => ({
+    position: 'absolute' as const,
+    left: tx.value - itemW.value / 2,
+    top: ty.value - itemH.value / 2,
+    width: itemW.value,
+    height: itemH.value,
+    transform: [{ rotate: `${rot.value}deg` }],
+    zIndex: SELECTION_Z,
   }));
 
   // Live font sizing for text items: the lettering tracks the box height so the
@@ -1137,6 +1161,7 @@ function PlacedItemView({
   // (Canva-style). Handles sit as siblings of the content's GestureDetector so
   // their pans never compete with the move pan.
   return (
+    <>
     <Animated.View style={animStyle}>
       <GestureDetector gesture={composed}>
         <Animated.View
@@ -1237,8 +1262,13 @@ function PlacedItemView({
         </Animated.View>
       </GestureDetector>
 
+    </Animated.View>
+
+      {/* Controls, as a sibling of the item so they clear every other layer.
+          box-none: only the handles themselves take touches, so a tap in the
+          middle still reaches the item underneath. */}
       {isSelected && (
-        <>
+        <Animated.View style={overlayStyle} pointerEvents="box-none">
           {/* Selection frame */}
           <View style={styles.selectionFrame} pointerEvents="none" />
 
@@ -1266,9 +1296,9 @@ function PlacedItemView({
               </View>
             </GestureDetector>
           </Animated.View>
-        </>
+        </Animated.View>
       )}
-    </Animated.View>
+    </>
   );
 }
 
