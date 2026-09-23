@@ -86,13 +86,13 @@ categories, with `and`/`&`/bare-id variants all accepted):
 | Stickers | `stickers` |
 | Tape and Fasteners | `tape` |
 | Ephemera | `ephemera` |
-| Florals and Botanicals | `florals` |
 | Frames and Containers | `frames` |
 | Writing and Typography | `type` |
 | Paint and Artistic | `paint` |
 | Sewing and Fabric | `fabric` |
 | Photos and Memory Keeping | `photos` |
 | Decorative Details | `details` |
+| Florals and Botanicals | `details` (retired — folds into decorative details) |
 
 Names are matched loosely: an ordering prefix, underscores and `&` all fold away,
 so `01_Papers`, `06_Tape_And_Fasteners` and `Photos & Memory Keeping` all match.

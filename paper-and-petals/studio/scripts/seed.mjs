@@ -52,10 +52,10 @@ const SHOP_ITEMS = [
   { id: 'eph-cards', category: 'ephemera', name: 'Library cards', tone: 'amber', glyph: 'credit-card', desc: 'Eight checkout cards from old libraries.' },
 
   // Florals & botanicals
-  { id: 'flo-press', category: 'florals', name: 'Pressed wildflowers', tone: 'sage', glyph: 'feather', desc: 'Six real pressed wildflowers, gently scanned.' },
-  { id: 'flo-blossom', category: 'florals', name: 'Cherry blossom', tone: 'rose', glyph: 'feather', desc: 'Two cherry blossom clusters.' },
-  { id: 'flo-zinnia', category: 'florals', name: 'Garden zinnias', tone: 'oxblood', glyph: 'feather', desc: 'A small bouquet of crimson zinnias.' },
-  { id: 'flo-cosmos', category: 'florals', name: 'Lavender cosmos', tone: 'mauve', glyph: 'feather', desc: 'Lavender cosmos in two sizes.' },
+  { id: 'flo-press', category: 'details', name: 'Pressed wildflowers', tone: 'sage', glyph: 'feather', desc: 'Six real pressed wildflowers, gently scanned.' },
+  { id: 'flo-blossom', category: 'details', name: 'Cherry blossom', tone: 'rose', glyph: 'feather', desc: 'Two cherry blossom clusters.' },
+  { id: 'flo-zinnia', category: 'details', name: 'Garden zinnias', tone: 'oxblood', glyph: 'feather', desc: 'A small bouquet of crimson zinnias.' },
+  { id: 'flo-cosmos', category: 'details', name: 'Lavender cosmos', tone: 'mauve', glyph: 'feather', desc: 'Lavender cosmos in two sizes.' },
 
   // Frames & containers
   { id: 'frm-oval', category: 'frames', name: 'Oval portrait frames', tone: 'gold', glyph: 'circle', desc: 'Six oval frames for photos and clippings.' },

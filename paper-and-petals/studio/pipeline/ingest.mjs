@@ -43,7 +43,7 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url))
 
 // ─── Catalogue vocab (must match src/data/shop.ts + studio/schemas) ─────────────
 const CATEGORIES = [
-  'papers', 'stickers', 'tape', 'ephemera', 'florals',
+  'papers', 'stickers', 'tape', 'ephemera',
   'frames', 'type', 'paint', 'fabric', 'photos', 'details',
 ]
 
@@ -56,7 +56,9 @@ const CATEGORY_FOLDERS = {
   stickers: 'stickers',
   tape: 'tape', 'tape and fasteners': 'tape', fasteners: 'tape',
   ephemera: 'ephemera',
-  florals: 'florals', 'florals and botanicals': 'florals', botanicals: 'florals',
+  // Retired category: the folders still exist in Dropbox, so keep recognising
+  // the names and file their pieces under decorative details.
+  florals: 'details', 'florals and botanicals': 'details', botanicals: 'details',
   frames: 'frames', 'frames and containers': 'frames', containers: 'frames',
   type: 'type', typography: 'type', 'writing and typography': 'type', writing: 'type',
   paint: 'paint', 'paint and artistic': 'paint', artistic: 'paint',

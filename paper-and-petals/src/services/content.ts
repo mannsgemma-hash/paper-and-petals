@@ -101,6 +101,20 @@ const str = (v: unknown, fallback = ''): string => {
   return fallback
 }
 
+/**
+ * Categories that no longer exist, mapped to where their pieces now live.
+ * Documents ingested under an old category keep their stored value, and an
+ * item whose category matches no chip is unreachable in the shop and the
+ * editor drawer — so it is translated on the way in rather than stranded.
+ */
+const RETIRED_CATEGORIES: Record<string, string> = {
+  florals: 'details',
+}
+const category = (v: unknown, fallback = 'details'): string => {
+  const c = str(v, fallback)
+  return RETIRED_CATEGORIES[c] ?? c
+}
+
 /** A usable remote image source, or undefined — never a half-built object. */
 const imageSource = (url: unknown): { uri: string } | undefined => {
   const u = str(url)
@@ -129,7 +143,7 @@ function collectionItemToRef(ci: SanityCollectionItem): CollectionItemRef {
   return {
     id,
     name: str(ci.name, 'Untitled piece'),
-    category: str(ci.category, 'details') as ShopItem['category'],
+    category: category(ci.category) as ShopItem['category'],
     tone: str(ci.tone, staticMatch?.tone ?? 'sage') as ShopItem['tone'],
     glyph: str(ci.glyphFallback, staticMatch?.glyph ?? 'package') as any,
     flowerAsset: (imageSource(ci.assetUrl) ?? staticMatch?.flowerAsset) as any,
@@ -173,7 +187,7 @@ export function sanityItemToShopItem(si: SanityItem, ctx: ItemContext): ShopItem
   return {
     id,
     name: str(si.name, 'Untitled piece'),
-    category: str(si.category, 'details') as ShopItem['category'],
+    category: category(si.category) as ShopItem['category'],
     tone: str(si.tone, staticMatch?.tone ?? 'sage') as ShopItem['tone'],
     glyph: str(si.glyphFallback, staticMatch?.glyph ?? 'package') as any,
     desc: str(si.description, staticMatch?.desc ?? ''),

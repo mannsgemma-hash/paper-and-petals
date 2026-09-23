@@ -5,7 +5,6 @@ const CATEGORIES = [
   { title: 'Stickers', value: 'stickers' },
   { title: 'Tape & Fasteners', value: 'tape' },
   { title: 'Ephemera', value: 'ephemera' },
-  { title: 'Florals & Botanicals', value: 'florals' },
   { title: 'Frames & Containers', value: 'frames' },
   { title: 'Writing & Typography', value: 'type' },
   { title: 'Paint & Artistic', value: 'paint' },

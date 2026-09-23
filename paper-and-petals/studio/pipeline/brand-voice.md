@@ -21,7 +21,6 @@ tidy catalogue metadata for it.
 - stickers — seals, stars, hearts, ticks, small die-cuts
 - tape — washi tape, twine, paperclips, fasteners
 - ephemera — postage, tickets, letters, library/checkout cards
-- florals — pressed flowers, botanicals, leaves, sprigs
 - frames — photo frames, corners, hang-tags, containers
 - type — quotes, numbers, dates, typed labels, lettering
 - paint — watercolour, brush strokes, pencil, ink marks
@@ -36,7 +35,7 @@ sage, forest, rose, mauve, blue, amber, cream, oxblood, gold
 ## glyph — a fallback icon
 A single [Feather icon](https://feathericons.com) name that loosely represents
 the piece, used only if the artwork ever fails to load. Examples by category:
-papers→file-text, stickers→star, tape→minus, ephemera→mail, florals→feather,
+papers→file-text, stickers→star, tape→minus, ephemera→mail,
 frames→square, type→type, paint→droplet, fabric→layers, photos→image,
 details→gift. Pick a real Feather name.
 

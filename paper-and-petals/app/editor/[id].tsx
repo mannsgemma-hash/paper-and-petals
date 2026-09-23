@@ -106,7 +106,7 @@ const EDITOR_TOUR: TourStep[] = [
   {
     icon: 'plus',
     title: 'Your collection',
-    body: 'Open the drawer of papers, stickers, florals and treasures — tap any piece to place it on the page.',
+    body: 'Open the drawer of papers, stickers and treasures — tap any piece to place it on the page.',
     ring: { top: 74, right: 10, width: 72, height: 72 },
     card: { top: 156, right: 20 },
   },
@@ -195,8 +195,13 @@ const BRUSHES: { key: string; label: string }[] = [
 ];
 
 /** Pen size range (px). The pen is fineliner-only; size is freely chosen. */
-/** Height of one layers-panel row — the step size when dragging to reorder. */
-const LAYER_ROW_H = 49;
+/**
+ * Height of one layers-panel row. It is the step size when dragging to reorder,
+ * so the row is given this height explicitly — derived from padding and content
+ * it would drift the moment either changes, and a couple of px of drift is a
+ * drop landing one place off after a few rows.
+ */
+const LAYER_ROW_H = 52;
 
 /** Starter templates need more work — off until a later release. */
 const TEMPLATES_ENABLED = false;
@@ -765,12 +770,6 @@ const DRAWER_ITEMS: Record<string, { id: string; glyph: string; tone: keyof type
     { id: 'eph-1', glyph: 'mail', tone: 'oxblood' }, { id: 'eph-2', glyph: 'credit-card', tone: 'mauve' },
     { id: 'eph-3', glyph: 'mail', tone: 'cream' }, { id: 'eph-4', glyph: 'credit-card', tone: 'amber' },
   ],
-  florals: FLOWER_ASSETS.map((asset, i) => ({
-    id: `flo-${i}`,
-    glyph: 'feather',
-    tone: (['mauve', 'oxblood', 'blue', 'rose', 'rose', 'oxblood'] as const)[i],
-    flowerAsset: asset,
-  })),
   frames: [
     { id: 'frm-1', glyph: 'circle', tone: 'gold' }, { id: 'frm-2', glyph: 'square', tone: 'gold' },
     { id: 'frm-3', glyph: 'tag', tone: 'cream' },
@@ -791,6 +790,13 @@ const DRAWER_ITEMS: Record<string, { id: string; glyph: string; tone: keyof type
     { id: 'pho-1', glyph: 'image', tone: 'cream' }, { id: 'pho-2', glyph: 'copy', tone: 'blue' },
   ],
   details: [
+    // Botanicals used to be their own category; they live here now.
+    ...FLOWER_ASSETS.map((asset, i) => ({
+      id: `flo-${i}`,
+      glyph: 'feather',
+      tone: (['mauve', 'oxblood', 'blue', 'rose', 'rose', 'oxblood'] as const)[i],
+      flowerAsset: asset,
+    })),
     { id: 'det-1', glyph: 'sun', tone: 'cream' }, { id: 'det-2', glyph: 'gift', tone: 'oxblood' },
     { id: 'det-3', glyph: 'gift', tone: 'rose' },
   ],
@@ -997,7 +1003,7 @@ function PlacedItemView({
   /** Rotate handle: angle of the pointer around the item center, soft 15° snap. */
   const rotateHandleGesture = Gesture.Pan()
     .onBegin(() => {
-      const dist = itemH.value / 2 + ROTATE_HANDLE_DIST;
+      const dist = itemH.value / 2 + ROTATE_HANDLE_DIST - rotateLift.value;
       const rad = (rot.value * Math.PI) / 180;
       // Handle starts below the center: local vector (0, +dist) rotated into screen space.
       startVX.value = -dist * Math.sin(rad) * spreadScale;
@@ -1094,6 +1100,38 @@ function PlacedItemView({
     { hx: 1, hy: 1 },
     { hx: -1, hy: 1 },
   ];
+
+  /**
+   * The spread clips its contents (styles.spreadInner), and the selection
+   * controls sit OUTSIDE the item box — the corner dots straddle the corners,
+   * the rotate knob hangs ROTATE_HANDLE_DIST below. Near an edge that puts them
+   * past the clip, so they vanish exactly when the item is hardest to grab.
+   *
+   * Each control is nudged back inside instead. The nudge is computed from the
+   * live shared values, so it holds during a drag, and rotation is ignored the
+   * same way the position clamp above ignores it — an axis-aligned
+   * approximation is enough to keep a control on screen.
+   */
+  const EDGE_PAD = 16;
+  const nudgeInside = (v: number, lo: number, hi: number) => {
+    'worklet';
+    if (v < lo) return lo - v;
+    if (v > hi) return hi - v;
+    return 0;
+  };
+
+  /** How far the rotate knob is pushed up when there's no room beneath. */
+  const rotateLift = useSharedValue(0);
+  const rotateWrapStyle = useAnimatedStyle(() => {
+    // The knob hangs ROTATE_HANDLE_DIST + half its size below the item's bottom
+    // edge; if that lands past the spread, pull it up by the overshoot (never
+    // further than the item's own height, so it stays attached to its item).
+    const knobY = ty.value + itemH.value / 2 + ROTATE_HANDLE_DIST + 13;
+    const over = knobY - (SPREAD_H - 4);
+    const lift = over > 0 ? Math.min(over, itemH.value + ROTATE_HANDLE_DIST) : 0;
+    rotateLift.value = lift;
+    return { transform: [{ translateY: -lift }] };
+  });
 
   // Frame + handles live INSIDE the rotated container so they track rotation
   // (Canva-style). Handles sit as siblings of the content's GestureDetector so
@@ -1206,31 +1244,81 @@ function PlacedItemView({
 
           {/* Corner resize handles */}
           {CORNERS.map(({ hx, hy }) => (
-            <GestureDetector key={`${hx},${hy}`} gesture={makeCornerGesture(hx, hy)}>
-              <View
-                style={[
-                  styles.handleTouch,
-                  hx < 0 ? { left: -8 } : { right: -8 },
-                  hy < 0 ? { top: -8 } : { bottom: -8 },
-                ]}
-              >
-                <View style={styles.handleDot} />
-              </View>
-            </GestureDetector>
+            <CornerHandle
+              key={`${hx},${hy}`}
+              hx={hx}
+              hy={hy}
+              gesture={makeCornerGesture(hx, hy)}
+              tx={tx}
+              ty={ty}
+              itemW={itemW}
+              itemH={itemH}
+              pad={EDGE_PAD}
+            />
           ))}
 
           {/* Rotate handle: stem + knob below the frame */}
-          <View style={styles.rotateHandleWrap} pointerEvents="box-none">
+          <Animated.View style={[styles.rotateHandleWrap, rotateWrapStyle]} pointerEvents="box-none">
             <View style={styles.rotateStem} />
             <GestureDetector gesture={rotateHandleGesture}>
               <View style={styles.rotateHandle}>
                 <Feather name="rotate-cw" size={13} color={theme.palette.forest} />
               </View>
             </GestureDetector>
-          </View>
+          </Animated.View>
         </>
       )}
     </Animated.View>
+  );
+}
+
+/**
+ * One corner resize handle, nudged back inside the spread when the item's
+ * corner sits at or past the edge — otherwise the clip swallows it. Its own
+ * component so the animated style is a normal hook rather than one created
+ * inside a .map().
+ */
+function CornerHandle({
+  hx,
+  hy,
+  gesture,
+  tx,
+  ty,
+  itemW,
+  itemH,
+  pad,
+}: {
+  hx: number;
+  hy: number;
+  gesture: ReturnType<typeof Gesture.Pan>;
+  tx: SharedValue<number>;
+  ty: SharedValue<number>;
+  itemW: SharedValue<number>;
+  itemH: SharedValue<number>;
+  pad: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    const cornerX = tx.value + (hx * itemW.value) / 2;
+    const cornerY = ty.value + (hy * itemH.value) / 2;
+    const dx =
+      cornerX < pad ? pad - cornerX : cornerX > SPREAD_W - pad ? SPREAD_W - pad - cornerX : 0;
+    const dy =
+      cornerY < pad ? pad - cornerY : cornerY > SPREAD_H - pad ? SPREAD_H - pad - cornerY : 0;
+    return { transform: [{ translateX: dx }, { translateY: dy }] };
+  });
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View
+        style={[
+          styles.handleTouch,
+          hx < 0 ? { left: -8 } : { right: -8 },
+          hy < 0 ? { top: -8 } : { bottom: -8 },
+          style,
+        ]}
+      >
+        <View style={styles.handleDot} />
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
@@ -1272,6 +1360,8 @@ interface ItemToolbarProps {
   flipOn?: boolean;
   onTornEdge?: () => void;
   tornOn?: boolean;
+  /** What the pencil does for this item — "Edit text" or "Colour". */
+  editLabel?: string;
 }
 
 function ItemToolbar({
@@ -1287,62 +1377,143 @@ function ItemToolbar({
   flipOn,
   onTornEdge,
   tornOn,
+  editLabel = 'Edit',
 }: ItemToolbarProps) {
+  const [hovered, setHovered] = useState<string | null>(null);
   return (
     <View style={[styles.toolbar, { left, top }]}>
       {onEditText && (
         <>
-          <Pressable style={styles.toolBtn} onPress={onEditText} hitSlop={4}>
-            <Feather name="edit-2" size={16} color={theme.palette.forest} />
-          </Pressable>
+          <ToolButton
+            label={editLabel}
+            icon="edit-2"
+            onPress={onEditText}
+            hovered={hovered}
+            setHovered={setHovered}
+          />
           <View style={styles.toolDivider} />
         </>
       )}
       {onToggleShadow && (
         <>
-          <Pressable
-            style={[styles.toolBtn, shadowOn && styles.toolBtnActive]}
+          <ToolButton
+            label={shadowOn ? 'Remove shadow' : 'Add shadow'}
+            icon="sun"
+            active={shadowOn}
             onPress={onToggleShadow}
-            hitSlop={4}
-          >
-            <Feather name="sun" size={16} color={shadowOn ? theme.palette.forest : theme.color.fg1} />
-          </Pressable>
+            hovered={hovered}
+            setHovered={setHovered}
+          />
           <View style={styles.toolDivider} />
         </>
       )}
       {onTornEdge && (
         <>
-          <Pressable
-            style={[styles.toolBtn, tornOn && styles.toolBtnActive]}
+          <ToolButton
+            label="Cut shape"
+            icon="scissors"
+            active={tornOn}
             onPress={onTornEdge}
-            hitSlop={4}
-          >
-            <Feather name="scissors" size={16} color={tornOn ? theme.palette.forest : theme.color.fg1} />
-          </Pressable>
+            hovered={hovered}
+            setHovered={setHovered}
+          />
           <View style={styles.toolDivider} />
         </>
       )}
       {onFlip && (
         <>
-          <Pressable
-            style={[styles.toolBtn, flipOn && styles.toolBtnActive]}
+          <ToolButton
+            label="Flip"
+            icon="repeat"
+            active={flipOn}
             onPress={onFlip}
-            hitSlop={4}
-          >
-            <Feather name="repeat" size={16} color={flipOn ? theme.palette.forest : theme.color.fg1} />
-          </Pressable>
+            hovered={hovered}
+            setHovered={setHovered}
+          />
           <View style={styles.toolDivider} />
         </>
       )}
-      <Pressable style={styles.toolBtn} onPress={onBringForward} hitSlop={4}>
-        <Feather name="chevrons-up" size={16} color={theme.color.fg1} />
-      </Pressable>
-      <Pressable style={styles.toolBtn} onPress={onSendBack} hitSlop={4}>
-        <Feather name="chevrons-down" size={16} color={theme.color.fg1} />
-      </Pressable>
+      <ToolButton
+        label="Bring forward"
+        icon="chevrons-up"
+        onPress={onBringForward}
+        hovered={hovered}
+        setHovered={setHovered}
+      />
+      <ToolButton
+        label="Send back"
+        icon="chevrons-down"
+        onPress={onSendBack}
+        hovered={hovered}
+        setHovered={setHovered}
+      />
       <View style={styles.toolDivider} />
-      <Pressable style={[styles.toolBtn, styles.toolDanger]} onPress={onDelete} hitSlop={4}>
-        <Feather name="trash-2" size={16} color={theme.palette.terracotta} />
+      <ToolButton
+        label="Delete"
+        icon="trash-2"
+        danger
+        onPress={onDelete}
+        hovered={hovered}
+        setHovered={setHovered}
+      />
+    </View>
+  );
+}
+
+/**
+ * One toolbar button with a hover label. The icons alone aren't self-evident
+ * (three of them are chevrons or arrows), so the name appears above the button
+ * on hover — for a trackpad or mouse on iPad, and on the web build. Touch has
+ * no hover, so nothing changes there and nothing blocks the tap.
+ */
+function ToolButton({
+  label,
+  icon,
+  onPress,
+  hovered,
+  setHovered,
+  active,
+  danger,
+}: {
+  label: string;
+  icon: keyof typeof Feather.glyphMap;
+  onPress: () => void;
+  hovered: string | null;
+  setHovered: (v: string | null) => void;
+  active?: boolean;
+  danger?: boolean;
+}) {
+  const isHovered = hovered === label;
+  return (
+    <View>
+      {isHovered && (
+        <View style={styles.toolbarTip} pointerEvents="none">
+          <Text style={styles.toolbarTipText} numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+      )}
+      <Pressable
+        style={[styles.toolBtn, active && styles.toolBtnActive, danger && styles.toolDanger]}
+        onPress={onPress}
+        hitSlop={4}
+        accessibilityLabel={label}
+        {...({
+          onPointerEnter: () => setHovered(label),
+          onPointerLeave: () => setHovered(null),
+        } as any)}
+      >
+        <Feather
+          name={icon}
+          size={16}
+          color={
+            danger
+              ? theme.palette.terracotta
+              : active
+                ? theme.palette.forest
+                : theme.color.fg1
+          }
+        />
       </Pressable>
     </View>
   );
@@ -3345,6 +3516,7 @@ export default function EditorScreen() {
                               ? () => setColorEditId(selectedItem.id)
                               : undefined
                         }
+                        editLabel={selectedItem.kind === 'shape' ? 'Colour' : 'Edit text'}
                         onToggleShadow={
                           selectedItem.kind !== 'text' &&
                           selectedItem.kind !== 'doodle' &&
@@ -3568,8 +3740,13 @@ export default function EditorScreen() {
                             : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
                   const dragging = layerDrag?.id === item.id;
                   const pan = PanResponder.create({
+                    // Capture variants: the enclosing ScrollView is a native
+                    // responder and would otherwise take a vertical drag that
+                    // starts on the handle.
                     onStartShouldSetPanResponder: () => true,
+                    onStartShouldSetPanResponderCapture: () => true,
                     onMoveShouldSetPanResponder: () => true,
+                    onMoveShouldSetPanResponderCapture: () => true,
                     onPanResponderGrant: () => {
                       const from = stacked.findIndex((it) => it.id === item.id);
                       setLayerDrag({ id: item.id, from, to: from, dy: 0 });
@@ -3599,7 +3776,11 @@ export default function EditorScreen() {
                     onPanResponderTerminate: () => setLayerDrag(null),
                   });
                   return (
-                    <Pressable
+                    // The row is a plain View: a Pressable wrapping the handle
+                    // would fire its onPress when the drag is released, which
+                    // selected the item and shut the panel instead of
+                    // reordering. Only the left part is pressable now.
+                    <View
                       key={item.id}
                       style={[
                         styles.layerRow,
@@ -3611,21 +3792,25 @@ export default function EditorScreen() {
                           ],
                         },
                       ]}
-                      onPress={() => { setSelectedId(item.id); setLayerPanelOpen(false); }}
                     >
-                      <View style={[styles.layerThumb, { backgroundColor: item.flowerAsset ? theme.palette.cream : tone.bg }]}>
-                        {item.flowerAsset ? (
-                          <Image source={thumbSource(item.flowerAsset) as any} style={styles.layerThumbImg} resizeMode="contain" />
-                        ) : (
-                          <Feather name={item.glyph as any} size={13} color={tone.accent} />
-                        )}
-                      </View>
-                      <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
+                      <Pressable
+                        style={styles.layerRowPress}
+                        onPress={() => { setSelectedId(item.id); setLayerPanelOpen(false); }}
+                      >
+                        <View style={[styles.layerThumb, { backgroundColor: item.flowerAsset ? theme.palette.cream : tone.bg }]}>
+                          {item.flowerAsset ? (
+                            <Image source={thumbSource(item.flowerAsset) as any} style={styles.layerThumbImg} resizeMode="contain" />
+                          ) : (
+                            <Feather name={item.glyph as any} size={13} color={tone.accent} />
+                          )}
+                        </View>
+                        <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
+                      </Pressable>
                       {/* Drag handle — hold and move to restack. */}
                       <View style={styles.layerHandle} {...pan.panHandlers}>
                         <Feather name="menu" size={16} color={dragging ? theme.palette.forest : theme.color.fg3} />
                       </View>
-                    </Pressable>
+                    </View>
                   );
                   });
                 })()}
@@ -4217,11 +4402,10 @@ const styles = StyleSheet.create({
     color: theme.color.fg1,
   },
   layerRow: {
+    height: LAYER_ROW_H,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: theme.palette.hairlineSoft,
   },
@@ -4237,6 +4421,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
+  },
+  layerRowPress: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
   layerHandle: {
     width: 34,
@@ -4542,6 +4732,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 16,
+  },
+  toolbarTip: {
+    position: 'absolute',
+    bottom: '100%',
+    marginBottom: 6,
+    alignSelf: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(43,38,33,0.92)',
+    zIndex: 50,
+  },
+  toolbarTipText: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    fontWeight: '600',
+    color: theme.palette.cream,
   },
   toolDivider: {
     width: 1,

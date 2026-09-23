@@ -28,7 +28,6 @@ export const SHOP_CATEGORIES: ShopCategory[] = [
   { id: 'stickers', label: 'Stickers', icon: 'circle' },
   { id: 'tape', label: 'Tape & fasteners', icon: 'paperclip' },
   { id: 'ephemera', label: 'Ephemera', icon: 'archive' },
-  { id: 'florals', label: 'Florals & botanicals', icon: 'feather' },
   { id: 'frames', label: 'Frames & containers', icon: 'square' },
   { id: 'type', label: 'Writing & typography', icon: 'edit-3' },
   { id: 'paint', label: 'Paint & artistic', icon: 'droplet' },
@@ -195,10 +194,10 @@ const RAW_ITEMS: RawItem[] = [
   { id: 'eph-cards', category: 'ephemera', name: 'Library cards', tone: 'amber', glyph: 'credit-card', desc: 'Eight checkout cards from old libraries.', isNew: false },
 
   // Florals & botanicals — real assets
-  { id: 'flo-press', category: 'florals', name: 'Pressed wildflowers', tone: 'sage', glyph: 'feather', flowerAsset: FLOWERS.cornflower, desc: 'Six real pressed wildflowers, gently scanned.', isNew: false },
-  { id: 'flo-blossom', category: 'florals', name: 'Cherry blossom', tone: 'rose', glyph: 'feather', flowerAsset: FLOWERS.blossom, desc: 'Two cherry blossom clusters.', isNew: true },
-  { id: 'flo-zinnia', category: 'florals', name: 'Garden zinnias', tone: 'oxblood', glyph: 'feather', flowerAsset: FLOWERS.zinnia, desc: 'A small bouquet of crimson zinnias.', isNew: false },
-  { id: 'flo-cosmos', category: 'florals', name: 'Lavender cosmos', tone: 'mauve', glyph: 'feather', flowerAsset: FLOWERS.cosmos, desc: 'Lavender cosmos in two sizes.', isNew: false },
+  { id: 'flo-press', category: 'details', name: 'Pressed wildflowers', tone: 'sage', glyph: 'feather', flowerAsset: FLOWERS.cornflower, desc: 'Six real pressed wildflowers, gently scanned.', isNew: false },
+  { id: 'flo-blossom', category: 'details', name: 'Cherry blossom', tone: 'rose', glyph: 'feather', flowerAsset: FLOWERS.blossom, desc: 'Two cherry blossom clusters.', isNew: true },
+  { id: 'flo-zinnia', category: 'details', name: 'Garden zinnias', tone: 'oxblood', glyph: 'feather', flowerAsset: FLOWERS.zinnia, desc: 'A small bouquet of crimson zinnias.', isNew: false },
+  { id: 'flo-cosmos', category: 'details', name: 'Lavender cosmos', tone: 'mauve', glyph: 'feather', flowerAsset: FLOWERS.cosmos, desc: 'Lavender cosmos in two sizes.', isNew: false },
 
   // Frames & containers
   { id: 'frm-oval', category: 'frames', name: 'Oval portrait frames', tone: 'gold', glyph: 'circle', desc: 'Six oval frames for photos and clippings.', isNew: false },
