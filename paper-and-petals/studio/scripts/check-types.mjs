@@ -8,15 +8,22 @@
  * "5.99", and the app's `price.toFixed(2)` then throws — taking the shop down
  * with "A little snag".
  *
- * Read-only: it reports, it never writes. Needs no token (published docs are
- * public); set SANITY_WRITE_TOKEN to include drafts.
+ * Read-only: it reports, it never writes. Needs no token — published documents
+ * are public. A valid SANITY_WRITE_TOKEN additionally includes drafts; a stale
+ * or placeholder one is ignored rather than allowed to block the check.
  *
  *   node scripts/check-types.mjs
  */
 
 const PROJECT_ID = process.env.SANITY_PROJECT_ID || 'cv53e819'
 const DATASET = process.env.SANITY_DATASET || 'production'
-const TOKEN = process.env.SANITY_WRITE_TOKEN
+/** The docs placeholders people paste verbatim — set, but not a real token. */
+const PLACEHOLDER = /^(sk\.\.\.|sk_?x+|<.*>|your.?token|paste.*here|\.\.\.)$/i
+const rawToken = (process.env.SANITY_WRITE_TOKEN || '').trim()
+let TOKEN = rawToken && !PLACEHOLDER.test(rawToken) ? rawToken : null
+if (rawToken && !TOKEN) {
+  console.warn('SANITY_WRITE_TOKEN looks like a placeholder — ignoring it and checking published documents only.\n')
+}
 
 /** field → the typeof the app requires, and whether it must be present. */
 const COLLECTION_FIELDS = {
@@ -37,9 +44,22 @@ const ITEM_FIELDS = {
   description: { type: 'string', required: false },
 }
 
-async function query(groq) {
+async function fetchQuery(groq, token) {
   const url = `https://${PROJECT_ID}.api.sanity.io/v2021-06-07/data/query/${DATASET}?query=${encodeURIComponent(groq)}`
-  const res = await fetch(url, TOKEN ? { headers: { Authorization: `Bearer ${TOKEN}` } } : undefined)
+  return fetch(url, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined)
+}
+
+async function query(groq) {
+  let res = await fetchQuery(groq, TOKEN)
+  // An expired or wrong token makes even a PUBLIC read 401. This check only
+  // needs public data, so drop the token and carry on rather than stopping on
+  // a credential the job never required.
+  if (!res.ok && TOKEN && (res.status === 401 || res.status === 403)) {
+    console.warn(`SANITY_WRITE_TOKEN was rejected (${res.status}) — ignoring it and checking published documents only.`)
+    console.warn('(That token is stale. It only affects drafts here, but ingest and clear will fail until you replace it.)\n')
+    TOKEN = null
+    res = await fetchQuery(groq, null)
+  }
   if (!res.ok) throw new Error(`Sanity ${res.status}: ${await res.text()}`)
   return (await res.json()).result || []
 }
@@ -72,13 +92,14 @@ function check(docs, fields, label) {
 }
 
 async function main() {
-  console.log(`Checking ${PROJECT_ID}/${DATASET}${TOKEN ? ' (including drafts)' : ' (published only)'}`)
+  console.log(`Checking ${PROJECT_ID}/${DATASET}…`)
   const collections = await query(
     `*[_type == "collection"]{_id, name, price, free, palette, whatYouGet, productId}`,
   )
   const items = await query(
     `*[_type == "item"]{_id, name, category, free, tone, glyphFallback, description}`,
   )
+  console.log(TOKEN ? '(published documents and drafts)' : '(published documents only)')
   const bad = check(collections, COLLECTION_FIELDS, 'Collections') + check(items, ITEM_FIELDS, 'Items')
 
   if (bad) {
