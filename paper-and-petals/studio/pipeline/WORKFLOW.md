@@ -96,6 +96,11 @@ Optional `collection.json` to override what the AI guesses (any field optional):
 { "name": "Spring Meadow", "palette": "sage", "price": 5.99, "free": false }
 ```
 
+**`price` must be a bare number, not a string** — `5.99`, never `"5.99"`.
+Sanity's content lake is schemaless, so a quoted number is stored as text and
+the shop can't format it. Ingest coerces it now and says so when it does, and
+`npm run check-types` reports anything already stored with the wrong type.
+
 **4. Prep the tagged files (in place).**
 ```powershell
 npm run prep

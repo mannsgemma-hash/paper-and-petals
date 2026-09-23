@@ -107,6 +107,11 @@ and dot-folders are skipped. `npm run prep` walks the same subfolders.
 { "name": "Spring Meadow", "palette": "sage", "price": 5.99, "free": false, "whatYouGet": "…", "productId": "com.paperandpetals.collection.r2.spring_meadow" }
 ```
 
+**`price` must be a bare number, not a string** — `5.99`, never `"5.99"`.
+Sanity's content lake is schemaless, so a quoted number is stored as text and
+the shop can't format it. Ingest coerces it now and says so when it does, and
+`npm run check-types` reports anything already stored with the wrong type.
+
 Firefly exports with transparency are used as-is; opaque art (e.g. Midjourney)
 gets the background removed automatically if `@imgly/background-removal-node` is
 installed.
@@ -290,6 +295,18 @@ PP_PRODUCT_SERIES=r3 npm run ingest    # after another full wipe
 An explicit id always wins, and a re-run never clobbers one you set by hand:
 put `"productId": "com.paperandpetals.collection.r2.my_id"` in `collection.json`,
 or edit the **Store product ID** field in Sanity Studio.
+
+## Checking the data (`check-types`)
+
+```bash
+npm run check-types
+```
+
+Read-only, needs no token, and reports any document whose fields aren't the
+type the app expects — the shop formats `price` as a number, so one stored as
+the string `"5.99"` used to take the whole screen down. The app coerces these
+at read time now, so a bad value degrades instead of crashing, but fixing it
+keeps the displayed price honest. Run it after an ingest.
 
 ## Review & publish
 
