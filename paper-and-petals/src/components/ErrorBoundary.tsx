@@ -5,6 +5,14 @@ import { captureException } from '../lib/analytics';
 
 interface Props {
   children: React.ReactNode;
+  /**
+   * 'screen' (default) replaces everything below it. 'inline' degrades just the
+   * piece it wraps — so one broken control doesn't take the editor, and the
+   * unsaved journal in it, down with it.
+   */
+  variant?: 'screen' | 'inline';
+  /** What failed, named for the person reading it, e.g. "Colour picker". */
+  label?: string;
 }
 
 interface State {
@@ -27,7 +35,10 @@ export class ErrorBoundary extends React.Component<Props, State> {
   }
 
   componentDidCatch(error: Error, info: { componentStack?: string }) {
-    captureException(error, { componentStack: info.componentStack, boundary: 'root' });
+    captureException(error, {
+      componentStack: info.componentStack,
+      boundary: this.props.label ?? 'root',
+    });
     // Keep the stack on screen too. Analytics only helps if it's configured and
     // the device reached the network; a tester reading the message back is the
     // one reporting channel that always works.
@@ -39,6 +50,7 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render() {
     const { error, stack, showDetail } = this.state;
+    const { variant = 'screen', label } = this.props;
     if (!error) return this.props.children;
     const detail = [
       error.message || String(error),
@@ -47,6 +59,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
     ]
       .filter(Boolean)
       .join('\n');
+    if (variant === 'inline') {
+      return (
+        <View style={styles.inlineWrap}>
+          <Text style={styles.inlineTitle}>{label ?? 'This part'} couldn’t open</Text>
+          <ScrollView style={styles.inlineBox} contentContainerStyle={styles.detailInner}>
+            <Text style={styles.detailText} selectable>
+              {detail}
+            </Text>
+          </ScrollView>
+          <Pressable style={styles.button} onPress={this.reset}>
+            <Text style={styles.buttonText}>Try again</Text>
+          </Pressable>
+        </View>
+      );
+    }
     return (
       <View style={styles.wrap}>
         <Text style={styles.title}>A little snag</Text>
@@ -110,6 +137,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: theme.palette.cream,
+  },
+  inlineWrap: {
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+  },
+  inlineTitle: {
+    fontFamily: theme.font.ui,
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.color.fg1,
+  },
+  inlineBox: {
+    maxHeight: 190,
+    alignSelf: 'stretch',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: theme.palette.hairlineSoft,
+    backgroundColor: theme.palette.cream,
   },
   detailToggle: {
     marginTop: 18,

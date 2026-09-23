@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { theme } from '../theme/theme';
+import { ErrorBoundary } from './ErrorBoundary';
 
 // ─── colour maths ──────────────────────────────────────────────────────────────
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -319,7 +320,12 @@ export function ColorPickerModal({
       <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
       <View style={styles.modalCard}>
         <Text style={styles.modalTitle}>Colour</Text>
-        <ColorPicker value={value} onChange={onChange} presets={presets} />
+        {/* Scoped so a failure in here degrades to a readable message inside the
+            card, instead of replacing the editor — and the open journal — with
+            the app-wide error screen. */}
+        <ErrorBoundary variant="inline" label="Colour picker">
+          <ColorPicker value={value} onChange={onChange} presets={presets} />
+        </ErrorBoundary>
         <Pressable style={styles.doneBtn} onPress={onClose}>
           <Text style={styles.doneText}>Done</Text>
         </Pressable>
