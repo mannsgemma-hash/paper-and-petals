@@ -150,9 +150,21 @@ export async function purchaseStudio(plan: StudioPlan): Promise<boolean> {
 export async function purchaseCollection(collectionId: string, explicitProductId?: string): Promise<boolean> {
   if (!Purchases) throw new Error('Store not available on this platform')
   const productId = explicitProductId?.trim() || collectionProductId(collectionId)
-  const products = await Purchases.getProducts([productId])
+  let products: any[] = []
+  try {
+    products = await Purchases.getProducts([productId])
+  } catch (e: any) {
+    throw new Error(`Couldn’t reach the store (${e?.message ?? e}).\n\nProduct: ${productId}`)
+  }
   if (!products || products.length === 0) {
-    throw new Error('This collection isn’t available to buy yet. You can unlock it with Studio.')
+    // StoreKit returning nothing for an id means no such product is available
+    // to this build — it doesn't exist in App Store Connect, it isn't "Ready to
+    // Submit", or the Paid Applications Agreement isn't active. Naming the id
+    // makes that checkable against App Store Connect instead of guessable.
+    throw new Error(
+      `This collection isn’t available to buy yet. You can unlock it with Studio.\n\n` +
+        `No store product found for:\n${productId}`,
+    )
   }
   const { customerInfo } = await Purchases.purchaseStoreProduct(products[0])
   return !!customerInfo.nonSubscriptionTransactions?.find(
