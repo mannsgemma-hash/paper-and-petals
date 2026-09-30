@@ -20,6 +20,7 @@
  * When all are present the product reaches "Ready to Submit".
  *
  * Usage:
+ *   node sync.mjs --list          # what's ALREADY in App Store Connect vs Sanity
  *   node sync.mjs --dry-run       # preview: list what it would create, no writes
  *   node sync.mjs                 # do it
  *   node sync.mjs --snap-prices   # accept the nearest tier when a price has no exact one
@@ -54,7 +55,10 @@ const DRY_RUN = process.argv.includes('--dry-run');
 // App Store price tiers are a fixed per-currency ladder, so a Sanity price can
 // legitimately have no exact match. Default is to stop and say so rather than
 // quietly charge a different amount than the app displays.
-const SNAP_PRICES = process.argv.includes('--snap-prices');
+const SNAP_PRICES = process.argv.includes('--snap-prices')
+// Read-only audit: what products exist on Apple's side, and how they line up
+// with what the app will actually ask StoreKit for.
+const LIST = process.argv.includes('--list');
 const API = 'https://api.appstoreconnect.apple.com';
 // Australian store defaults. IAP_LOCALE = the localization language; BASE_TERRITORY
 // = the territory whose price tier the Sanity `price` is matched against (i.e. the
@@ -150,6 +154,72 @@ async function allTerritoryIds() {
     url = r.links?.next || null;
   }
   return ids;
+}
+
+/** Every in-app purchase already on the app, with its id, name and state. */
+async function listIaps(appId) {
+  const out = []
+  let url = `/v1/apps/${appId}/inAppPurchasesV2?limit=200`
+  while (url) {
+    const r = await api('GET', url)
+    for (const d of r.data || []) {
+      out.push({
+        id: d.id,
+        productId: d.attributes?.productId,
+        name: d.attributes?.name,
+        state: d.attributes?.state,
+      })
+    }
+    url = r.links?.next || null
+  }
+  return out
+}
+
+/**
+ * Compare what App Store Connect holds against what the app will ask for.
+ * Product ids can never be reused, so a rebuild of the catalogue (new names, or
+ * a new PP_PRODUCT_SERIES) leaves the previous run's products stranded under
+ * ids nothing asks for any more — which looks exactly like never having run.
+ */
+async function runList(collections) {
+  const appId = await getAppId()
+  const existing = await listIaps(appId)
+  const wanted = new Map(collections.map((c) => [productIdFor(c), c]))
+  const have = new Map(existing.map((p) => [p.productId, p]))
+
+  console.log(`App Store Connect holds ${existing.length} in-app purchase(s).`)
+  console.log(`Sanity expects ${wanted.size} paid collection(s).\n`)
+
+  const matched = [...wanted.keys()].filter((id) => have.has(id))
+  const missing = [...wanted.keys()].filter((id) => !have.has(id))
+  const orphans = existing.filter((p) => !wanted.has(p.productId))
+
+  console.log(`── Ready for the app (${matched.length}) ──`)
+  for (const id of matched) console.log(`  ✓ ${id}   [${have.get(id).state}]`)
+  if (!matched.length) console.log('  (none)')
+
+  console.log(`\n── Missing — the app asks for these and they don't exist (${missing.length}) ──`)
+  for (const id of missing) console.log(`  ✗ ${id}   (${wanted.get(id).name})`)
+  if (!missing.length) console.log('  (none)')
+
+  console.log(`\n── In App Store Connect but no longer asked for (${orphans.length}) ──`)
+  for (const p of orphans) console.log(`  · ${p.productId}   [${p.state}]`)
+  if (!orphans.length) console.log('  (none)')
+
+  if (orphans.length && missing.length) {
+    console.log(
+      `\nThat pattern means a previous run DID create products — under ids the app\n` +
+        `no longer uses. Product ids can never be reused, so the old ones can't be\n` +
+        `renamed: run \`node sync.mjs\` to create the current ids, and leave the\n` +
+        `orphans alone (or remove them from sale in App Store Connect).`,
+    )
+  } else if (missing.length) {
+    console.log(`\nRun \`node sync.mjs\` to create the ${missing.length} missing product(s).`)
+  } else {
+    console.log(`\n✓ Every collection the app can ask for exists. If a purchase still fails,`)
+    console.log(`  the next link is RevenueCat (Products → Import), or a product not yet`)
+    console.log(`  in a purchasable state — the states are shown above.`)
+  }
 }
 
 async function findIap(appId, productId) {
@@ -316,7 +386,19 @@ async function fetchCollections() {
 // ── main ──────────────────────────────────────────────────────────────────────
 function requireEnv() {
   // --dry-run only reads public Sanity data, so it needs no credentials.
-  if (DRY_RUN) return;
+  if (DRY_RUN) return
+  // --list reads App Store Connect but writes nothing, so it needs the API key
+  // but not a review screenshot.
+  if (LIST) {
+    const missing = ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_PATH'].filter(
+      (k) => !process.env[k],
+    )
+    if (missing.length) {
+      console.error(`Missing required env: ${missing.join(', ')}\nSee README.md.`)
+      process.exit(1)
+    }
+    return
+  };
   const missing = ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_PATH', 'REVIEW_SCREENSHOT_PATH']
     .filter((k) => !process.env[k]);
   if (missing.length) {
@@ -330,6 +412,11 @@ async function main() {
   const overrides = loadOverrides();
   const collections = await fetchCollections();
   console.log(`Sanity: ${collections.length} paid collection(s).${DRY_RUN ? '  [DRY RUN]' : ''}\n`);
+
+  if (LIST) {
+    await runList(collections)
+    return
+  }
 
   if (DRY_RUN) {
     for (const c of collections) {

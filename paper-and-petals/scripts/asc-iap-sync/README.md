@@ -67,6 +67,30 @@ export REVIEW_SCREENSHOT_PATH=/absolute/path/to/review.png
 
 ## Run it
 
+### What's already there?
+
+```bash
+node sync.mjs --list
+```
+
+Read-only. It lists every in-app purchase App Store Connect holds for the app
+and lines them up against what the app will actually ask StoreKit for:
+
+- **Ready for the app** — exists, with its review state
+- **Missing** — the app asks for it and it doesn't exist
+- **No longer asked for** — exists but nothing requests it
+
+Orphans *and* missing together is the tell-tale of a catalogue rebuild: an
+earlier run did create products, but under ids nothing uses now, because the
+collection names changed or `PP_PRODUCT_SERIES` was bumped. Ids can never be
+reused or renamed, so the fix is to create the current ones and leave the old
+ones be (or remove them from sale).
+
+Needs `ASC_KEY_ID`, `ASC_ISSUER_ID` and `ASC_PRIVATE_KEY_PATH`, but no review
+screenshot.
+
+### Preview what would be created
+
 Preview first — lists what it would create, makes **no** changes. It reads only
 public Sanity data, so it needs no Apple credentials and is the cheapest way to
 confirm the ids and prices are what you expect:
