@@ -166,10 +166,16 @@ collection folder**, tag the filename with what it needs, and run one command.
 | Filename | Meaning |
 |---|---|
 | `teapots_split.png` | a sheet of many elements — split into `teapots-01.png`, `-02.png`… |
+| `splotches_splatter.png` | a sheet whose items shed detached specks — split by clustering (see below) |
 | `old-letter_cut.png` | one element on a background — background removed → `old-letter.png` |
 | anything untagged | already ready — left alone |
 
-(`-split` / `-cut` also work; case-insensitive.)
+(Hyphens work too — `-split`, `-splatter`, `-cut`; case-insensitive. `_cluster`
+is accepted as a synonym of `_splatter`.)
+
+`_splatter` needs no flags: it carries its own `--core 300 --cluster 200`, and
+an explicit flag still overrides. Name paint, glitter and flecked sheets that
+way and the rest `_split`, and one `npm run prep` handles both correctly.
 
 ```bash
 npm run prep                 # processes every tagged file under incoming/, in place
@@ -202,7 +208,7 @@ To set that number directly instead, use `--gap-px`:
 npm run prep -- --gap-px 13     # exactly 13 working pixels, no scaling
 ```
 
-### Splatter sheets — when `--gap` can't work (`--cluster`)
+### Splatter sheets — when `--gap` can't work (`_splatter` / `--cluster`)
 
 Some sheets have items that shed detached bits: paint splatter, flecks, loose
 glitter. `--gap` cannot group those, and no value will — it grows *everything*
@@ -223,6 +229,9 @@ going straight from 9 pieces to 6 with nothing at 7 in between.
 anything smaller is a fragment, and each fragment joins the **nearest** item
 within `--cluster`. Nearest-assignment is the part dilation lacks, so two items
 11px apart still keep their own specks.
+
+The easy way is to name the file for it — `splotches_splatter.png` — which
+applies the settings below with no flags. To tune a run by hand:
 
 ```bash
 npm run prep -- --only "<Theme>/Paint and Artistic" --cluster 200 --core 300

@@ -88,6 +88,15 @@ const matchesOnly = (label) => {
   })
 }
 
+/**
+ * Defaults for a "_splatter" sheet, against the same 2400px baseline as --gap.
+ * Measured on a real paint sheet: items were 215px+ and every speck under 63px,
+ * with the furthest speck 71px from its artwork — so a core threshold between
+ * those, and a radius comfortably past 71, with wide margins either side.
+ */
+const SPLATTER_CORE = 300
+const SPLATTER_CLUSTER = 200
+
 const UNDO = argv.includes('--undo')
 const YES = argv.includes('--yes')
 
@@ -135,9 +144,15 @@ async function prepFolder(dir, folderName) {
     const base = cleanBase(filename)
     const buf = await fs.readFile(path.join(dir, filename))
     try {
-      if (tag === 'split') {
+      if (tag === 'split' || tag === 'splatter') {
+        // A "_splatter" sheet asks for clustering by name, so it needs no CLI
+        // flags; an explicit --core/--cluster still wins if one is given.
+        const opts =
+          tag === 'splatter'
+            ? { ...OPTS, core: OPTS.core || SPLATTER_CORE, cluster: OPTS.cluster || SPLATTER_CLUSTER }
+            : OPTS
         const { pieces, blobs, width, height, effGap, effCore, effCluster } =
-          await splitToPieces(buf, OPTS)
+          await splitToPieces(buf, opts)
         console.log(
           `  ✂ ${filename}: ${pieces.length} piece(s) (${blobs} blobs, ${width}×${height}, gap≈${effGap}px` +
             (effCluster ? `, core≥${effCore}px, cluster≤${effCluster}px` : '') +

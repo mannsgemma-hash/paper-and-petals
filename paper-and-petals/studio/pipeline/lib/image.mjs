@@ -8,17 +8,25 @@ import sharp from 'sharp'
 export const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 
 // ─── Filename tags ──────────────────────────────────────────────────────────────
-// A file named  "<anything>_split.png"  is a sheet to split into pieces;
-//               "<anything>_cut.png"    is a single element needing background
-// removal. (Hyphen variants "-split"/"-cut" work too; case-insensitive.)
+// A file named  "<anything>_split.png"    is a sheet to split into pieces;
+//               "<anything>_splatter.png" is a sheet whose items shed detached
+//                                         specks, split by clustering instead;
+//               "<anything>_cut.png"      is a single element needing
+//                                         background removal.
+// (Hyphen variants work too — "-split", "-splatter", "-cut" — case-insensitive.)
 
-const TAG_RE = /[-_](split|cut)$/i
+const TAG_RE = /[-_](split|splatter|cluster|cut)$/i
 
-/** 'split' | 'cut' | null for a filename (with or without extension). */
+/** The canonical tag name; 'cluster' is accepted as a synonym of 'splatter'. */
+const TAG_ALIASES = { cluster: 'splatter' }
+
+/** 'split' | 'splatter' | 'cut' | null for a filename (with or without extension). */
 export function fileTag(filename) {
   const base = filename.replace(/\.[^.]+$/, '')
   const m = base.match(TAG_RE)
-  return m ? m[1].toLowerCase() : null
+  if (!m) return null
+  const tag = m[1].toLowerCase()
+  return TAG_ALIASES[tag] ?? tag
 }
 
 /** Filename without its extension and without the processing tag. */

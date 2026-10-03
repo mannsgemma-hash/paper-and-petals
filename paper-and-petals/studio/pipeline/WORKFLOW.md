@@ -86,6 +86,7 @@ incoming\
     cover.png             (optional; else the first piece is the cover)
     collection.json       (optional; see below)
     teapot_cut.png        ← will get its background removed
+    splotches_splatter.png ← splatter sheet: items that shed specks
     pressed-rose.png      ← already transparent, used as-is
   _free\                  ← these become free starter-set items (no collection)
     washi-sage.png
