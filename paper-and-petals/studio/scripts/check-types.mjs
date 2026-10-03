@@ -107,7 +107,7 @@ async function main() {
     console.log('no longer crashes on them — but fix the data so the shop shows')
     console.log('the right values: correct it in Studio, or set the right type in')
     console.log("the collection's collection.json and re-run ingest for it:")
-    console.log('\n  npm run ingest -- --only "<Collection>" --publish\n')
+    console.log('\n  npm run ingest -- --only "<Collection>"\n')
     process.exit(1)
   }
   console.log('\n✓ Nothing to fix.\n')

@@ -23,7 +23,7 @@
 //   ANTHROPIC_API_KEY=... SANITY_WRITE_TOKEN=... npm run ingest
 //   npm run ingest -- --batch          # generate all metadata via the Batch API (~50% cheaper, slower) then upload
 //   npm run ingest -- --dry-run        # process + metadata only, write to pipeline/out, no upload
-//   npm run ingest -- --publish        # create published docs instead of drafts
+//   npm run ingest -- --drafts         # park in Studio for review instead of going live
 //   npm run ingest -- --model claude-opus-4-8
 //   npm run ingest -- --remove-bg      # force background removal even if the PNG already has alpha
 //   npm run ingest -- --no-bg          # never remove background
@@ -108,7 +108,11 @@ const getOpt = (f, dflt) => {
 }
 
 const DRY_RUN = hasFlag('--dry-run')
-const PUBLISH = hasFlag('--publish')
+// Published is the default — drafts were an extra review step that always ended
+// in publishing anyway. `--drafts` still parks a batch in Studio for review;
+// `--publish` is accepted and does nothing, so old commands keep working.
+const DRAFTS = hasFlag('--drafts')
+const PUBLISH = !DRAFTS
 const FORCE_BG = hasFlag('--remove-bg')
 const NO_BG = hasFlag('--no-bg')
 const BATCH = hasFlag('--batch') // generate all metadata via the Batch API (~50% cheaper, slower)
@@ -699,7 +703,7 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
   let stale = []
   try {
     // Look at both the draft and the published copy: a collection first
-    // ingested as drafts and later re-run with --publish (or the reverse)
+    // ingested with --drafts and later re-run live (or the reverse)
     // still needs its old pieces found.
     const bare = collectionDocId.replace(/^drafts\./, '')
     const prev = await sanity.fetch('array::unique(*[_id in $ids].items[]._ref)', {
@@ -944,7 +948,8 @@ async function main() {
 
   console.log(`Ingesting from ${INPUT_DIR}`)
   console.log(
-    `Mode: ${DRY_RUN ? 'DRY RUN (no upload)' : PUBLISH ? 'PUBLISH (live docs)' : 'DRAFTS (review in Studio)'}` +
+    `Mode: ${DRY_RUN ? 'DRY RUN (no upload) — would write ' : ''}` +
+      `${PUBLISH ? 'LIVE documents' : 'DRAFTS (review in Studio)'}` +
       `${BATCH ? ' · BATCH metadata' : ''} · model: ${MODEL}\n`,
   )
 
@@ -970,7 +975,15 @@ async function main() {
   if (!ONLY.length) await processFreeFolder(path.join(INPUT_DIR, '_free'), brandVoice)
 
   await saveCache()
-  console.log(`\n✓ Done.${DRY_RUN ? ` Review metadata in ${OUT_DIR}` : ' Review and publish the drafts in Sanity Studio.'}`)
+  console.log(
+    `\n✓ Done.${
+      DRY_RUN
+        ? ` Review metadata in ${OUT_DIR}`
+        : PUBLISH
+          ? ' Live in the app now.'
+          : ' Review and publish the drafts in Sanity Studio.'
+    }`,
+  )
 }
 
 main().catch((e) => {

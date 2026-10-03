@@ -119,12 +119,12 @@ installed.
 ## Run
 
 ```bash
-npm run ingest                       # process everything → Sanity DRAFTS
+npm run ingest                       # process everything → Sanity, LIVE
 npm run ingest -- --dry-run          # process + metadata only → pipeline/out/, no upload (cheap test)
 npm run ingest -- --model claude-opus-4-8   # higher-quality metadata (default: claude-haiku-4-5, pennies)
 npm run ingest -- --remove-bg        # force background removal even on transparent PNGs
 npm run ingest -- --no-bg            # never remove background
-npm run ingest -- --publish          # write live docs instead of drafts (skip review)
+npm run ingest -- --drafts           # park in Studio for review instead of going live
 npm run ingest -- --only "Victorian Rose"   # just this collection (see below)
 ```
 
@@ -139,7 +139,7 @@ and `01_` prefixes all fold away, and a partial name matches:
 npm run prep   -- --only "Victorian Rose"            # re-cut just that collection
 npm run prep   -- --only "Victorian Rose/Stickers"   # or just one category in it
 npm run prep   -- --undo --yes --only "Victorian Rose"
-npm run ingest -- --only "Victorian Rose" --publish
+npm run ingest -- --only "Victorian Rose"
 ```
 
 A typo matches nothing, and both tools then stop and list what *is* there
@@ -152,7 +152,7 @@ warns when it spots them; `--prune` deletes them (both the published doc and any
 draft of it):
 
 ```bash
-npm run ingest -- --only "Victorian Rose" --publish --prune
+npm run ingest -- --only "Victorian Rose" --prune
 ```
 
 Nothing else is touched — only pieces that *this* collection used to contain and
@@ -355,7 +355,7 @@ keeps the displayed price honest. Run it after an ingest.
 
 ## Review & publish
 
-Everything lands as `drafts.*`, invisible to the app. Open `npm run dev`
+With `--drafts`, everything lands as `drafts.*`, invisible to the app. Open `npm run dev`
 (Sanity Studio), skim the new items + collection (fix any tone/price/name), then
 **Publish**. Publish the member items before (or together with) the collection so
 its references resolve. Covers/art that fail to upload fall back to the glyph in
@@ -372,11 +372,8 @@ npm run publish-drafts -- --yes --type collection   # just one type
 It publishes **items before collections**, so a collection never goes live
 pointing at pieces that aren't published yet.
 
-To skip review entirely, ingest straight to live documents:
-
-```bash
-npm run ingest -- --publish
-```
+Ingest writes live documents by default, so this is only for a batch you want
+to look over first.
 
 ## Cost
 
