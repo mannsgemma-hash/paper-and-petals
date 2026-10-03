@@ -161,6 +161,12 @@ different location.)
 
   …or set an exact, valid price per product in `overrides.json` (and match it
   in Sanity so the shop displays the same number).
+- **A price schedule always exists.** App Store Connect auto-creates an empty
+  one for every in-app purchase, so "does it have a price schedule?" is always
+  yes and is not a test for "does it have a price" — the prices hang off the
+  schedule. The same holds for a review screenshot that was reserved but whose
+  upload failed. Both are checked properly now; if you extend this script,
+  check for the *contents* of a to-one relationship, not its presence.
 - **App Store product IDs can never be reused** once created, so double-check a
   new collection's Sanity `_id` is what you want before the first run.
 - The App Store API for in-app purchases is multi-step; if any endpoint returns

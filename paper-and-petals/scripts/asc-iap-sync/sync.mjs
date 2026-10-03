@@ -197,8 +197,8 @@ async function whatsMissing(iapId) {
     gaps.push('localization (could not read)')
   }
   if (!(await one(`/v2/inAppPurchases/${iapId}/inAppPurchaseAvailability`))) gaps.push('availability')
-  if (!(await one(`/v2/inAppPurchases/${iapId}/iapPriceSchedule`))) gaps.push('price')
-  if (!(await one(`/v2/inAppPurchases/${iapId}/appStoreReviewScreenshot`))) gaps.push('review screenshot')
+  if (!(await hasPrice(iapId))) gaps.push(`price (in ${BASE_TERRITORY})`)
+  if (!(await hasScreenshot(iapId))) gaps.push('review screenshot')
   return gaps
 }
 
@@ -365,9 +365,46 @@ async function findPricePointId(iapId, price, { snap = false } = {}) {
   );
 }
 
+/**
+ * Whether the product actually has a price.
+ *
+ * NOT the same as "a price schedule exists": App Store Connect auto-creates an
+ * empty schedule for every in-app purchase, so testing for the schedule is
+ * always true and skips the work forever, leaving the product stuck in
+ * MISSING_METADATA. The prices hang off the schedule, so count those.
+ */
+async function hasPrice(iapId) {
+  const schedule = await one(`/v2/inAppPurchases/${iapId}/iapPriceSchedule`);
+  const scheduleId = schedule?.id;
+  if (!scheduleId) return false;
+  for (const rel of ['manualPrices', 'automaticPrices']) {
+    try {
+      const r = await api('GET', `/v1/inAppPurchasePriceSchedules/${scheduleId}/${rel}?limit=1`);
+      if (r?.data?.length) return true;
+    } catch {
+      /* relationship unreadable — try the other one */
+    }
+  }
+  return false;
+}
+
+/**
+ * Whether the review screenshot is present AND finished uploading. A reserved
+ * asset whose upload failed still answers the relationship, which would
+ * likewise skip the retry forever.
+ */
+async function hasScreenshot(iapId) {
+  const shot = await one(`/v2/inAppPurchases/${iapId}/appStoreReviewScreenshot`);
+  if (!shot) return false;
+  const state = shot.attributes?.assetDeliveryState?.state;
+  // Older responses omit the state; treat a present asset as done rather than
+  // re-uploading it on every run.
+  return state === undefined || state === 'COMPLETE';
+}
+
 async function ensurePrice(iapId, price) {
   if (!price) return false;
-  if (await one(`/v2/inAppPurchases/${iapId}/iapPriceSchedule`)) return false;
+  if (await hasPrice(iapId)) return false;
   const point = await findPricePointId(iapId, price, { snap: SNAP_PRICES });
   if (!point) throw new Error(`No price points available in ${BASE_TERRITORY}`);
   const pricePointId = point.id;
@@ -398,7 +435,7 @@ async function ensurePrice(iapId, price) {
 }
 
 async function ensureScreenshot(iapId, filePath) {
-  if (await one(`/v2/inAppPurchases/${iapId}/appStoreReviewScreenshot`)) return false;
+  if (await hasScreenshot(iapId)) return false;
   const data = fs.readFileSync(filePath);
   const reserve = await api('POST', '/v1/inAppPurchaseAppStoreReviewScreenshots', {
     data: {
