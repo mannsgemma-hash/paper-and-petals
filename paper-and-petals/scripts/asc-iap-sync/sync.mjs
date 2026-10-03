@@ -27,7 +27,8 @@
  *
  * Required env (see README.md):
  *   ASC_KEY_ID, ASC_ISSUER_ID, ASC_PRIVATE_KEY_PATH  (App Store Connect API key)
- *   REVIEW_SCREENSHOT_PATH                            (a PNG/JPG, reused for all)
+ *   REVIEW_SCREENSHOT_PATH   (a PNG/JPG, reused for all) — optional, defaults
+ *                            to DEFAULT_REVIEW_SCREENSHOT below
  * Optional env:
  *   APP_BUNDLE_ID       (default com.paperandpetals.app)
  *   SANITY_PROJECT_ID   (default cv53e819)
@@ -50,6 +51,17 @@ const {
   OVERRIDES_PATH = 'overrides.json',
   REVIEW_SCREENSHOT_PATH,
 } = process.env;
+
+/**
+ * Apple wants a review screenshot on every in-app purchase, and the same image
+ * serves for all of them — so it's a constant rather than something to re-type
+ * each run. This path is machine-specific; set REVIEW_SCREENSHOT_PATH to
+ * override it anywhere else.
+ */
+const DEFAULT_REVIEW_SCREENSHOT =
+  'C:\\Users\\Gemma\\Dropbox\\Paper & Petals\\Screenshots\\Photo 5-8-2026, 9 26 06 am.png';
+
+const REVIEW_SCREENSHOT = (REVIEW_SCREENSHOT_PATH || '').trim() || DEFAULT_REVIEW_SCREENSHOT;
 
 const DRY_RUN = process.argv.includes('--dry-run');
 // App Store price tiers are a fixed per-currency ladder, so a Sanity price can
@@ -482,28 +494,57 @@ async function fetchCollections() {
   return (result || []).filter((c) => !c.free);
 }
 
+/**
+ * Apple's minimum for a review screenshot. Checked from the PNG header rather
+ * than with an image library — IHDR carries width and height in bytes 16..24,
+ * which is enough to catch the common mistake without a dependency.
+ */
+const MIN_SHOT_W = 640;
+const MIN_SHOT_H = 920;
+
+function checkScreenshot() {
+  let data;
+  try {
+    data = fs.readFileSync(REVIEW_SCREENSHOT);
+  } catch {
+    console.error(`Review screenshot not found:\n  ${REVIEW_SCREENSHOT}`);
+    console.error(
+      REVIEW_SCREENSHOT_PATH
+        ? '\n(from REVIEW_SCREENSHOT_PATH)'
+        : '\n(the built-in default — set REVIEW_SCREENSHOT_PATH to use another file)',
+    );
+    process.exit(1);
+  }
+  const isPng = data.length > 24 && data.readUInt32BE(0) === 0x89504e47;
+  if (!isPng) return; // JPEG etc. — let Apple judge it
+  const w = data.readUInt32BE(16);
+  const h = data.readUInt32BE(20);
+  if (w < MIN_SHOT_W || h < MIN_SHOT_H) {
+    console.warn(
+      `⚠ Review screenshot is ${w}×${h}; Apple wants at least ${MIN_SHOT_W}×${MIN_SHOT_H}.\n` +
+        '  Uploads may be rejected.\n',
+    );
+  }
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 function requireEnv() {
   // --dry-run only reads public Sanity data, so it needs no credentials.
   if (DRY_RUN) return
+  const missing = ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_PATH'].filter(
+    (k) => !process.env[k],
+  )
+  if (missing.length) {
+    console.error(`Missing required env: ${missing.join(', ')}\nSee README.md.`)
+    process.exit(1)
+  }
   // --list reads App Store Connect but writes nothing, so it needs the API key
   // but not a review screenshot.
-  if (LIST) {
-    const missing = ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_PATH'].filter(
-      (k) => !process.env[k],
-    )
-    if (missing.length) {
-      console.error(`Missing required env: ${missing.join(', ')}\nSee README.md.`)
-      process.exit(1)
-    }
-    return
-  };
-  const missing = ['ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY_PATH', 'REVIEW_SCREENSHOT_PATH']
-    .filter((k) => !process.env[k]);
-  if (missing.length) {
-    console.error(`Missing required env: ${missing.join(', ')}\nSee README.md.`);
-    process.exit(1);
-  }
+  if (LIST) return
+  // Check the screenshot up front: it's the last step of each product, so a bad
+  // path would otherwise surface only after everything else had been done 16
+  // times over.
+  checkScreenshot();
 }
 
 async function main() {
@@ -554,7 +595,7 @@ async function main() {
       touched = (await ensureLocalization(iap.id, displayName, description)) || touched;
       touched = (await ensureAvailability(iap.id, territoryIds)) || touched;
       touched = (await ensurePrice(iap.id, price)) || touched;
-      touched = (await ensureScreenshot(iap.id, REVIEW_SCREENSHOT_PATH)) || touched;
+      touched = (await ensureScreenshot(iap.id, REVIEW_SCREENSHOT)) || touched;
       console.log(`  ✓ ${touched ? 'ready' : 'already complete'}\n`);
       (results[touched ? 'updated' : 'ok']).push(productId);
     } catch (err) {

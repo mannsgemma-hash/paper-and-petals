@@ -37,6 +37,12 @@ App Store Connect → **Users and Access → Integrations → App Store Connect 
 - **Download the `.p8`** private key (you can only download it once). Keep it safe — it's a credential.
 
 ### 2. Have a review screenshot ready
+
+The path is baked in as `DEFAULT_REVIEW_SCREENSHOT` in `sync.mjs`, so there's
+nothing to set on the usual machine. It's checked before any work starts —
+missing file, or a PNG below Apple's 640×920 minimum — rather than failing on
+the last step of each of 16 products.
+
 One image (PNG/JPG, ≥ 640×920) — the same one you used for Victorian Rose is
 fine. Apple only needs *a* screenshot in the review field; it doesn't have to be
 per-product. Save its path.
@@ -46,7 +52,7 @@ per-product. Save its path.
 export ASC_KEY_ID=XXXXXXXXXX
 export ASC_ISSUER_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 export ASC_PRIVATE_KEY_PATH=/absolute/path/to/AuthKey_XXXXXXXXXX.p8
-export REVIEW_SCREENSHOT_PATH=/absolute/path/to/review.png
+# export REVIEW_SCREENSHOT_PATH=/absolute/path/to/review.png   # only to override the built-in default
 # optional (these have sensible defaults):
 # export APP_BUNDLE_ID=com.paperandpetals.app
 # export SANITY_PROJECT_ID=cv53e819
