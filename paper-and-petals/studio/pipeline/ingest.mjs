@@ -588,7 +588,15 @@ async function processOneImage(dir, filename, { free, brandVoice, hint, notes, s
 }
 
 async function processCollectionFolder(dir, folderName, brandVoice, { forceFree = false } = {}) {
-  console.log(`\n📦 Collection: ${folderName}`)
+  // Name AND location: a collection folder can sit at the top level or inside
+  // _free/, and from the name alone there is no telling which — nor whether a
+  // folder you thought you had moved is still being read from somewhere.
+  const rel = path.relative(INPUT_DIR, dir)
+  console.log(
+    `\n📦 Collection: ${folderName}` +
+      (rel === folderName ? '' : `   [incoming/${rel.split(path.sep).join('/')}]`) +
+      (forceFree ? '   · FREE' : ''),
+  )
   const overrides = await readOverrides(dir)
   const notes = await readPromptNotes(dir)
   if (notes) console.log('  · using prompt notes (.md) as context')
@@ -665,7 +673,10 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
       path.join(OUT_DIR, `collection-${slug(folderName)}.json`),
       JSON.stringify({ name, palette, price, free, whatYouGet, pieceCount: items.length, items: items.map((i) => ({ id: `item-${i.id}`, ...i.meta })) }, null, 2),
     )
-    console.log(`  ↳ (dry-run) ${name} · ${items.length} pieces · $${price} · ${palette}`)
+    // A free collection has no price; printing one read as if it were for sale.
+    console.log(
+      `  ↳ (dry-run) ${name} · ${items.length} pieces · ${free ? 'FREE' : `$${price}`} · ${palette}`,
+    )
     return
   }
 
