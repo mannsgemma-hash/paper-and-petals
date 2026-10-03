@@ -125,6 +125,7 @@ npm run ingest -- --model claude-opus-4-8   # higher-quality metadata (default: 
 npm run ingest -- --remove-bg        # force background removal even on transparent PNGs
 npm run ingest -- --no-bg            # never remove background
 npm run ingest -- --drafts           # park in Studio for review instead of going live
+npm run ingest -- --force-upload     # re-process and re-upload art that's already there
 npm run ingest -- --only "Victorian Rose"   # just this collection (see below)
 ```
 
@@ -377,6 +378,29 @@ pointing at pieces that aren't published yet.
 
 Ingest writes live documents by default, so this is only for a batch you want
 to look over first.
+
+## Re-runs are cheap
+
+A re-run skips art that is already in Sanity. Item ids carry the artwork's
+content hash, so a matching document means those exact pixels are up with both
+their assets — there is nothing to redo. That matters more than the metadata
+cache: resizing each piece twice and uploading both copies is what made a
+re-run slow, and on a few thousand items it was thousands of multi-megabyte
+transfers for art that never moved.
+
+```
+3245 item(s) already in Sanity — unchanged art will be skipped.
+  • a_die-cut_sticker_….png
+    · already in Sanity — skipped (--force-upload to redo)
+```
+
+So you can leave finished collections in `incoming/` rather than shuffling them
+into a staging folder — a re-run barely touches them. Move a folder out only
+when you want it gone from the pipeline; ingest never deletes, so anything
+already uploaded stays live either way.
+
+`--force-upload` redoes everything, for when the art is byte-identical but
+something else changed — a raised `PP_MAX_DIM`, say.
 
 ## Cost
 

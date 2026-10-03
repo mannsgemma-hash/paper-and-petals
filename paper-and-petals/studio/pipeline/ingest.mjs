@@ -111,6 +111,7 @@ const DRY_RUN = hasFlag('--dry-run')
 // Published is the default — drafts were an extra review step that always ended
 // in publishing anyway. `--drafts` still parks a batch in Studio for review;
 // `--publish` is accepted and does nothing, so old commands keep working.
+const FORCE_UPLOAD = hasFlag('--force-upload')
 const DRAFTS = hasFlag('--drafts')
 const PUBLISH = !DRAFTS
 const FORCE_BG = hasFlag('--remove-bg')
@@ -526,7 +527,50 @@ async function processOneImage(dir, filename, { free, brandVoice, hint, notes, s
   console.log(`  • ${filename}`)
   const raw = await fs.readFile(path.join(dir, filename))
   const hash = sha1(raw)
-  const base = await prepareBase(raw)
+
+  // Decode once, and only if something below actually needs the pixels — an
+  // item that is already in Sanity needs none of this.
+  let basePromise = null
+  const getBase = () => (basePromise ??= prepareBase(raw))
+
+  // Reuse cached metadata for unchanged art — no Claude call, no charge.
+  let cached = metaCache[hash]
+  if (cached) {
+    console.log('    · cached metadata (no charge)')
+  } else {
+    // Send a small thumbnail (not the full display image) — image tokens scale
+    // with pixel area, so this is the biggest cost lever.
+    const thumb = await resizePng(await getBase(), VISION_MAX)
+    cached = await itemMetadata(thumb, brandVoice, hint, notes)
+    metaCache[hash] = cached
+    cacheDirty = true
+    await saveCache()
+  }
+  // A category subfolder is authoritative — apply it to a copy so the shared
+  // cache keeps the model's own answer (the same art could sit elsewhere).
+  const meta = category && category !== cached.category ? { ...cached, category } : cached
+  // Content-hash id → stable across renames/moves, so re-runs overwrite the same
+  // draft instead of creating duplicates.
+  const id = `${slug(meta.name) || 'item'}-${hash.slice(0, 8)}`
+
+  if (DRY_RUN) {
+    await fs.mkdir(OUT_DIR, { recursive: true })
+    await fs.writeFile(path.join(OUT_DIR, `item-${id}.png`), await resizePng(await getBase(), MAX_DIM))
+    return { id, meta, assetId: null, free }
+  }
+
+  // Already uploaded, unchanged? The id carries the art's content hash, so a
+  // matching document means these exact pixels are already in Sanity with both
+  // assets attached. Re-resizing and re-uploading them is the whole cost of a
+  // re-run — thousands of multi-megabyte PNGs for art that didn't move.
+  const existing = existingItems.get(docId(`item-${id}`))
+  if (existing && existing.asset && existing.print && !FORCE_UPLOAD) {
+    console.log('    · already in Sanity — skipped (--force-upload to redo)')
+    skippedUploads++
+    return { id, meta, assetId: existing.asset, free }
+  }
+
+  const base = await getBase()
   const display = await resizePng(base, MAX_DIM)
   // Print asset: the full sheet this piece was cut from, when prep kept one —
   // so the download is the whole printable page, not the single cut-out.
@@ -542,31 +586,6 @@ async function processOneImage(dir, filename, { free, brandVoice, hint, notes, s
     }
   }
   if (!print) print = await resizePng(base, PRINT_MAX)
-  // Reuse cached metadata for unchanged art — no Claude call, no charge.
-  let cached = metaCache[hash]
-  if (cached) {
-    console.log('    · cached metadata (no charge)')
-  } else {
-    // Send a small thumbnail (not the full display image) — image tokens scale
-    // with pixel area, so this is the biggest cost lever.
-    const thumb = await resizePng(base, VISION_MAX)
-    cached = await itemMetadata(thumb, brandVoice, hint, notes)
-    metaCache[hash] = cached
-    cacheDirty = true
-    await saveCache()
-  }
-  // A category subfolder is authoritative — apply it to a copy so the shared
-  // cache keeps the model's own answer (the same art could sit elsewhere).
-  const meta = category && category !== cached.category ? { ...cached, category } : cached
-  // Content-hash id → stable across renames/moves, so re-runs overwrite the same
-  // draft instead of creating duplicates.
-  const id = `${slug(meta.name) || 'item'}-${hash.slice(0, 8)}`
-
-  if (DRY_RUN) {
-    await fs.mkdir(OUT_DIR, { recursive: true })
-    await fs.writeFile(path.join(OUT_DIR, `item-${id}.png`), display)
-    return { id, meta, assetId: null, free }
-  }
 
   const assetId = await uploadAsset(display, `${id}.png`)
   const printAssetId = await uploadAsset(print, `${id}-print.png`)
@@ -829,6 +848,30 @@ async function listAllCollectionNames() {
   }
 }
 
+/**
+ * Item documents already in Sanity, by id, with whether both their assets are
+ * attached. The id ends in the art's content hash, so a match means these exact
+ * pixels are already up — and the resize-and-upload can be skipped entirely.
+ * That work, not the metadata, is what makes a re-run slow: thousands of
+ * multi-megabyte PNGs resized twice and sent again for art that never moved.
+ */
+let existingItems = new Map()
+let skippedUploads = 0
+
+async function loadExistingItems() {
+  if (DRY_RUN || FORCE_UPLOAD) return
+  try {
+    const rows = await sanity.fetch(
+      '*[_type == "item"]{_id, "asset": asset.asset._ref, "print": printAsset.asset._ref}',
+    )
+    existingItems = new Map(rows.map((r) => [r._id, r]))
+    console.log(`${existingItems.size} item(s) already in Sanity — unchanged art will be skipped.`)
+  } catch (e) {
+    // Can't tell what's there, so upload everything: slower, but never wrong.
+    console.warn(`Couldn't list existing items (${e?.message ?? e}) — uploading everything.`)
+  }
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 /**
@@ -969,6 +1012,8 @@ async function main() {
     .map((f) => f.name)
   if (skipped.length) console.log(`Skipping staging folders: ${skipped.join(', ')}`)
 
+  await loadExistingItems()
+
   const collections = await listCollectionFolders()
   if (ONLY.length) {
     if (collections.length === 0) {
@@ -991,6 +1036,9 @@ async function main() {
   if (!ONLY.length) await processFreeFolder(path.join(INPUT_DIR, '_free'), brandVoice)
 
   await saveCache()
+  if (skippedUploads) {
+    console.log(`\n${skippedUploads} piece(s) were already in Sanity and were not re-uploaded.`)
+  }
   console.log(
     `\n✓ Done.${
       DRY_RUN
