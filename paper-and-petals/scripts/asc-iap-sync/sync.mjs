@@ -210,7 +210,12 @@ async function whatsMissing(iapId) {
   }
   if (!(await one(`/v2/inAppPurchases/${iapId}/inAppPurchaseAvailability`))) gaps.push('availability')
   if (!(await hasPrice(iapId))) gaps.push(`price (in ${BASE_TERRITORY})`)
-  if (!(await hasScreenshot(iapId))) gaps.push('review screenshot')
+  const shot = await screenshotAsset(iapId)
+  if (!shot) gaps.push('review screenshot')
+  else if (shot.state !== 'COMPLETE') {
+    const why = shot.errors.map((e) => e.description ?? e.code).join('; ')
+    gaps.push(`review screenshot (Apple says ${shot.state}${why ? `: ${why}` : ''})`)
+  }
   return gaps
 }
 
@@ -405,13 +410,27 @@ async function hasPrice(iapId) {
  * asset whose upload failed still answers the relationship, which would
  * likewise skip the retry forever.
  */
-async function hasScreenshot(iapId) {
+/**
+ * The current review screenshot asset, if any, with Apple's verdict on it.
+ * Apple validates an uploaded asset asynchronously — dimensions among other
+ * things — so "the upload call succeeded" is not "Apple accepted it".
+ */
+async function screenshotAsset(iapId) {
   const shot = await one(`/v2/inAppPurchases/${iapId}/appStoreReviewScreenshot`);
-  if (!shot) return false;
-  const state = shot.attributes?.assetDeliveryState?.state;
-  // Older responses omit the state; treat a present asset as done rather than
-  // re-uploading it on every run.
-  return state === undefined || state === 'COMPLETE';
+  if (!shot) return null;
+  const delivery = shot.attributes?.assetDeliveryState ?? {};
+  return {
+    id: shot.id,
+    // Older responses omit the state; treat a present asset as done rather than
+    // re-uploading it on every run.
+    state: delivery.state ?? 'COMPLETE',
+    errors: delivery.errors ?? [],
+  };
+}
+
+async function hasScreenshot(iapId) {
+  const a = await screenshotAsset(iapId);
+  return !!a && a.state === 'COMPLETE';
 }
 
 /**
@@ -456,7 +475,19 @@ async function ensurePrice(iapId, price) {
 }
 
 async function ensureScreenshot(iapId, filePath) {
-  if (await hasScreenshot(iapId)) return false;
+  const current = await screenshotAsset(iapId);
+  if (current?.state === 'COMPLETE') return false;
+  if (current) {
+    // An asset Apple rejected (or one left half-uploaded) still occupies the
+    // to-one relationship, so a fresh POST would collide with it.
+    const why = current.errors.map((e) => e.description ?? e.code).join('; ');
+    console.log(`  · replacing screenshot [${current.state}]${why ? `: ${why}` : ''}`);
+    try {
+      await api('DELETE', `/v1/inAppPurchaseAppStoreReviewScreenshots/${current.id}`);
+    } catch (e) {
+      console.warn(`  ⚠ couldn't remove the old screenshot (${e?.message ?? e})`);
+    }
+  }
   const data = fs.readFileSync(filePath);
   const reserve = await api('POST', '/v1/inAppPurchaseAppStoreReviewScreenshots', {
     data: {
