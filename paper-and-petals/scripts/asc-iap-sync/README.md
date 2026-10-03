@@ -76,12 +76,22 @@ node sync.mjs --list
 Read-only. It lists every in-app purchase App Store Connect holds for the app
 and lines them up against what the app will actually ask StoreKit for:
 
-- **Ready for the app** — exists, with its review state
+- **Purchasable** — exists *and* in a state the store will serve
+- **Exists but NOT purchasable** — created, but still `MISSING_METADATA`; it
+  names which of localization / availability / price / review screenshot is
+  absent
 - **Missing** — the app asks for it and it doesn't exist
 - **No longer asked for** — exists but nothing requests it
 
-Orphans *and* missing together is the tell-tale of a catalogue rebuild: an
-earlier run did create products, but under ids nothing uses now, because the
+**Existence is not enough.** A product stays in `MISSING_METADATA` until all
+four pieces are present, and StoreKit won't serve it until then — not even in
+sandbox. Creation is one API call and the rest are four more, so a run that
+fails partway leaves a full set of products that cannot be bought. Re-running
+`node sync.mjs` fills only what's absent and prints Apple's error for anything
+it still can't complete.
+
+Orphans *and* missing together is the tell-tale of a catalogue rebuild instead:
+an earlier run did create products, but under ids nothing uses now, because the
 collection names changed or `PP_PRODUCT_SERIES` was bumped. Ids can never be
 reused or renamed, so the fix is to create the current ones and leave the old
 ones be (or remove them from sale).

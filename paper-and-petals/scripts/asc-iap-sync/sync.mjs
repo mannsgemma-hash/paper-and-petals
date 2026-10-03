@@ -175,11 +175,45 @@ async function listIaps(appId) {
   return out
 }
 
+// States in which App Store Connect will actually serve the product to
+// StoreKit. Anything else — MISSING_METADATA above all — exists but cannot be
+// bought, not even in sandbox.
+const PURCHASABLE_STATES = new Set([
+  'READY_TO_SUBMIT',
+  'WAITING_FOR_REVIEW',
+  'IN_REVIEW',
+  'APPROVED',
+  'DEVELOPER_ACTION_NEEDED',
+  'PENDING_BINARY_APPROVAL',
+])
+
+/** Which of the four required pieces an incomplete product is still missing. */
+async function whatsMissing(iapId) {
+  const gaps = []
+  try {
+    const loc = await api('GET', `/v2/inAppPurchases/${iapId}/inAppPurchaseLocalizations?limit=1`)
+    if (!loc.data?.length) gaps.push('localization (display name + description)')
+  } catch {
+    gaps.push('localization (could not read)')
+  }
+  if (!(await one(`/v2/inAppPurchases/${iapId}/inAppPurchaseAvailability`))) gaps.push('availability')
+  if (!(await one(`/v2/inAppPurchases/${iapId}/iapPriceSchedule`))) gaps.push('price')
+  if (!(await one(`/v2/inAppPurchases/${iapId}/appStoreReviewScreenshot`))) gaps.push('review screenshot')
+  return gaps
+}
+
 /**
  * Compare what App Store Connect holds against what the app will ask for.
- * Product ids can never be reused, so a rebuild of the catalogue (new names, or
- * a new PP_PRODUCT_SERIES) leaves the previous run's products stranded under
- * ids nothing asks for any more — which looks exactly like never having run.
+ *
+ * Existence is not enough: a product sits in MISSING_METADATA until its
+ * localization, availability, price and review screenshot are all present, and
+ * StoreKit won't serve it until then — so an interrupted sync leaves a full set
+ * of products that cannot be bought. Classify by state, and for anything
+ * incomplete say which pieces are absent.
+ *
+ * Product ids can never be reused either, so a rebuild of the catalogue (new
+ * names, or a new PP_PRODUCT_SERIES) strands the previous run's products under
+ * ids nothing asks for any more.
  */
 async function runList(collections) {
   const appId = await getAppId()
@@ -190,13 +224,24 @@ async function runList(collections) {
   console.log(`App Store Connect holds ${existing.length} in-app purchase(s).`)
   console.log(`Sanity expects ${wanted.size} paid collection(s).\n`)
 
-  const matched = [...wanted.keys()].filter((id) => have.has(id))
-  const missing = [...wanted.keys()].filter((id) => !have.has(id))
+  const ids = [...wanted.keys()]
+  const ready = ids.filter((id) => have.has(id) && PURCHASABLE_STATES.has(have.get(id).state))
+  const incomplete = ids.filter((id) => have.has(id) && !PURCHASABLE_STATES.has(have.get(id).state))
+  const missing = ids.filter((id) => !have.has(id))
   const orphans = existing.filter((p) => !wanted.has(p.productId))
 
-  console.log(`── Ready for the app (${matched.length}) ──`)
-  for (const id of matched) console.log(`  ✓ ${id}   [${have.get(id).state}]`)
-  if (!matched.length) console.log('  (none)')
+  console.log(`── Purchasable (${ready.length}) ──`)
+  for (const id of ready) console.log(`  ✓ ${id}   [${have.get(id).state}]`)
+  if (!ready.length) console.log('  (none)')
+
+  console.log(`\n── Exists but NOT purchasable (${incomplete.length}) ──`)
+  for (const id of incomplete) {
+    const p = have.get(id)
+    console.log(`  ! ${id}   [${p.state}]`)
+    const gaps = await whatsMissing(p.id)
+    console.log(`      still needs: ${gaps.length ? gaps.join(', ') : '(nothing — may just need a moment to settle)'}`)
+  }
+  if (!incomplete.length) console.log('  (none)')
 
   console.log(`\n── Missing — the app asks for these and they don't exist (${missing.length}) ──`)
   for (const id of missing) console.log(`  ✗ ${id}   (${wanted.get(id).name})`)
@@ -206,19 +251,27 @@ async function runList(collections) {
   for (const p of orphans) console.log(`  · ${p.productId}   [${p.state}]`)
   if (!orphans.length) console.log('  (none)')
 
-  if (orphans.length && missing.length) {
+  console.log('')
+  if (incomplete.length) {
     console.log(
-      `\nThat pattern means a previous run DID create products — under ids the app\n` +
-        `no longer uses. Product ids can never be reused, so the old ones can't be\n` +
-        `renamed: run \`node sync.mjs\` to create the current ids, and leave the\n` +
-        `orphans alone (or remove them from sale in App Store Connect).`,
+      `${incomplete.length} product(s) exist but CANNOT be bought — a product stays in\n` +
+        `MISSING_METADATA until every piece above is filled in, and StoreKit won't\n` +
+        `serve it meanwhile. An earlier run created them and then failed partway.\n\n` +
+        `Re-run \`node sync.mjs\` — it only fills what's absent, and prints Apple's\n` +
+        `error for anything it still can't complete.`,
     )
   } else if (missing.length) {
-    console.log(`\nRun \`node sync.mjs\` to create the ${missing.length} missing product(s).`)
+    console.log(`Run \`node sync.mjs\` to create the ${missing.length} missing product(s).`)
   } else {
-    console.log(`\n✓ Every collection the app can ask for exists. If a purchase still fails,`)
-    console.log(`  the next link is RevenueCat (Products → Import), or a product not yet`)
-    console.log(`  in a purchasable state — the states are shown above.`)
+    console.log(
+      `✓ Every collection the app asks for exists and is purchasable. If a purchase\n` +
+        `  still fails, the next link is RevenueCat (Products → Import), or the\n` +
+        `  product is too freshly created to have reached sandbox yet.`,
+    )
+  }
+  if (orphans.length) {
+    console.log(`\n(The ${orphans.length} orphan(s) are from an earlier catalogue. Ids can never be`)
+    console.log(`  reused or renamed, so leave them — or remove them from sale.)`)
   }
 }
 
