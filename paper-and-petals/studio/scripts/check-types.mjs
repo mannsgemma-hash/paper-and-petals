@@ -91,16 +91,50 @@ function check(docs, fields, label) {
   return problems.length
 }
 
+/**
+ * Items no collection points at.
+ *
+ * Re-prepping a sheet produces different pixels, so its pieces get new content
+ * hashes and therefore new documents — while the previous run's items stay
+ * published. The collection moves on, the old pieces don't, and they sit in the
+ * dataset holding on to their image assets forever. `--prune` on ingest clears
+ * them; this says whether there are any.
+ *
+ * Loose items under `_free/` are legitimately unreferenced — they're sold as
+ * standalone free pieces, not as part of a collection — so they don't count.
+ */
+function findOrphans(items, collections) {
+  const referenced = new Set()
+  for (const c of collections) for (const ref of c.itemRefs ?? []) if (ref) referenced.add(ref)
+  return items.filter((it) => !referenced.has(it._id) && it.free !== true)
+}
+
 async function main() {
   console.log(`Checking ${PROJECT_ID}/${DATASET}…`)
   const collections = await query(
-    `*[_type == "collection"]{_id, name, price, free, palette, whatYouGet, productId}`,
+    `*[_type == "collection"]{_id, name, price, free, palette, whatYouGet, productId, "itemRefs": items[]._ref}`,
   )
   const items = await query(
     `*[_type == "item"]{_id, name, category, free, tone, glyphFallback, description}`,
   )
   console.log(TOKEN ? '(published documents and drafts)' : '(published documents only)')
   const bad = check(collections, COLLECTION_FIELDS, 'Collections') + check(items, ITEM_FIELDS, 'Items')
+
+  const orphans = findOrphans(items, collections)
+  console.log(`\nUnreferenced items: ${orphans.length}`)
+  if (orphans.length) {
+    for (const o of orphans.slice(0, 8)) console.log(`  · ${o._id}  (${o.name ?? 'unnamed'})`)
+    if (orphans.length > 8) console.log(`  · …and ${orphans.length - 8} more`)
+    console.log(
+      `\n  No collection points at these. Re-prepping a sheet gives its pieces new\n` +
+        `  content hashes and so new documents, while the previous run's stay\n` +
+        `  published — they hold on to their image assets and bloat the dataset.\n` +
+        `  Re-ingest the affected collections with --prune to clear them:\n\n` +
+        `    npm run ingest -- --only "<Collection>" --prune\n`,
+    )
+  } else {
+    console.log('  ✓ every item belongs to a collection (or is a standalone free piece)')
+  }
 
   if (bad) {
     console.log(`\n${bad} problem(s). The app coerces these at read time, so it `)

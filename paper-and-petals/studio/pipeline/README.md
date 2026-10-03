@@ -347,8 +347,11 @@ or edit the **Store product ID** field in Sanity Studio.
 npm run check-types
 ```
 
-Read-only, needs no token, and reports any document whose fields aren't the
-type the app expects — the shop formats `price` as a number, so one stored as
+Read-only, needs no token. It reports two things: any document whose fields
+aren't the type the app expects, and any item no collection points at —
+re-prepping a sheet gives its pieces new content hashes and so new documents,
+while the previous run's stay published, holding their image assets. Reports
+any document whose fields aren't the type the app expects — the shop formats `price` as a number, so one stored as
 the string `"5.99"` used to take the whole screen down. The app coerces these
 at read time now, so a bad value degrades instead of crashing, but fixing it
 keeps the displayed price honest. Run it after an ingest.

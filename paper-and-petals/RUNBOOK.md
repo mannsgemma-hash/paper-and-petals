@@ -116,7 +116,9 @@ npm run publish-drafts -- --yes
 npm run check-types
 ```
 
-Read-only, no token needed. Reports any field stored with the wrong type — a
+Read-only, no token needed. Reports **unreferenced items** — leftovers from a
+re-prep that `--prune` would have cleared — and any field stored with the wrong
+type — a
 price saved as `"5.99"` instead of `5.99` used to take the whole shop down.
 The app copes with it now, but it still shows the wrong price.
 
