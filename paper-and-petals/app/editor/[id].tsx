@@ -50,6 +50,7 @@ import type { Upload } from '../../src/lib/uploads';
 import { persistUploadFile, deleteUploadFile } from '../../src/lib/uploadFiles';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
 import { thumbSource } from '../../src/lib/images';
+import { resolveUploadSource } from '../../src/lib/uploadFiles';
 import { fetchCatalogue } from '../../src/services/content';
 import { supabase, supabaseConfigured } from '../../src/lib/supabase';
 import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
@@ -815,7 +816,8 @@ interface PlacedItemViewProps {
   item: PlacedItem;
   isSelected: boolean;
   spreadScale: number;
-  onSelect: (id: string) => void;
+  /** null clears the selection — tapping the selected item lets it go. */
+  onSelect: (id: string | null) => void;
   onMoveEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, w: number, h: number) => void;
   /** Text grew/shrank: box height + compensating scale so the letters stay put. */
@@ -884,7 +886,9 @@ function PlacedItemView({
     .maxDeltaY(8)
     .runOnJS(true)
     .onEnd(() => {
-      onSelect(item.id);
+      // Tapping the selected item again lets it go. Deselecting by finding bare
+      // canvas is fiddly on a full page, and this is where the finger already is.
+      onSelect(isSelected ? null : item.id);
     });
 
   // Double-tap opens the text editor for text items (Canva-style).
@@ -895,7 +899,7 @@ function PlacedItemView({
     .runOnJS(true)
     .onEnd(() => {
       if (item.kind === 'text') onRequestEdit(item.id);
-      else onSelect(item.id);
+      else onSelect(isSelected ? null : item.id);
     });
 
   const panGesture = Gesture.Pan()
@@ -1007,6 +1011,44 @@ function PlacedItemView({
       });
   }
 
+  /**
+   * Edge handle: stretches one axis only, so an item can be taken out of
+   * proportion deliberately. The corners stay proportional — that's the common
+   * case and the one you want to be hard to break by accident.
+   *
+   * ex/ey is the edge's direction from the centre: (±1, 0) left/right,
+   * (0, ±1) top/bottom. The drag is rotated into the item's own axes first, so
+   * stretching follows the edge you grabbed however the item is turned.
+   */
+  function makeEdgeGesture(ex: number, ey: number) {
+    return Gesture.Pan()
+      .onBegin(() => {
+        startW.value = itemW.value;
+        startH.value = itemH.value;
+        runOnJS(setGestureBusy)(true);
+      })
+      .onUpdate((e) => {
+        const rad = (rot.value * Math.PI) / 180;
+        const ldx = (e.translationX * Math.cos(rad) + e.translationY * Math.sin(rad)) / spreadScale;
+        const ldy = (-e.translationX * Math.sin(rad) + e.translationY * Math.cos(rad)) / spreadScale;
+        // ×2 because the item grows from its centre: dragging an edge out by d
+        // moves that edge d, so the whole dimension changes by 2d.
+        if (ex !== 0) {
+          itemW.value = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startW.value + 2 * ex * ldx));
+        }
+        if (ey !== 0) {
+          itemH.value = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startH.value + 2 * ey * ldy));
+        }
+      })
+      .onEnd(() => {
+        runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
+        runOnJS(fitAfterGesture)(itemH.value);
+      })
+      .onFinalize(() => {
+        runOnJS(setGestureBusy)(false);
+      });
+  }
+
   /** Rotate handle: angle of the pointer around the item center, soft 15° snap. */
   const rotateHandleGesture = Gesture.Pan()
     .onBegin(() => {
@@ -1063,9 +1105,17 @@ function PlacedItemView({
   // Live font sizing for text items: the lettering tracks the box height so the
   // corner resize handles scale text for free.
   const textScale = item.kind === 'text' ? (item.textScale ?? 1) : 1;
-  const textAnimStyle = useAnimatedStyle(() => ({
-    fontSize: Math.max(8, itemH.value * TEXT_FILL * textScale),
-  }));
+  const textAnimStyle = useAnimatedStyle(() => {
+    const fs = Math.max(8, itemH.value * TEXT_FILL * textScale);
+    return {
+      fontSize: fs,
+      // Script faces like Ballet carry tall ascenders and deep descenders that
+      // sit outside the default line box, so iOS clipped the tops and tails.
+      // An explicit, generous line height gives every face room; the box fit
+      // measures what's actually rendered, so it follows along.
+      lineHeight: fs * 1.42,
+    };
+  });
 
   /**
    * Grow (or shrink) a text box to fit what's actually in it.
@@ -1123,6 +1173,14 @@ function PlacedItemView({
     { hx: 1, hy: -1 },
     { hx: 1, hy: 1 },
     { hx: -1, hy: 1 },
+  ];
+
+  /** Mid-edge handles: left, right, top, bottom. */
+  const EDGES = [
+    { ex: -1, ey: 0 },
+    { ex: 1, ey: 0 },
+    { ex: 0, ey: -1 },
+    { ex: 0, ey: 1 },
   ];
 
   /**
@@ -1200,15 +1258,15 @@ function PlacedItemView({
           ) : isPhoto ? (
             item.clipShape && item.flowerAsset != null ? (
               <View style={styles.tornFill}>
-                <ShapeMaskImage source={item.flowerAsset} w={item.w} h={item.h} shape={item.clipShape} focus={item.clipFocus} id={item.id} />
+                <ShapeMaskImage source={resolveUploadSource(item.flowerAsset)} w={item.w} h={item.h} shape={item.clipShape} focus={item.clipFocus} id={item.id} />
               </View>
             ) : item.tornEdge && item.tornEdge !== 'none' && item.flowerAsset != null ? (
               <View style={styles.tornFill}>
-                <TornImage source={item.flowerAsset} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
+                <TornImage source={resolveUploadSource(item.flowerAsset)} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
               </View>
             ) : (
               <View style={[styles.photoInner, liftShadow]}>
-                <Image source={item.flowerAsset as any} style={styles.photoImage} resizeMode="cover" />
+                <Image source={resolveUploadSource(item.flowerAsset) as any} style={styles.photoImage} resizeMode="cover" />
               </View>
             )
           ) : isTape ? (
@@ -1239,18 +1297,18 @@ function PlacedItemView({
             </View>
           ) : item.flowerAsset && item.clipShape ? (
             <View style={styles.tornFill}>
-              <ShapeMaskImage source={item.flowerAsset} w={item.w} h={item.h} shape={item.clipShape} focus={item.clipFocus} id={item.id} />
+              <ShapeMaskImage source={resolveUploadSource(item.flowerAsset)} w={item.w} h={item.h} shape={item.clipShape} focus={item.clipFocus} id={item.id} />
             </View>
           ) : item.flowerAsset && item.tornEdge && item.tornEdge !== 'none' ? (
             <View style={styles.tornFill}>
-              <TornImage source={item.flowerAsset} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
+              <TornImage source={resolveUploadSource(item.flowerAsset)} w={item.w} h={item.h} style={item.tornEdge} id={item.id} />
             </View>
           ) : (
             <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }, !item.flowerAsset && liftShadow]}>
               {item.flowerAsset ? (
                 // Shadow on the image itself so iOS shapes it to the cut-out art.
                 <Image
-                  source={item.flowerAsset as any}
+                  source={resolveUploadSource(item.flowerAsset) as any}
                   style={[styles.itemImage, item.shadow && ITEM_IMG_SHADOW]}
                   resizeMode="contain"
                 />
@@ -1287,6 +1345,21 @@ function PlacedItemView({
             />
           ))}
 
+          {/* Edge handles — stretch one axis */}
+          {EDGES.map(({ ex, ey }) => (
+            <EdgeHandle
+              key={`e${ex},${ey}`}
+              ex={ex}
+              ey={ey}
+              gesture={makeEdgeGesture(ex, ey)}
+              tx={tx}
+              ty={ty}
+              itemW={itemW}
+              itemH={itemH}
+              pad={EDGE_PAD}
+            />
+          ))}
+
           {/* Rotate handle: stem + knob below the frame */}
           <Animated.View style={[styles.rotateHandleWrap, rotateWrapStyle]} pointerEvents="box-none">
             <View style={styles.rotateStem} />
@@ -1299,6 +1372,53 @@ function PlacedItemView({
         </Animated.View>
       )}
     </>
+  );
+}
+
+/**
+ * One mid-edge handle. Same edge-nudging as the corners; the bar is oriented
+ * along the edge it sits on so it reads as "stretch this way".
+ */
+function EdgeHandle({
+  ex,
+  ey,
+  gesture,
+  tx,
+  ty,
+  itemW,
+  itemH,
+  pad,
+}: {
+  ex: number;
+  ey: number;
+  gesture: ReturnType<typeof Gesture.Pan>;
+  tx: SharedValue<number>;
+  ty: SharedValue<number>;
+  itemW: SharedValue<number>;
+  itemH: SharedValue<number>;
+  pad: number;
+}) {
+  const style = useAnimatedStyle(() => {
+    const edgeX = tx.value + (ex * itemW.value) / 2;
+    const edgeY = ty.value + (ey * itemH.value) / 2;
+    const dx = edgeX < pad ? pad - edgeX : edgeX > SPREAD_W - pad ? SPREAD_W - pad - edgeX : 0;
+    const dy = edgeY < pad ? pad - edgeY : edgeY > SPREAD_H - pad ? SPREAD_H - pad - edgeY : 0;
+    return { transform: [{ translateX: dx }, { translateY: dy }] };
+  });
+  const vertical = ex !== 0; // a left/right handle is a tall bar
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View
+        style={[
+          styles.handleTouch,
+          ex === 0 ? { left: 0, right: 0 } : ex < 0 ? { left: -12 } : { right: -12 },
+          ey === 0 ? { top: 0, bottom: 0 } : ey < 0 ? { top: -12 } : { bottom: -12 },
+          style,
+        ]}
+      >
+        <View style={[styles.handleBar, vertical ? styles.handleBarV : styles.handleBarH]} />
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
@@ -1568,6 +1688,9 @@ interface DrawerBodyProps {
 /** The virtual tab id for My Uploads — kept out of the shop categories. */
 const UPLOADS_CAT = 'uploads';
 
+/** Virtual tab for browsing by collection rather than by category. */
+const COLLECTIONS_CAT = 'collections';
+
 /** Tiles mounted per page in the item drawer (see visibleItems). */
 const DRAWER_PAGE = 30;
 
@@ -1582,10 +1705,20 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
   const uploads = useAppStore((s) => s.uploads);
   const removeUpload = useAppStore((s) => s.removeUpload);
   const uploadsMode = drawerCat === UPLOADS_CAT;
+  const collectionsMode = drawerCat === COLLECTIONS_CAT;
+  const collections = useAppStore((s) => s.collections);
+  /** Which collection is open in the Collections tab; null = the list. */
+  const [openCollectionId, setOpenCollectionId] = useState<string | null>(null);
 
   useEffect(() => {
     setDrawerShown(DRAWER_PAGE);
-  }, [drawerCat, query]);
+  }, [drawerCat, query, openCollectionId]);
+
+  // Leaving the tab closes whatever collection was open, so coming back lands
+  // on the list rather than wherever you happened to be.
+  useEffect(() => {
+    if (!collectionsMode) setOpenCollectionId(null);
+  }, [collectionsMode]);
 
   const confirmRemoveUpload = (upload: Upload) => {
     confirmAsync(
@@ -1638,6 +1771,19 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
   const allOwned = Object.values(itemsByCategory)
     .flat()
     .filter((item) => item.category !== 'collections' && isOwned(item));
+
+  /** Pieces belonging to a collection that the person can actually place. */
+  const itemsInCollection = (collectionId: string) =>
+    allOwned.filter((it) => it.collectionIds?.includes(collectionId));
+
+  // Free collections count as owned here — their pieces are placeable too.
+  const ownedCollectionList = collections.filter(
+    (c) => c.free || hasStudio || ownedCollections[c.id],
+  );
+  const openCollection = openCollectionId
+    ? ownedCollectionList.find((c) => c.id === openCollectionId) ?? null
+    : null;
+  const collectionItems = openCollection ? itemsInCollection(openCollection.id) : [];
 
   const q = query.trim().toLowerCase();
   // Search spans the whole owned collection; otherwise show the active category.
@@ -1706,7 +1852,80 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
 
   return (
     <View style={styles.drawerBody}>
-      {!uploadsMode ? (
+      {collectionsMode ? (
+        // Browse by collection: the set you bought, then its pieces. Same tiles
+        // as everywhere else, grouped the way the shop sells them.
+        <View style={styles.drawerLeft}>
+          {openCollection ? (
+            <>
+              <Pressable style={styles.colBackRow} onPress={() => setOpenCollectionId(null)}>
+                <Feather name="chevron-left" size={16} color={theme.palette.forest} />
+                <Text style={styles.colBackText} numberOfLines={1}>{openCollection.name}</Text>
+              </Pressable>
+              <ScrollView>
+                {collectionItems.length === 0 ? (
+                  <View style={styles.drawerEmptyInner}>
+                    <Text style={styles.drawerEmptyText}>Nothing in here yet</Text>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.drawerGrid}>
+                      {collectionItems.slice(0, drawerShown).map((it) => renderTile(it, 'col-'))}
+                    </View>
+                    {collectionItems.length > drawerShown && (
+                      <Pressable
+                        style={styles.drawerMore}
+                        onPress={() => setDrawerShown((n) => n + DRAWER_PAGE)}
+                      >
+                        <Text style={styles.drawerMoreText}>
+                          Show more · {collectionItems.length - drawerShown} left
+                        </Text>
+                        <Feather name="chevron-down" size={15} color={theme.palette.forest} />
+                      </Pressable>
+                    )}
+                  </>
+                )}
+              </ScrollView>
+            </>
+          ) : (
+            <ScrollView>
+              {ownedCollectionList.length === 0 ? (
+                <View style={styles.drawerEmptyInner}>
+                  <Feather name="package" size={22} color={theme.color.fg4} />
+                  <Text style={styles.drawerEmptyText}>No collections yet</Text>
+                  <Text style={styles.drawerEmptyHint}>
+                    Visit the shop to add a collection to your shelf
+                  </Text>
+                </View>
+              ) : (
+                ownedCollectionList.map((c) => {
+                  const count = itemsInCollection(c.id).length;
+                  return (
+                    <Pressable
+                      key={c.id}
+                      style={styles.colRow}
+                      onPress={() => setOpenCollectionId(c.id)}
+                    >
+                      <View style={styles.colRowThumb}>
+                        {c.cover ? (
+                          <Image source={thumbSource(c.cover)} style={styles.colRowImg} resizeMode="cover" />
+                        ) : (
+                          <Feather name="package" size={16} color={theme.color.fg3} />
+                        )}
+                      </View>
+                      <View style={styles.colRowText}>
+                        <Text style={styles.colRowName} numberOfLines={1}>{c.name}</Text>
+                        <Text style={styles.colRowCount}>{count} pieces</Text>
+                      </View>
+                      <Feather name="chevron-right" size={16} color={theme.color.fg3} />
+                    </Pressable>
+                  );
+                })
+              )}
+            </ScrollView>
+          )}
+        </View>
+      ) : !uploadsMode ? (
       <View style={styles.drawerLeft}>
         {/* Search */}
         <View style={styles.drawerSearch}>
@@ -1785,7 +2004,7 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
               {uploads.map((u) => (
                 <View key={u.id} style={styles.uploadTile}>
                   <Pressable style={styles.uploadTilePress} onPress={() => placeUpload(u)}>
-                    <Image source={{ uri: u.uri }} style={styles.uploadThumb} resizeMode="cover" />
+                    <Image source={thumbSource({ uri: u.uri })} style={styles.uploadThumb} resizeMode="cover" />
                   </Pressable>
                   <Pressable
                     style={styles.uploadRemove}
@@ -1833,8 +2052,24 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
           );
         })}
 
-        {/* My Uploads — set apart from the shop categories by a divider. */}
+        {/* Collections and My Uploads — set apart from the shop categories. */}
         <View style={styles.tabRailDivider} />
+        <View style={styles.tabWrapper}>
+          <Pressable
+            style={[styles.tab, collectionsMode && styles.tabActive]}
+            onPress={() => setDrawerCat(COLLECTIONS_CAT)}
+            {...({
+              onPointerEnter: () => setHoveredCategory(COLLECTIONS_CAT),
+              onPointerLeave: () => setHoveredCategory(null),
+            } as any)}
+          >
+            <Feather
+              name="package"
+              size={18}
+              color={collectionsMode ? theme.palette.forest : theme.color.fg3}
+            />
+          </Pressable>
+        </View>
         <View style={styles.tabWrapper}>
           <Pressable
             style={[styles.tab, uploadsMode && styles.tabActive]}
@@ -1855,12 +2090,18 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
 
       {/* Category tooltip — sibling to both ScrollViews so it's never clipped */}
       {hoveredCategory && (() => {
-        if (hoveredCategory === UPLOADS_CAT) {
-          // Sits below the category tabs + divider (~13px).
-          const topOffset = 8 + EDITOR_CATEGORIES.length * 38 + 13 + 18;
+        // The two virtual tabs sit below the categories and a ~13px divider,
+        // in rail order: Collections, then My Uploads.
+        const extraTabs = [
+          { id: COLLECTIONS_CAT, label: 'Collections' },
+          { id: UPLOADS_CAT, label: 'My Uploads' },
+        ];
+        const extra = extraTabs.findIndex((t) => t.id === hoveredCategory);
+        if (extra >= 0) {
+          const topOffset = 8 + EDITOR_CATEGORIES.length * 38 + 13 + extra * 38 + 18;
           return (
             <View style={[styles.catTooltip, { top: topOffset, right: 44 }]} pointerEvents="none">
-              <Text style={styles.tooltipText}>My Uploads</Text>
+              <Text style={styles.tooltipText}>{extraTabs[extra].label}</Text>
             </View>
           );
         }
@@ -1966,7 +2207,8 @@ interface SpreadViewProps {
   selectedId: string | null;
   spreadScale: number;
   onCanvasTap: () => void;
-  onSelect: (id: string) => void;
+  /** null clears the selection — tapping the selected item lets it go. */
+  onSelect: (id: string | null) => void;
   onMoveEnd: (id: string, x: number, y: number) => void;
   onResizeEnd: (id: string, w: number, h: number) => void;
   /** Text grew/shrank: box height + compensating scale so the letters stay put. */
@@ -2087,29 +2329,9 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
 
         {/* Style + alignment + size — one compact row of controls */}
         <View style={styles.textCtrlRow}>
-          <View style={styles.textCtrlGroup}>
-            <Pressable
-              style={[styles.textCtrlBtn, item.bold && styles.textCtrlBtnActive]}
-              onPress={() => onChange({ bold: !item.bold })}
-              hitSlop={4}
-            >
-              <Text style={[styles.textCtrlGlyph, { fontWeight: '800' }, item.bold && styles.textCtrlGlyphActive]}>B</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.textCtrlBtn, item.italic && styles.textCtrlBtnActive]}
-              onPress={() => onChange({ italic: !item.italic })}
-              hitSlop={4}
-            >
-              <Text style={[styles.textCtrlGlyph, { fontStyle: 'italic' }, item.italic && styles.textCtrlGlyphActive]}>I</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.textCtrlBtn, item.underline && styles.textCtrlBtnActive]}
-              onPress={() => onChange({ underline: !item.underline })}
-              hitSlop={4}
-            >
-              <Text style={[styles.textCtrlGlyph, { textDecorationLine: 'underline' }, item.underline && styles.textCtrlGlyphActive]}>U</Text>
-            </Pressable>
-          </View>
+          {/* Bold / italic / underline removed — the journalling faces carry
+              their own character and the toggles fought with them. The item
+              fields stay so text saved with them still renders as written. */}
           <View style={styles.textCtrlGroup}>
             {(['left', 'center', 'right'] as const).map((a) => (
               <Pressable
@@ -3561,11 +3783,10 @@ export default function EditorScreen() {
                             : undefined
                         }
                         flipOn={!!selectedItem.flipX}
-                        onTornEdge={
-                          selectedItem.flowerAsset != null && selectedItem.kind !== 'doodle'
-                            ? () => setTornPickerId(selectedItem.id)
-                            : undefined
-                        }
+                        // Cut-out retired. Existing items keep their tornEdge /
+                        // clipShape and still render; there's just no way to
+                        // apply one any more.
+                        onTornEdge={undefined}
                         tornOn={!!selectedItem.tornEdge && selectedItem.tornEdge !== 'none'}
                       />
                     </View>
@@ -3737,6 +3958,7 @@ export default function EditorScreen() {
             <View style={styles.layerPanel}>
               <View style={styles.layerPanelHeader}>
                 <Text style={styles.layerPanelTitle}>Layers</Text>
+                <Text style={styles.layerPanelHint}>hold ⠿ to reorder</Text>
                 <Pressable onPress={() => setLayerPanelOpen(false)} hitSlop={8}>
                   <Feather name="x" size={16} color={theme.color.fg2} />
                 </Pressable>
@@ -3769,30 +3991,30 @@ export default function EditorScreen() {
                             ? 'Doodle'
                             : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
                   const dragging = layerDrag?.id === item.id;
-                  const pan = PanResponder.create({
-                    // Capture variants: the enclosing ScrollView is a native
-                    // responder and would otherwise take a vertical drag that
-                    // starts on the handle.
-                    onStartShouldSetPanResponder: () => true,
-                    onStartShouldSetPanResponderCapture: () => true,
-                    onMoveShouldSetPanResponder: () => true,
-                    onMoveShouldSetPanResponderCapture: () => true,
-                    onPanResponderGrant: () => {
+                  // react-native-gesture-handler, not PanResponder: the
+                  // enclosing ScrollView is a NATIVE recogniser, and the JS
+                  // responder system loses a vertical drag to it however many
+                  // capture handlers it sets — which is why this never worked.
+                  // activateAfterLongPress also makes the intent unambiguous:
+                  // a flick scrolls the list, a hold picks the row up.
+                  const pan = Gesture.Pan()
+                    .activateAfterLongPress(140)
+                    .runOnJS(true)
+                    .onStart(() => {
                       const from = stacked.findIndex((it) => it.id === item.id);
                       setLayerDrag({ id: item.id, from, to: from, dy: 0 });
-                    },
-                    onPanResponderMove: (_e, g) => {
+                    })
+                    .onUpdate((e) => {
                       setLayerDrag((d) => {
                         if (!d) return d;
                         const to = Math.max(
                           0,
-                          Math.min(stacked.length - 1, d.from + Math.round(g.dy / LAYER_ROW_H)),
+                          Math.min(stacked.length - 1, d.from + Math.round(e.translationY / LAYER_ROW_H)),
                         );
-                        return { ...d, to, dy: g.dy };
+                        return { ...d, to, dy: e.translationY };
                       });
-                    },
-                    onPanResponderTerminationRequest: () => false,
-                    onPanResponderRelease: () => {
+                    })
+                    .onEnd(() => {
                       setLayerDrag((d) => {
                         if (d && d.to !== d.from) {
                           const ids = stacked.map((it) => it.id);
@@ -3802,9 +4024,8 @@ export default function EditorScreen() {
                         }
                         return null;
                       });
-                    },
-                    onPanResponderTerminate: () => setLayerDrag(null),
-                  });
+                    })
+                    .onFinalize(() => setLayerDrag(null));
                   return (
                     // The row is a plain View: a Pressable wrapping the handle
                     // would fire its onPress when the drag is released, which
@@ -3836,10 +4057,12 @@ export default function EditorScreen() {
                         </View>
                         <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
                       </Pressable>
-                      {/* Drag handle — hold and move to restack. */}
-                      <View style={styles.layerHandle} {...pan.panHandlers}>
-                        <Feather name="menu" size={16} color={dragging ? theme.palette.forest : theme.color.fg3} />
-                      </View>
+                      {/* Drag handle — hold, then move to restack. */}
+                      <GestureDetector gesture={pan}>
+                        <View style={styles.layerHandle}>
+                          <Feather name="menu" size={16} color={dragging ? theme.palette.forest : theme.color.fg3} />
+                        </View>
+                      </GestureDetector>
                     </View>
                   );
                   });
@@ -3868,12 +4091,18 @@ export default function EditorScreen() {
           <View style={styles.drawerHeader}>
             <View>
               <Text style={styles.drawerEyebrow}>
-                {drawerCat === UPLOADS_CAT ? 'YOUR FILES' : 'YOUR COLLECTION'}
+                {drawerCat === UPLOADS_CAT
+                  ? 'YOUR FILES'
+                  : drawerCat === COLLECTIONS_CAT
+                    ? 'YOUR COLLECTIONS'
+                    : 'YOUR COLLECTION'}
               </Text>
               <Text style={styles.drawerTitle}>
                 {drawerCat === UPLOADS_CAT
                   ? 'My Uploads'
-                  : EDITOR_CATEGORIES.find((c) => c.id === drawerCat)?.label}
+                  : drawerCat === COLLECTIONS_CAT
+                    ? 'Collections'
+                    : EDITOR_CATEGORIES.find((c) => c.id === drawerCat)?.label}
               </Text>
             </View>
             <Pressable onPress={() => toggleDrawer(false)} hitSlop={8}>
@@ -4452,6 +4681,61 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
   },
+  // Collections tab in the drawer
+  colBackRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.palette.hairlineSoft,
+  },
+  colBackText: {
+    flex: 1,
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    fontWeight: '700',
+    color: theme.palette.forest,
+  },
+  colRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.palette.hairlineSoft,
+  },
+  colRowThumb: {
+    width: 38,
+    height: 38,
+    borderRadius: theme.radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.palette.cream,
+    overflow: 'hidden',
+  },
+  colRowImg: { width: '100%', height: '100%' },
+  colRowText: { flex: 1 },
+  colRowName: {
+    fontFamily: theme.font.ui,
+    fontSize: 13,
+    fontWeight: '600',
+    color: theme.color.fg1,
+  },
+  colRowCount: {
+    fontFamily: theme.font.ui,
+    fontSize: 11,
+    color: theme.color.fg3,
+    marginTop: 1,
+  },
+  layerPanelHint: {
+    flex: 1,
+    fontSize: 10,
+    color: theme.color.fg4,
+    marginLeft: 8,
+  },
   layerRowPress: {
     flex: 1,
     flexDirection: 'row',
@@ -4682,6 +4966,14 @@ const styles = StyleSheet.create({
     zIndex: 20,
     cursor: 'pointer',
   },
+  handleBar: {
+    backgroundColor: theme.palette.cream,
+    borderWidth: 1.5,
+    borderColor: theme.palette.forest,
+    borderRadius: 3,
+  },
+  handleBarV: { width: 6, height: 22 },
+  handleBarH: { width: 22, height: 6 },
   handleDot: {
     width: 12,
     height: 12,
@@ -5131,6 +5423,9 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    // The box follows the text, but during a resize the two are briefly out of
+    // step — better to spill for a frame than to clip a letter.
+    overflow: 'visible',
   },
   textItem: {
     textAlign: 'center',

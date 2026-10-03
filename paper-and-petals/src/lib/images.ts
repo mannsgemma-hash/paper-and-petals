@@ -14,6 +14,8 @@ export const THUMB_PX = 400;
 /** A detail/preview image — bigger, but still nowhere near the full asset. */
 export const PREVIEW_PX = 900;
 
+import { resolveUploadSource } from './uploadFiles';
+
 const SANITY_CDN = /\/\/cdn\.sanity\.io\//;
 
 /**
@@ -28,6 +30,8 @@ const SANITY_CDN = /\/\/cdn\.sanity\.io\//;
  */
 export function thumbSource<T>(source: T, px: number = THUMB_PX): T {
   if (!source || typeof source !== 'object') return source;
+  // A user's own upload first: its stored path may be from a previous install.
+  source = resolveUploadSource(source);
   const uri = (source as { uri?: unknown }).uri;
   if (typeof uri !== 'string' || !SANITY_CDN.test(uri)) return source;
   if (/[?&]w=/.test(uri)) return source; // already sized

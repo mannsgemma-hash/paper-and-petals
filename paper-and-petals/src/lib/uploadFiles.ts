@@ -36,6 +36,41 @@ export async function persistUploadFile(sourceUri: string, id: string): Promise<
 }
 
 /**
+ * Repair a stored upload uri.
+ *
+ * iOS gives the app a fresh container UUID on every install and update, so an
+ * absolute `file:///var/mobile/Containers/Data/Application/<uuid>/Documents/...`
+ * recorded by one build points nowhere in the next — the file is still there,
+ * under a different path. The holding area then shows tiles with no picture,
+ * and anything placed on a page goes blank. Re-resolving the file name against
+ * today's document directory fixes both.
+ *
+ * Only our own files are touched: a picker uri we failed to copy is left alone,
+ * and so is a name that no longer exists on disk, so nothing turns a real uri
+ * into a broken one.
+ */
+export function resolveUploadUri(stored: string): string {
+  if (!stored || !stored.includes(`/${UPLOADS_DIR}/`)) return stored
+  const name = stored.split('/').pop()
+  if (!name) return stored
+  try {
+    const file = new File(uploadsDir(), name)
+    return file.exists ? file.uri : stored
+  } catch {
+    return stored
+  }
+}
+
+/** The same repair for an Image `source`; anything else passes through. */
+export function resolveUploadSource<T>(source: T): T {
+  if (!source || typeof source !== 'object') return source
+  const uri = (source as { uri?: unknown }).uri
+  if (typeof uri !== 'string') return source
+  const fixed = resolveUploadUri(uri)
+  return fixed === uri ? source : ({ ...(source as object), uri: fixed } as T)
+}
+
+/**
  * Delete a durable upload file when it's removed from the holding area. Only
  * touches files inside our uploads directory, and never throws.
  */

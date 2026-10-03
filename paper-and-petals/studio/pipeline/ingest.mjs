@@ -89,7 +89,12 @@ const TONES = ['sage', 'forest', 'rose', 'mauve', 'blue', 'amber', 'cream', 'oxb
 // editor, so too small a cap looks soft on a big iPad canvas; the print asset
 // is what buyers download. Both are env-tunable, and neither ever enlarges
 // past the source.
-const MAX_DIM = Number(process.env.PP_MAX_DIM || 1600) // in-app display asset
+// In-app display asset. 1600 was soft for full-page papers on an iPad — a
+// background drawn across the whole spread had barely more pixels than the
+// canvas it filled. Raising it costs storage and download, so grids ask the
+// Sanity CDN for small renditions (src/lib/images.ts) and only the canvas
+// pulls the full thing. Takes effect on the next ingest of a collection.
+const MAX_DIM = Number(process.env.PP_MAX_DIM || 2400)
 const PRINT_MAX = Number(process.env.PP_PRINT_MAX || 3000) // high-res asset for print download
 const VISION_MAX = 640 // tiny thumbnail sent to Claude for metadata — image tokens scale with pixel area
 const IMAGE_EXTS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
