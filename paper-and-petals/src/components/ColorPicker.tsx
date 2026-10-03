@@ -173,8 +173,13 @@ export function ColorPicker({ value, onChange, presets = [] }: Props) {
     setDims((d) => ({ ...d, w: width, h: height }));
   };
   const onHueLayout = (e: LayoutChangeEvent) => {
-    hueW.current = e.nativeEvent.layout.width;
-    setDims((d) => ({ ...d, hue: e.nativeEvent.layout.width }));
+    // Read the event NOW. A state updater runs later, and by then React Native
+    // has recycled the synthetic event and nulled nativeEvent — reading it in
+    // there threw "Cannot read property 'layout' of null" from inside React's
+    // own reducer, taking the whole picker down on every open.
+    const { width } = e.nativeEvent.layout;
+    hueW.current = width;
+    setDims((d) => ({ ...d, hue: width }));
   };
 
   const commitHex = () => {

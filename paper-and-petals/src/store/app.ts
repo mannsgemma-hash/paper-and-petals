@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { SHOP_CATALOGUE, FALLBACK_COLLECTIONS, ShopItem, Collection } from '../data/shop';
 import { randomCoverKey } from '../data/covers';
 import { Upload, loadUploads, persistUploads } from '../lib/uploads';
+import { loadJournals, persistJournals } from '../lib/journals';
 
 /** Launch state drives where SCR-01 routes after the bar fills. */
 export type LaunchState = 'new' | 'returning';
@@ -15,6 +16,12 @@ export interface Journal {
   coverKey?: string;
   isNew?: boolean;
 }
+
+/** Real journals only — the trailing "add" card is UI, not content. */
+const saveable = (list: Journal[]) => list.filter((j) => !j.isNew);
+
+/** The trailing "add" card, appended to whatever the shelf holds. */
+const NEW_SLOT: Journal = { id: 'j-new', name: '', items: 0, edited: '', isNew: true };
 
 // First run starts with a single journal wearing a random cover; the user
 // adds more and picks a cover for each. The trailing slot is the "add" card.
@@ -47,6 +54,7 @@ interface AppState {
    */
   uploads: Upload[];
   setLaunchState: (s: LaunchState) => void;
+  setJournals: (journals: Journal[]) => void;
   renameJournal: (id: string, name: string) => void;
   addJournal: (coverKey?: string) => Journal;
   setShopItems: (items: ShopItem[]) => void;
@@ -82,10 +90,16 @@ export const useAppStore = create<AppState>((set, get) => ({
   shopItems: SHOP_CATALOGUE,
   collections: FALLBACK_COLLECTIONS,
   setLaunchState: (launchState) => set({ launchState }),
+  setJournals: (journals) => {
+    void persistJournals(saveable(journals));
+    set({ journals });
+  },
   renameJournal: (id, name) =>
-    set((s) => ({
-      journals: s.journals.map((j) => (j.id === id ? { ...j, name } : j)),
-    })),
+    set((s) => {
+      const journals = s.journals.map((j) => (j.id === id ? { ...j, name } : j));
+      void persistJournals(saveable(journals));
+      return { journals };
+    }),
   addJournal: (coverKey) => {
     const count = get().journals.filter((j) => !j.isNew).length;
     const journal: Journal = {
@@ -98,7 +112,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => {
       const rest = s.journals.filter((j) => !j.isNew);
       const slot = s.journals.find((j) => j.isNew);
-      return { journals: slot ? [...rest, journal, slot] : [...rest, journal] };
+      const journals = slot ? [...rest, journal, slot] : [...rest, journal];
+      void persistJournals(saveable(journals));
+      return { journals };
     });
     return journal;
   },
@@ -159,4 +175,12 @@ export const useAppStore = create<AppState>((set, get) => ({
 // Hydrate the holding area from disk once, on first import of the store.
 void loadUploads().then((list) => {
   if (list.length) useAppStore.setState({ uploads: list });
+});
+
+// Same for the shelf. A saved list replaces the seed outright — including an
+// empty one, which legitimately means "every journal was deleted" and must not
+// resurrect the seed journal.
+void loadJournals().then((stored) => {
+  if (!stored) return;
+  useAppStore.setState({ journals: [...stored, NEW_SLOT] });
 });
