@@ -358,6 +358,13 @@ async function main() {
     }
   }
 
+  // Say what was deliberately left alone. Staging folders are easy to suspect
+  // when a count looks wrong, and silence makes that hard to rule out.
+  const skipped = folders
+    .filter((f) => f.name.startsWith('_') && f.name !== '_free')
+    .map((f) => f.name)
+  if (skipped.length) console.log(`Skipping staging folders: ${skipped.join(', ')}\n`)
+
   const picked = ONLY.length ? targets.filter((t) => matchesOnly(t.label)) : targets
   if (ONLY.length && picked.length === 0) {
     console.error(

@@ -953,6 +953,11 @@ async function main() {
       `${BATCH ? ' · BATCH metadata' : ''} · model: ${MODEL}\n`,
   )
 
+  const skipped = folders
+    .filter((f) => f.name.startsWith('_') && f.name !== '_free')
+    .map((f) => f.name)
+  if (skipped.length) console.log(`Skipping staging folders: ${skipped.join(', ')}`)
+
   const collections = await listCollectionFolders()
   if (ONLY.length) {
     if (collections.length === 0) {
