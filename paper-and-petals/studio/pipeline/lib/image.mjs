@@ -165,7 +165,11 @@ function connectedComponents(mask, w, h) {
   return { labels, blobs }
 }
 
-/** Crop one blob out of the full RGBA buffer, keeping only its own pixels. */
+/**
+ * Crop one piece out of the full RGBA buffer, keeping only its own pixels.
+ * `blob.members` is the set of labels belonging to this piece — one for a plain
+ * blob, or a core plus the fragments clustered onto it.
+ */
 async function cropBlob(rgba, w, blob, pad) {
   const bw = blob.maxx - blob.minx + 1
   const bh = blob.maxy - blob.miny + 1
@@ -173,7 +177,7 @@ async function cropBlob(rgba, w, blob, pad) {
   for (let y = blob.miny; y <= blob.maxy; y++) {
     for (let x = blob.minx; x <= blob.maxx; x++) {
       const src = y * w + x
-      if (blob.labels[src] !== blob.label) continue
+      if (!blob.members.has(blob.labels[src])) continue
       const s = src * 4
       const o = ((y - blob.miny) * bw + (x - blob.minx)) * 4
       out[o] = rgba[s]
@@ -210,9 +214,68 @@ async function cropBlob(rgba, w, blob, pad) {
  */
 const GAP_BASELINE = 2400
 
+/** Shortest distance between two bounding boxes; 0 when they overlap. */
+function boxGap(a, b) {
+  const dx = Math.max(0, Math.max(a.minx - b.maxx, b.minx - a.maxx))
+  const dy = Math.max(0, Math.max(a.miny - b.maxy, b.miny - a.maxy))
+  return Math.hypot(dx, dy)
+}
+
+/**
+ * Clustering, for sheets whose items shed detached pieces — splatter, flecks,
+ * loose glitter. Dilation can't help there: it grows everything by the same
+ * amount, so a gap wide enough to reach an item's furthest speck also welds
+ * neighbouring items together. On a real paint sheet the specks sat up to 71px
+ * from their own artwork while two artworks sat 11px apart, which makes the
+ * problem unsolvable with `gap` at any value.
+ *
+ * Instead: blobs at least `core` across are items; everything smaller is a
+ * fragment, assigned to the NEAREST item within `cluster`, or dropped if it is
+ * off on its own. Nearest-assignment is what dilation lacks — two items 11px
+ * apart each keep their own specks.
+ */
+function clusterFragments(blobs, coreSize, radius) {
+  const cores = blobs.filter((b) => Math.max(b.maxx - b.minx + 1, b.maxy - b.miny + 1) >= coreSize)
+  if (cores.length === 0) return null // nothing reads as an item — leave it alone
+  const pieces = cores.map((b) => ({ ...b, members: new Set([b.label]) }))
+  for (const frag of blobs) {
+    if (Math.max(frag.maxx - frag.minx + 1, frag.maxy - frag.miny + 1) >= coreSize) continue
+    let best = null
+    let bestD = Infinity
+    for (const piece of pieces) {
+      const d = boxGap(frag, piece)
+      if (d < bestD) {
+        bestD = d
+        best = piece
+      }
+    }
+    if (!best || bestD > radius) continue // a speck too far from anything
+    best.members.add(frag.label)
+    // The piece's box has to grow to contain what it just adopted.
+    best.minx = Math.min(best.minx, frag.minx)
+    best.miny = Math.min(best.miny, frag.miny)
+    best.maxx = Math.max(best.maxx, frag.maxx)
+    best.maxy = Math.max(best.maxy, frag.maxy)
+  }
+  return pieces
+}
+
 export async function splitToPieces(
   buf,
-  { gap = 4, gapPx = null, alpha = 16, minSize = 28, pad = 12, maxEdge = 2400, forceBg = false, noBg = false } = {},
+  {
+    gap = 4,
+    gapPx = null,
+    alpha = 16,
+    minSize = 28,
+    pad = 12,
+    maxEdge = 2400,
+    forceBg = false,
+    noBg = false,
+    /** Smallest blob that counts as an item of its own (0 = clustering off). */
+    core = 0,
+    /** How far a fragment may sit from its item and still belong to it. */
+    cluster = 0,
+  } = {},
 ) {
   const { data, info } = await (await toTransparent(buf, { forceBg, noBg, maxEdge }))
     .raw()
@@ -229,8 +292,16 @@ export async function splitToPieces(
   const grown = dilate(mask, w, h, effGap)
   const { labels, blobs } = connectedComponents(grown, w, h)
 
-  const kept = blobs
-    .filter((b) => Math.max(b.maxx - b.minx + 1, b.maxy - b.miny + 1) >= effMinSize)
+  const effCore = core > 0 ? Math.max(1, Math.round(core * scale)) : 0
+  const effCluster = cluster > 0 ? Math.max(0, Math.round(cluster * scale)) : 0
+
+  const clustered = effCore > 0 ? clusterFragments(blobs, effCore, effCluster) : null
+  const kept = (
+    clustered ??
+    blobs
+      .filter((b) => Math.max(b.maxx - b.minx + 1, b.maxy - b.miny + 1) >= effMinSize)
+      .map((b) => ({ ...b, members: new Set([b.label]) }))
+  )
     // reading order: top-to-bottom, then left-to-right (banded by ~rows)
     .sort((a, b) => (Math.abs(a.miny - b.miny) > h * 0.06 ? a.miny - b.miny : a.minx - b.minx))
 
@@ -238,5 +309,5 @@ export async function splitToPieces(
   for (const blob of kept) {
     pieces.push(await cropBlob(data, w, { ...blob, labels }, effPad))
   }
-  return { pieces, blobs: blobs.length, width: w, height: h, effGap, effMinSize }
+  return { pieces, blobs: blobs.length, width: w, height: h, effGap, effMinSize, effCore, effCluster }
 }

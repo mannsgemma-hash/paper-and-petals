@@ -58,6 +58,10 @@ const OPTS = {
   // look soft in the editor. gap/min-size/pad are scaled to a 2400 baseline, so
   // raising this keeps detail WITHOUT changing how items group.
   maxEdge: Number(getOpt('--max-edge', 4000)),
+  // Clustering for splatter-like sheets — see splitToPieces. Off unless
+  // --cluster is given; --core then defaults to something sane.
+  cluster: argv.includes('--cluster') ? Number(getOpt('--cluster', 200)) : 0,
+  core: argv.includes('--cluster') ? Number(getOpt('--core', 300)) : 0,
   // Background removal. Art that already has alpha (the usual case now that
   // removal happens upstream) needs none, so _cut only forces it when asked.
   forceBg: argv.includes('--remove-bg'),
@@ -132,9 +136,12 @@ async function prepFolder(dir, folderName) {
     const buf = await fs.readFile(path.join(dir, filename))
     try {
       if (tag === 'split') {
-        const { pieces, blobs, width, height, effGap } = await splitToPieces(buf, OPTS)
+        const { pieces, blobs, width, height, effGap, effCore, effCluster } =
+          await splitToPieces(buf, OPTS)
         console.log(
-          `  ✂ ${filename}: ${pieces.length} piece(s) (${blobs} blobs, ${width}×${height}, gap≈${effGap}px)`,
+          `  ✂ ${filename}: ${pieces.length} piece(s) (${blobs} blobs, ${width}×${height}, gap≈${effGap}px` +
+            (effCluster ? `, core≥${effCore}px, cluster≤${effCluster}px` : '') +
+            ')',
         )
         for (let n = 0; n < pieces.length; n++) {
           const name = `${base}-${String(n + 1).padStart(2, '0')}.png`
@@ -289,7 +296,7 @@ async function main() {
 
   console.log(`Prepping tagged art under ${INPUT_DIR}`)
   console.log(
-    `(${OPTS.gapPx != null ? `gap-px ${OPTS.gapPx} (absolute)` : `gap ${OPTS.gap}`} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize} · max-edge ${OPTS.maxEdge}${OPTS.noBg ? ' · no-bg' : OPTS.forceBg ? ' · remove-bg' : ''})`,
+    `(${OPTS.gapPx != null ? `gap-px ${OPTS.gapPx} (absolute)` : `gap ${OPTS.gap}`} · alpha ${OPTS.alpha} · min-size ${OPTS.minSize} · max-edge ${OPTS.maxEdge}${OPTS.cluster ? ` · cluster ${OPTS.cluster} core ${OPTS.core}` : ''}${OPTS.noBg ? ' · no-bg' : OPTS.forceBg ? ' · remove-bg' : ''})`,
   )
 
   const totals = { split: 0, cut: 0, pieces: 0 }

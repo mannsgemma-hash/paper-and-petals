@@ -202,6 +202,42 @@ To set that number directly instead, use `--gap-px`:
 npm run prep -- --gap-px 13     # exactly 13 working pixels, no scaling
 ```
 
+### Splatter sheets — when `--gap` can't work (`--cluster`)
+
+Some sheets have items that shed detached bits: paint splatter, flecks, loose
+glitter. `--gap` cannot group those, and no value will — it grows *everything*
+by the same amount, so a gap wide enough to reach an item's furthest speck also
+welds neighbouring items together.
+
+On a real "Paint and Artistic" sheet of 7 artworks, measured:
+
+```
+every stray speck sits within  71px  of its own artwork
+the two closest artworks are   11px  apart
+```
+
+71 > 11, so there is no gap that separates them — the sweep bears that out,
+going straight from 9 pieces to 6 with nothing at 7 in between.
+
+`--cluster` solves it differently: blobs at least `--core` across are items,
+anything smaller is a fragment, and each fragment joins the **nearest** item
+within `--cluster`. Nearest-assignment is the part dilation lacks, so two items
+11px apart still keep their own specks.
+
+```bash
+npm run prep -- --only "<Theme>/Paint and Artistic" --cluster 200 --core 300
+```
+
+Both are measured against the same 2400px baseline as `--gap`, so they hold
+whatever resolution the sheet is. On that sheet anything from `--core 200` to
+`--core 400`, with `--cluster` anywhere from 100 to 500, gives exactly 7 pieces
+and keeps 100% of the artwork — a wide window, where `--gap` had none at all.
+Passing `--cluster` alone uses `--core 300`.
+
+Pick `--core` to sit between your smallest real item and your largest speck,
+and `--cluster` comfortably past the furthest speck. The run prints what it
+used (`core≥141px, cluster≤94px`).
+
 **`--max-edge`** (default `4000`) is the resolution the pieces are cut at, so it
 sets the detail the art keeps **forever**. A 6-up page capped at 2400px yields
 only ~800px pieces, which look soft in the editor. Raise it to match your source
