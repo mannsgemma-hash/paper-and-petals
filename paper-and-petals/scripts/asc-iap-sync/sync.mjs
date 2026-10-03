@@ -402,6 +402,15 @@ async function hasScreenshot(iapId) {
   return state === undefined || state === 'COMPLETE';
 }
 
+/**
+ * The price is created inline with its schedule, and App Store Connect requires
+ * such an entity to carry a "local id" — literally `${name}`, dollar sign and
+ * braces included — which it swaps for a real id. A plain 'p1' is rejected with
+ * ENTITY_ERROR.INCLUDED.INVALID_ID. Single-quoted on purpose: this is a literal
+ * string, not a JS template.
+ */
+const LOCAL_PRICE_ID = '${price1}';
+
 async function ensurePrice(iapId, price) {
   if (!price) return false;
   if (await hasPrice(iapId)) return false;
@@ -417,13 +426,13 @@ async function ensurePrice(iapId, price) {
       relationships: {
         inAppPurchase: { data: { type: 'inAppPurchases', id: iapId } },
         baseTerritory: { data: { type: 'territories', id: BASE_TERRITORY } },
-        manualPrices: { data: [{ type: 'inAppPurchasePrices', id: 'p1' }] },
+        manualPrices: { data: [{ type: 'inAppPurchasePrices', id: LOCAL_PRICE_ID }] },
       },
     },
     included: [
       {
         type: 'inAppPurchasePrices',
-        id: 'p1',
+        id: LOCAL_PRICE_ID,
         attributes: { startDate: null },
         relationships: {
           inAppPurchasePricePoint: { data: { type: 'inAppPurchasePricePoints', id: pricePointId } },

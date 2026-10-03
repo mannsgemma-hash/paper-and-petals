@@ -167,6 +167,11 @@ different location.)
   schedule. The same holds for a review screenshot that was reserved but whose
   upload failed. Both are checked properly now; if you extend this script,
   check for the *contents* of a to-one relationship, not its presence.
+- **Inline-created entities need a "local id".** Where a POST creates a related
+  entity in the same request (the price inside its schedule), App Store Connect
+  requires that entity's id to be literally `${name}` — dollar sign and braces
+  included — which it swaps for a real id. A plain `p1` is rejected with
+  `ENTITY_ERROR.INCLUDED.INVALID_ID`.
 - **App Store product IDs can never be reused** once created, so double-check a
   new collection's Sanity `_id` is what you want before the first run.
 - The App Store API for in-app purchases is multi-step; if any endpoint returns
