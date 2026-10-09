@@ -3,6 +3,10 @@
 Everything from a folder of art to a collection a customer can buy. Run it in
 order; each step is safe to repeat.
 
+**For the weekly drop, use [SATURDAY.md](SATURDAY.md)** — the same thing cut
+down to the steps that recur, with what to check at each one. This page is the
+full version: first-time setup, the failure modes, and why each step exists.
+
 Two separate chains hang off the same Sanity data — the **content** the app
 shows, and the **product** the App Store sells. A collection can be perfectly
 visible in the shop and still unbuyable, so the last steps are not optional.
