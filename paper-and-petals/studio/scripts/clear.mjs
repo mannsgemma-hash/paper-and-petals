@@ -50,6 +50,14 @@ console.log(`  image assets: ${imageAssets}${ASSETS ? '  (orphans will be delete
 
 if (!YES) {
   console.log('\nNothing deleted. Re-run with --yes to actually delete items/collections/packs.')
+  console.log('\nBefore you do, two things worth knowing:')
+  console.log('  · Art you have moved to incoming/_live (or any other _ folder) is NOT')
+  console.log('    re-ingested — move the collections back into incoming/ first, or the')
+  console.log('    re-ingest will upload nothing.')
+  console.log('  · Keep PP_PRODUCT_SERIES as it is unless collection NAMES are changing.')
+  console.log('    Product ids come from the name, so re-ingesting the same names re-pins')
+  console.log('    the same ids and your existing App Store products keep matching.')
+  console.log('    Bumping the series orphans every one of them.')
   process.exit(0)
 }
 
@@ -76,5 +84,16 @@ try {
   explain(err)
 }
 
-console.log('\n✓ Cleared. Re-ingest your reworked art with `npm run ingest`.')
-console.log('  Tip: also delete studio/pipeline/.ingest-cache.json for a totally fresh metadata pass.')
+console.log('\n✓ Cleared.')
+console.log('\nNext:')
+console.log('  1. Move the collection folders back into incoming/ (anything under a _')
+console.log('     folder is skipped, so it would upload nothing).')
+console.log('  2. npm run ingest -- --dry-run     # check the names first — they decide')
+console.log('                                     # the App Store product ids')
+console.log('  3. npm run ingest')
+console.log('  4. cd ../scripts/asc-iap-sync && node sync.mjs --list')
+console.log('     Same names → same ids → every product still Purchasable, nothing to do.')
+console.log('     Changed names → new ids → `node sync.mjs` to create those products.')
+console.log('\nKeep pipeline/.ingest-cache.json: it means the re-ingest pays nothing for')
+console.log('metadata it has already written. Delete it only to deliberately re-describe')
+console.log('everything from scratch.')
