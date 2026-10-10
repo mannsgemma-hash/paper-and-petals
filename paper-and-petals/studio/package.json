@@ -12,7 +12,8 @@
     "ingest": "node pipeline/ingest.mjs",
     "extract": "node pipeline/extract.mjs",
     "prep": "node pipeline/prep.mjs",
-    "check-types": "node scripts/check-types.mjs"
+    "check-types": "node scripts/check-types.mjs",
+    "prune-orphans": "node scripts/prune-orphans.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",

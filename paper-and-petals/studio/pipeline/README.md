@@ -357,6 +357,28 @@ the string `"5.99"` used to take the whole screen down. The app coerces these
 at read time now, so a bad value degrades instead of crashing, but fixing it
 keeps the displayed price honest. Run it after an ingest.
 
+## Deleting strays (`prune-orphans`)
+
+```bash
+npm run prune-orphans                 # list, delete nothing
+npm run prune-orphans -- --yes        # delete them
+npm run prune-orphans -- --yes --assets   # and drop the images they held
+```
+
+Deletes every item no collection points at. The catalogue is sold as
+collections, so such an item is invisible in the shop — **except** to Studio
+subscribers, who see every item there is, and for anything flagged `free`,
+which shows in the shop's free grid regardless. They aren't merely untidy.
+
+They accumulate on their own: re-cutting a sheet gives its pieces new content
+hashes and so new documents, while the previous run's stay published. Ingest's
+`--prune` clears those for a collection it re-processes, which is no help once
+the art has been moved out of `incoming/` — this is the sweep for that case.
+
+It lists before it deletes, and deletes exactly what it listed, by id. Loose
+pieces under `_free/` are shown separately, since being in no collection is
+normal for them; `--keep-free` spares them.
+
 ## Review & publish
 
 With `--drafts`, everything lands as `drafts.*`, invisible to the app. Open `npm run dev`

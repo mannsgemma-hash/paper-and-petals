@@ -145,8 +145,14 @@ Two things, both of which you want to be zero:
 
 - **wrongly-typed fields** — usually a price saved as `"5.99"`; fix the
   `collection.json` and re-ingest that collection
-- **unreferenced items** — leftovers from a re-cut; re-ingest those collections
-  with `--prune`
+- **unreferenced items** — leftovers from a re-cut. If the art is still in
+  `incoming\`, re-ingest that collection with `--prune`. If it has been moved
+  to `_live\`, sweep them instead:
+
+  ```powershell
+  npm run prune-orphans             # list them
+  npm run prune-orphans -- --yes --assets
+  ```
 
 ---
 

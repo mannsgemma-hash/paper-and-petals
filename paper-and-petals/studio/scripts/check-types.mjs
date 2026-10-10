@@ -15,6 +15,8 @@
  *   node scripts/check-types.mjs
  */
 
+import { findOrphans } from '../pipeline/lib/orphans.mjs'
+
 const PROJECT_ID = process.env.SANITY_PROJECT_ID || 'cv53e819'
 const DATASET = process.env.SANITY_DATASET || 'production'
 /** The docs placeholders people paste verbatim — set, but not a real token. */
@@ -91,23 +93,6 @@ function check(docs, fields, label) {
   return problems.length
 }
 
-/**
- * Items no collection points at.
- *
- * Re-prepping a sheet produces different pixels, so its pieces get new content
- * hashes and therefore new documents — while the previous run's items stay
- * published. The collection moves on, the old pieces don't, and they sit in the
- * dataset holding on to their image assets forever. `--prune` on ingest clears
- * them; this says whether there are any.
- *
- * Loose items under `_free/` are legitimately unreferenced — they're sold as
- * standalone free pieces, not as part of a collection — so they don't count.
- */
-function findOrphans(items, collections) {
-  const referenced = new Set()
-  for (const c of collections) for (const ref of c.itemRefs ?? []) if (ref) referenced.add(ref)
-  return items.filter((it) => !referenced.has(it._id) && it.free !== true)
-}
 
 async function main() {
   console.log(`Checking ${PROJECT_ID}/${DATASET}…`)
@@ -120,7 +105,9 @@ async function main() {
   console.log(TOKEN ? '(published documents and drafts)' : '(published documents only)')
   const bad = check(collections, COLLECTION_FIELDS, 'Collections') + check(items, ITEM_FIELDS, 'Items')
 
-  const orphans = findOrphans(items, collections)
+  // A loose piece under _free/ is sold on its own, so being in no collection is
+  // normal for it — only flag the rest. `prune-orphans` shows both.
+  const orphans = findOrphans(items, collections).filter((it) => it.free !== true)
   console.log(`\nUnreferenced items: ${orphans.length}`)
   if (orphans.length) {
     for (const o of orphans.slice(0, 8)) console.log(`  · ${o._id}  (${o.name ?? 'unnamed'})`)
@@ -130,7 +117,9 @@ async function main() {
         `  content hashes and so new documents, while the previous run's stay\n` +
         `  published — they hold on to their image assets and bloat the dataset.\n` +
         `  Re-ingest the affected collections with --prune to clear them:\n\n` +
-        `    npm run ingest -- --only "<Collection>" --prune\n`,
+        `    npm run ingest -- --only "<Collection>" --prune\n\n` +
+        `  Or, once the art has been moved out of incoming/, delete them outright:\n\n` +
+        `    npm run prune-orphans\n`,
     )
   } else {
     console.log('  ✓ every item belongs to a collection (or is a standalone free piece)')
