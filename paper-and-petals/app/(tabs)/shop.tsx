@@ -343,6 +343,21 @@ function CollectionArt({ collection, large }: { collection: Collection; large?: 
       </View>
     );
   }
+  // No cover of its own: show the first printable page rather than a collage of
+  // four cut-outs. The page is the art as laid out, which reads as a sample of
+  // the collection instead of four unrelated scraps.
+  const firstPage = printPages(collection)[0];
+  if (firstPage) {
+    return (
+      <View style={[styles.art, { backgroundColor: theme.palette.cream }]}>
+        <Image
+          source={thumbSource({ uri: firstPage.url }, large ? PREVIEW_PX : undefined)}
+          style={large ? styles.flowerLarge : styles.flower}
+          resizeMode="contain"
+        />
+      </View>
+    );
+  }
   const members = (collection.items ?? []).filter(Boolean).slice(0, 4);
   return (
     <View style={[styles.art, styles.collage, { backgroundColor: tone.bg }]}>
@@ -357,6 +372,29 @@ function CollectionArt({ collection, large }: { collection: Collection; large?: 
       ))}
     </View>
   );
+}
+
+/**
+ * The printable pages behind a collection, de-duplicated.
+ *
+ * Pieces cut from one sheet all carry that sheet as their print asset, so a
+ * 40-piece collection is really a handful of laid-out pages. Showing those
+ * pages presents the art the way it was designed — and the way a buyer will
+ * print it — where forty separate cut-out thumbnails read as confetti.
+ *
+ * Art that was never cut from a sheet has itself as its print asset, so it
+ * still appears; it just appears once.
+ */
+function printPages(collection: Collection): { url: string; name: string }[] {
+  const seen = new Set<string>();
+  const pages: { url: string; name: string }[] = [];
+  for (const item of collection.items ?? []) {
+    const url = item?.printUrl;
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    pages.push({ url, name: item.name });
+  }
+  return pages;
 }
 
 function GalleryArt({ item }: { item: CollectionItemRef }) {
@@ -541,6 +579,8 @@ function CollectionDetail({
   onUnlockStudio: () => void;
 }) {
   // Member breakdown by category, e.g. "5 papers · 2 stickers".
+  const pages = useMemo(() => (collection ? printPages(collection) : []), [collection]);
+
   const breakdown = useMemo(() => {
     if (!collection) return [] as { label: string; count: number }[];
     const counts: Record<string, number> = {};
@@ -643,13 +683,28 @@ function CollectionDetail({
                 <View style={styles.colHero}>
                   <CollectionArt collection={collection} large />
                 </View>
-                <View style={styles.galleryWrap}>
-                  {(collection.items ?? []).filter(Boolean).map((m) => (
-                    <View key={m.id} style={styles.galleryCell}>
-                      <GalleryArt item={m} />
-                    </View>
-                  ))}
-                </View>
+                {pages.length > 0 ? (
+                  <View style={styles.pageWrap}>
+                    {pages.map((p) => (
+                      <View key={p.url} style={styles.pageSheet}>
+                        <Image
+                          source={thumbSource({ uri: p.url }, PREVIEW_PX)}
+                          style={styles.pageImg}
+                          resizeMode="contain"
+                        />
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  // Older art with no print asset — show the pieces as before.
+                  <View style={styles.galleryWrap}>
+                    {(collection.items ?? []).filter(Boolean).map((m) => (
+                      <View key={m.id} style={styles.galleryCell}>
+                        <GalleryArt item={m} />
+                      </View>
+                    ))}
+                  </View>
+                )}
               </ScrollView>
 
               <Pressable style={styles.closeBtn} onPress={onClose} hitSlop={8}>
@@ -1164,6 +1219,17 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     backgroundColor: theme.color.bg1,
   },
+  pageWrap: { gap: 14 },
+  pageSheet: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: theme.palette.cream,
+    borderWidth: 1,
+    borderColor: theme.palette.hairlineSoft,
+  },
+  pageImg: { width: '100%', height: '100%' },
   galleryWrap: { flexDirection: 'row', flexWrap: 'wrap', margin: -5 },
   galleryCell: { width: '25%', padding: 5 },
   galleryArt: {
