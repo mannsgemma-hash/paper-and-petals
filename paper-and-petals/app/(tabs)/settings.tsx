@@ -248,7 +248,7 @@ CHANGES TO THESE TERMS
 We may update these terms; we will change the date above and, for material changes, let you know in the app. Continuing to use the app means you accept the updated terms.
 
 CONTACT
-Questions: support@paperandpetals.app`,
+Questions: admin@paperandpetals.app`,
   },
   privacy: {
     title: 'Privacy Policy',
@@ -283,7 +283,7 @@ CHANGES
 We may update this policy; we will change the date above and, for material changes, let you know in the app.
 
 CONTACT
-Questions or requests: support@paperandpetals.app`,
+Questions or requests: admin@paperandpetals.app`,
   },
 };
 

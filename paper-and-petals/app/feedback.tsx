@@ -25,7 +25,7 @@ import { track } from '../src/lib/analytics';
 // holds no write credentials. Full screen (not modal) so the back gesture works
 // naturally.
 
-const SUPPORT_EMAIL = 'support@paperandpetals.app';
+const SUPPORT_EMAIL = 'admin@paperandpetals.app';
 
 type FeedbackType = 'idea' | 'bug' | 'love';
 
