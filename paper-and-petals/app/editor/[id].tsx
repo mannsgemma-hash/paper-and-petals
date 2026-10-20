@@ -54,6 +54,7 @@ import { resolveUploadSource } from '../../src/lib/uploadFiles';
 import { fetchCatalogue } from '../../src/services/content';
 import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
+import { onJournalClosed } from '../../src/lib/engagement';
 import { Tour, type TourStep } from '../../src/components/Tour';
 import { screen, track } from '../../src/lib/analytics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
@@ -2657,6 +2658,14 @@ export default function EditorScreen() {
   );
   const pagesRef = useRef(pages);
   pagesRef.current = pages;
+
+  // Leaving the journal (back button or swipe) is when the push and review
+  // prompts may be shown; see engagement.ts.
+  useEffect(() => {
+    return () => {
+      onJournalClosed(pagesRef.current.reduce((n, p) => n + p.items.length, 0));
+    };
+  }, []);
   const [activePage, setActivePage] = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1.0);
