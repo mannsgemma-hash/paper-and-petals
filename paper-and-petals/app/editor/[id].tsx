@@ -52,7 +52,6 @@ import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/template
 import { thumbSource } from '../../src/lib/images';
 import { resolveUploadSource } from '../../src/lib/uploadFiles';
 import { fetchCatalogue } from '../../src/services/content';
-import { supabase, supabaseConfigured } from '../../src/lib/supabase';
 import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
 import { hasSeenEditorTips, markEditorTipsSeen } from '../../src/lib/storage';
 import { Tour, type TourStep } from '../../src/components/Tour';
@@ -2765,33 +2764,10 @@ export default function EditorScreen() {
         return;
       }
 
-      // No local copy yet (fresh install / new device). Restore from the cloud
-      // if it's configured, otherwise start a fresh book.
-      if (!supabaseConfigured) {
-        seedBlank();
-        return;
-      }
-      try {
-        const { data, error } = await supabase
-          .from('spreads')
-          .select('page_number, scene')
-          .eq('journal_id', journalId)
-          .order('page_number', { ascending: true });
-        if (cancelled) return;
-        if (!error && data && data.length > 0) {
-          const loaded: PageState[] = data.map((row: any) => ({
-            items: (row.scene?.items ?? []) as PlacedItem[],
-          }));
-          adopt(loaded);
-          // Cache the restored book on-device for instant offline opens.
-          saveLocalSpreads(journalId, loaded);
-        } else {
-          seedBlank();
-        }
-      } catch {
-        // Never let a backend hiccup surface as an unhandled rejection / crash.
-        seedBlank();
-      }
+      // No local copy yet: start a fresh book. There is no cloud copy to restore
+      // from — journals live on the device until accounts exist, because a
+      // journal id is only unique per device and can't address anyone's data.
+      seedBlank();
     })();
     return () => {
       cancelled = true;
@@ -2809,25 +2785,8 @@ export default function EditorScreen() {
   function scheduleSave(pgs: PageState[]) {
     if (!loadedRef.current) return;
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    saveTimeout.current = setTimeout(async () => {
-      // Always persist on-device first — this is the source of truth and works
-      // offline. Cloud sync is a best-effort layer on top.
+    saveTimeout.current = setTimeout(() => {
       saveLocalSpreads(journalId, pgs);
-      if (!supabaseConfigured) return;
-      try {
-        const { error } = await supabase.from('spreads').upsert(
-          pgs.map((pg, i) => ({
-            journal_id: journalId,
-            page_number: i + 1,
-            scene: { items: pg.items },
-            updated_at: new Date().toISOString(),
-          })),
-        );
-        if (error) console.warn('Save error', error);
-      } catch (e) {
-        // A failed save must never crash the editor via an unhandled rejection.
-        console.warn('Save failed', e);
-      }
     }, 1200);
   }
 

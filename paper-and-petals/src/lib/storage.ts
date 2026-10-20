@@ -111,3 +111,38 @@ export async function hasSeenHomeTour(): Promise<boolean> {
 export async function markHomeTourSeen(): Promise<void> {
   await setItem(KEY_HOME_TOUR_SEEN, '1');
 }
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+/** The Settings switches. Each one is read by the code it controls. */
+export interface Prefs {
+  /** PostHog usage analytics and error reports (see analytics.ts). */
+  analytics: boolean;
+  /** OneSignal tag `notify_new_items` — weekly shop drops. */
+  notifyNewItems: boolean;
+  /** OneSignal tag `notify_collections` — larger seasonal collections. */
+  notifyCollections: boolean;
+}
+
+export const DEFAULT_PREFS: Prefs = {
+  analytics: true,
+  notifyNewItems: true,
+  notifyCollections: false,
+};
+
+const KEY_PREFS = 'pp:prefs';
+
+export async function loadPrefs(): Promise<Prefs> {
+  const raw = await getItem(KEY_PREFS);
+  if (!raw) return DEFAULT_PREFS;
+  try {
+    const parsed = JSON.parse(raw);
+    return { ...DEFAULT_PREFS, ...(parsed && typeof parsed === 'object' ? parsed : {}) };
+  } catch {
+    return DEFAULT_PREFS;
+  }
+}
+
+export async function savePrefs(prefs: Prefs): Promise<void> {
+  await setItem(KEY_PREFS, JSON.stringify(prefs));
+}

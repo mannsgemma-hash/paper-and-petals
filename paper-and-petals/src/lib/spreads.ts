@@ -1,7 +1,7 @@
-// Local-first persistence for a journal's spreads. This is the always-available
-// store: journals persist on-device even with no backend and work offline. When
-// Supabase is configured it syncs on top (see the editor), but the device copy
-// is authoritative here so a dead/absent backend can never lose someone's work.
+// Persistence for a journal's spreads. Journals live only on the device: there
+// is no cloud copy until the app has accounts, because a journal id is unique
+// per device, not per person, and can't safely address anyone's data on a
+// server.
 
 import { getItem, setItem } from './storage'
 

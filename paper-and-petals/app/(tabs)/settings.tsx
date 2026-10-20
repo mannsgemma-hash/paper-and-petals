@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Alert,
   Modal,
@@ -17,10 +17,13 @@ import { Toggle } from '../../src/components/Toggle';
 import { theme } from '../../src/theme/theme';
 import { restorePurchases } from '../../src/lib/revenuecat';
 import { useAppStore } from '../../src/store/app';
+import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from '../../src/lib/storage';
+import { setAnalyticsEnabled } from '../../src/lib/analytics';
+import { applyNotificationPrefs } from '../../src/lib/notifications';
 
 // SCR-23 Settings. Single-column scrollable page with grouped section cards:
-// Account & sync · Membership · Preferences · Notifications · Privacy & data ·
-// About. Calm, plain language; no dark patterns.
+// Your journals · Membership · Notifications · Privacy & data · About. Calm,
+// plain language; no dark patterns.
 
 function SectionCard({
   eyebrow,
@@ -37,14 +40,6 @@ function SectionCard({
   );
 }
 
-function ValuePill({ value }: { value: string }) {
-  return (
-    <View style={styles.valuePill}>
-      <Text style={styles.valuePillText}>{value}</Text>
-    </View>
-  );
-}
-
 const Chevron = () => (
   <Feather name="chevron-right" size={18} color={theme.color.fg4} />
 );
@@ -56,19 +51,21 @@ export default function SettingsScreen() {
   const setOwnedCollectionIds = useAppStore((s) => s.setOwnedCollectionIds);
   const setLegacyOwnedItemIds = useAppStore((s) => s.setLegacyOwnedItemIds);
 
-  const [prefs, setPrefs] = useState({
-    sound: true,
-    haptics: true,
-    autosave: true,
-    notifyDelivery: true,
-    notifyPacks: false,
-    analytics: true,
-  });
-  const [account, setAccount] = useState({ signedIn: false, email: '' });
+  const [prefs, setPrefs] = useState<Prefs>(DEFAULT_PREFS);
   const [legalDoc, setLegalDoc] = useState<'terms' | 'privacy' | null>(null);
 
-  const setPref = (k: keyof typeof prefs) => (v: boolean) =>
-    setPrefs((p) => ({ ...p, [k]: v }));
+  useEffect(() => {
+    loadPrefs().then(setPrefs).catch(() => {});
+  }, []);
+
+  // Every switch is saved and applied the moment it changes.
+  const setPref = (k: keyof Prefs) => (v: boolean) => {
+    const next = { ...prefs, [k]: v };
+    setPrefs(next);
+    savePrefs(next).catch(() => {});
+    if (k === 'analytics') setAnalyticsEnabled(v);
+    else applyNotificationPrefs(next);
+  };
 
   return (
     <Screen>
@@ -82,44 +79,14 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Account & sync */}
-        <SectionCard eyebrow="Account & sync">
-          {account.signedIn ? (
-            <>
-              <SettingsRow
-                icon="user"
-                title={account.email}
-                description="Signed in. Your journals back up and sync automatically across every device you use."
-                trailing={<StatusStamp tone="sage">Synced</StatusStamp>}
-              />
-              <SettingsRow
-                divider
-                icon="refresh-cw"
-                title="Automatic sync"
-                description="Last synced just now. Changes save in the background — no manual saving needed."
-                trailing={<ValuePill value="On" />}
-              />
-            </>
-          ) : (
-            <>
-              <SettingsRow
-                icon="user"
-                title="Playing locally"
-                description="Your journals live on this device. Create a free account to back them up and sync across devices."
-                trailing={<StatusStamp tone="cream">Local only</StatusStamp>}
-              />
-              <SettingsRow
-                divider
-                icon="star"
-                title="Create account & turn on sync"
-                description="Back up your journals and pick up on any device — phone or tablet. Takes a moment."
-                trailing={<Chevron />}
-                onPress={() =>
-                  setAccount({ signedIn: true, email: 'alice@papercraft.studio' })
-                }
-              />
-            </>
-          )}
+        {/* Your journals */}
+        <SectionCard eyebrow="Your journals">
+          <SettingsRow
+            icon="tablet"
+            title="Saved on this device"
+            description="Your journals and uploads are stored on this device only. They aren’t backed up anywhere else yet, so deleting the app deletes them too."
+            trailing={<StatusStamp tone="cream">On device</StatusStamp>}
+          />
         </SectionCard>
 
         {/* Studio & collection */}
@@ -169,30 +136,6 @@ export default function SettingsScreen() {
           />
         </SectionCard>
 
-        {/* Preferences */}
-        <SectionCard eyebrow="Preferences">
-          <SettingsRow
-            icon="volume-2"
-            title="Sound effects"
-            description="Soft paper rustles when you place an item."
-            trailing={<Toggle on={prefs.sound} onChange={setPref('sound')} />}
-          />
-          <SettingsRow
-            divider
-            icon="smartphone"
-            title="Haptic feedback"
-            description="Gentle taps confirm presses on supported devices."
-            trailing={<Toggle on={prefs.haptics} onChange={setPref('haptics')} />}
-          />
-          <SettingsRow
-            divider
-            icon="check"
-            title="Autosave"
-            description="Save journal spreads as you place items. We don’t recommend turning this off."
-            trailing={<Toggle on={prefs.autosave} onChange={setPref('autosave')} />}
-          />
-        </SectionCard>
-
         {/* Notifications */}
         <SectionCard eyebrow="Notifications">
           <SettingsRow
@@ -200,7 +143,7 @@ export default function SettingsScreen() {
             title="New items in the shop"
             description="A soft nudge when fresh papers, stickers, and treasures arrive."
             trailing={
-              <Toggle on={prefs.notifyDelivery} onChange={setPref('notifyDelivery')} />
+              <Toggle on={prefs.notifyNewItems} onChange={setPref('notifyNewItems')} />
             }
           />
           <SettingsRow
@@ -209,7 +152,7 @@ export default function SettingsScreen() {
             title="New seasonal collections"
             description="Hear about larger themed collections — about once a month."
             trailing={
-              <Toggle on={prefs.notifyPacks} onChange={setPref('notifyPacks')} />
+              <Toggle on={prefs.notifyCollections} onChange={setPref('notifyCollections')} />
             }
           />
         </SectionCard>
@@ -256,16 +199,6 @@ export default function SettingsScreen() {
             trailing={<Chevron />}
             onPress={() => router.push('/feedback')}
           />
-          {account.signedIn && (
-            <SettingsRow
-              divider
-              danger
-              icon="log-out"
-              title="Sign out"
-              trailing={<Chevron />}
-              onPress={() => setAccount({ signedIn: false, email: '' })}
-            />
-          )}
         </SectionCard>
 
         {/* Closing flourish */}
@@ -319,26 +252,27 @@ Questions: support@paperandpetals.app`,
   },
   privacy: {
     title: 'Privacy Policy',
-    body: `Last updated 1 August 2026
+    body: `Last updated 20 October 2026
 
 Paper & Petals makes a digital scrapbooking app. This policy explains what we collect, why, and the choices you have. We collect as little as possible.
 
 WHAT WE COLLECT
-• Your journals and uploads. The pages you make and the photos you import are stored on your device. If cloud sync is enabled for your account, a secure copy is stored so you can restore it — otherwise it never leaves your device.
-• Your name and email, only if you provide them. We use these to save your place and, if you opt in, to send occasional updates about new collections. You can unsubscribe at any time.
+• Your journals and uploads. The pages you make and the photos you import are stored only on your device. They are never uploaded to us and are not backed up by the app, so deleting the app deletes them.
+• Your name, and your email if you give it. We use them to address you when we write, and, only if you opt in, to send occasional updates about new collections. You can unsubscribe at any time.
+• Feedback you send. Feedback is sent by email from your own email app, so we receive your email address and whatever you write.
 • Purchase information. When you buy a collection or subscribe to Studio, Apple processes the payment. We receive a record of what you own (via RevenueCat) so we can unlock it — we never see your card details.
 • Anonymous usage analytics. We record which screens and features are used, and app errors, to fix bugs and improve the app. This never includes your journal content, and you can turn analytics off in Settings.
 • Push notifications. If you allow them, a device token is stored (via OneSignal) so we can send reminders and news. You can turn these off in your device settings.
 
 WHO WE SHARE WITH
-We do not sell your data. We use a small number of providers who process data on our behalf: Apple (payments), RevenueCat (purchase records), PostHog (analytics), OneSignal (notifications) and Supabase (optional cloud sync and mailing list). Each receives only what it needs.
+We do not sell your data. We use a small number of providers who process data on our behalf: Apple (payments), RevenueCat (purchase records and your name and email), PostHog (analytics), OneSignal (notifications) and Supabase (mailing list). Each receives only what it needs.
 
 HOW LONG WE KEEP IT
-We keep your account data for as long as you use the app. You can ask us to delete your email and any synced content at any time.
+We keep your name, email and purchase records for as long as you use the app. You can ask us to delete your name and email at any time. We hold no copy of your journals to delete.
 
 YOUR CHOICES
-• Turn analytics off in Settings.
-• Turn notifications off in your device settings.
+• Turn analytics and error reports off in Settings.
+• Choose which notifications you get in Settings, or turn them all off in your device settings.
 • Unsubscribe from emails via any email we send.
 • Request access to, or deletion of, your data by emailing us.
 
@@ -429,20 +363,6 @@ const styles = StyleSheet.create({
     borderColor: theme.palette.hairline,
     overflow: 'hidden',
     ...theme.shadow.paper,
-  },
-  valuePill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: theme.radius.pill,
-    backgroundColor: theme.color.bg2,
-    borderWidth: 1,
-    borderColor: theme.palette.hairline,
-  },
-  valuePillText: {
-    fontFamily: theme.font.ui,
-    fontSize: theme.fontSize.caption,
-    fontWeight: '600',
-    color: theme.color.fg2,
   },
   version: {
     fontFamily: theme.font.ui,

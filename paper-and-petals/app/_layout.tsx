@@ -22,7 +22,7 @@ export default function RootLayout() {
   useEffect(() => {
     // Install first so any error thrown by the inits below is still reported.
     installGlobalErrorHandler();
-    initAnalytics();
+    initAnalytics().catch(() => {});
     initRevenueCat();
     initNotifications();
     // Sync subscription + owned collections from RevenueCat into the store.

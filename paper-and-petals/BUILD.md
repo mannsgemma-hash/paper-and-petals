@@ -26,7 +26,7 @@ Create them once (scoped to the build profiles you use):
 # Most valuable for a test cycle — so the in-app crash reporter reaches you:
 eas env:create --name EXPO_PUBLIC_POSTHOG_KEY        --value "<your posthog project key>" --environment production --visibility plaintext
 
-# Cloud sync + mailing list (optional; app is local-first without it):
+# Mailing list (optional; the welcome form's emails also go to RevenueCat):
 eas env:create --name EXPO_PUBLIC_SUPABASE_URL       --value "<https://xxx.supabase.co>"  --environment production --visibility plaintext
 eas env:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY  --value "<your anon key>"            --environment production --visibility plaintext
 
@@ -49,18 +49,19 @@ defaults, so they only need overriding to point somewhere else. See
 
 ## Supabase tables (only if you set the Supabase vars)
 
-Cloud sync writes to a `spreads` table; the mailing-list capture writes to a
-`subscribers` table. Both fail soft if absent. Minimal schema:
+The mailing-list capture writes to a `subscribers` table, and fails soft if it
+is absent. Journals are **not** synced: they stay on the device until the app
+has real accounts. An earlier build wrote journals to a `spreads` table keyed
+only by journal id, which is the same (`j-first`) for every user and had no
+row-level security. If that table exists, drop it:
 
 ```sql
-create table if not exists public.spreads (
-  journal_id text not null,
-  page_number int not null,
-  scene jsonb,
-  updated_at timestamptz not null default now(),
-  primary key (journal_id, page_number)
-);
+drop table if exists public.spreads;
+```
 
+Minimal schema for the mailing list:
+
+```sql
 create table if not exists public.subscribers (
   email text primary key,
   name text,

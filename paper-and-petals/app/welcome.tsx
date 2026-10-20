@@ -22,7 +22,7 @@ import { captureSubscriber } from '../src/lib/subscriber';
 import { track } from '../src/lib/analytics';
 
 // SCR-02 First-launch Welcome. Brand seal hero + intro form + onboarding CTAs.
-// Only Name is mandatory; the rest are optional.
+// Only Name is mandatory; email is optional. Ask for nothing the app doesn't use.
 
 const logoTerracotta = require('../assets/logos/logo_terracotta.png');
 
@@ -33,7 +33,7 @@ export default function WelcomeScreen() {
   const { width } = useWindowDimensions();
   const phone = width < theme.layout.phoneBreakpoint;
 
-  const [form, setForm] = useState({ name: '', zip: '', email: '', dob: '' });
+  const [form, setForm] = useState({ name: '', email: '' });
   const [consent, setConsent] = useState(false);
   const update = (k: keyof typeof form) => (v: string) =>
     setForm((f) => ({ ...f, [k]: v }));
@@ -94,31 +94,13 @@ export default function WelcomeScreen() {
               value={form.name}
               onChangeText={update('name')}
             />
-            <View style={phone ? styles.colPhone : styles.rowSplit}>
-              <Field
-                label="Email"
-                optional
-                placeholder="you@somewhere.com"
-                value={form.email}
-                onChangeText={update('email')}
-                keyboardType="email-address"
-                style={styles.flex}
-              />
-              <Field
-                label="Zip"
-                optional
-                placeholder="2000"
-                value={form.zip}
-                onChangeText={update('zip')}
-                style={styles.flex}
-              />
-            </View>
             <Field
-              label="Date of birth"
+              label="Email"
               optional
-              placeholder="DD / MM / YYYY"
-              value={form.dob}
-              onChangeText={update('dob')}
+              placeholder="you@somewhere.com"
+              value={form.email}
+              onChangeText={update('email')}
+              keyboardType="email-address"
             />
 
             {/* Marketing opt-in — unticked by default (consent must be given). */}
@@ -233,8 +215,6 @@ const styles = StyleSheet.create({
   },
   subtitlePhone: { fontSize: 18 },
   form: { maxWidth: 420, gap: 10 },
-  rowSplit: { flexDirection: 'row', gap: 10 },
-  colPhone: { gap: 10 },
   field: { gap: 4 },
   label: {
     fontFamily: theme.font.ui,

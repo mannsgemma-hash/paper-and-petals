@@ -16,7 +16,7 @@ export interface SubscriberInput {
  * you a durable list you own, but it's written best-effort: a paused or
  * misconfigured project must never block someone from entering the app.
  *
- * Requires a `subscribers` table in Supabase (see the SQL in the PR notes) with
+ * Requires a `subscribers` table in Supabase (see the SQL in BUILD.md) with
  * a unique `email`; without it the Supabase half simply no-ops.
  */
 export async function captureSubscriber(input: SubscriberInput): Promise<void> {

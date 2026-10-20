@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import {
+  Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -14,11 +16,16 @@ import { useRouter } from 'expo-router';
 import { Screen } from '../src/components/Screen';
 import { Button } from '../src/components/Button';
 import { theme } from '../src/theme/theme';
-import { sanity } from '../src/lib/sanity';
+import Constants from 'expo-constants';
 import { track } from '../src/lib/analytics';
 
-// SCR-Feedback. Collects an idea, bug report, or love note and writes it to
-// Sanity. Full screen (not modal) so the back gesture works naturally.
+// SCR-Feedback. Collects an idea, bug report, or love note and hands it to the
+// person's own email app, addressed to support. Email rather than a database:
+// it lands in an inbox that is read anyway, a reply is one tap, and the app
+// holds no write credentials. Full screen (not modal) so the back gesture works
+// naturally.
+
+const SUPPORT_EMAIL = 'support@paperandpetals.app';
 
 type FeedbackType = 'idea' | 'bug' | 'love';
 
@@ -33,31 +40,33 @@ export default function FeedbackScreen() {
 
   const [type, setType] = useState<FeedbackType | null>(null);
   const [message, setMessage] = useState('');
-  const [email, setEmail] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const canSend = !!type && message.length >= 10 && !sending;
+  const canSend = !!type && message.trim().length >= 10 && !sending;
 
   async function handleSend() {
     if (!canSend || !type) return;
+    const label = TYPES.find((t) => t.id === type)?.label ?? 'Feedback';
+    const version = Constants.expoConfig?.version ?? '';
+    const subject = `Paper & Petals feedback: ${label}`;
+    const body =
+      `${message.trim()}\n\n` +
+      `—\nApp ${version} · ${Platform.OS} ${String(Platform.Version)}`;
+    const url =
+      `mailto:${SUPPORT_EMAIL}` +
+      `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     setSending(true);
     try {
-      await sanity.create({
-        _type: 'feedback',
-        type,
-        message,
-        email: email.trim() || undefined,
-        createdAt: new Date().toISOString(),
-        read: false,
-      });
-      track('feedback_sent', { type });
+      await Linking.openURL(url);
+      track('feedback_opened_email', { type });
       setSent(true);
-    } catch (e) {
-      console.warn('Feedback send failed', e);
-      // Still show success to the user — feedback is low-stakes
-      track('feedback_sent', { type });
-      setSent(true);
+    } catch {
+      // No email app set up. Keep their message on screen so nothing is lost.
+      Alert.alert(
+        'No email app found',
+        `Please email us at ${SUPPORT_EMAIL} — your message is still here to copy.`,
+      );
     } finally {
       setSending(false);
     }
@@ -75,9 +84,10 @@ export default function FeedbackScreen() {
           <View style={styles.successCircle}>
             <Feather name="check" size={30} color={theme.palette.forest} />
           </View>
-          <Text style={styles.successTitle}>Thank you — we've received your message.</Text>
+          <Text style={styles.successTitle}>Thank you — just tap Send in your email.</Text>
           <Text style={styles.successBody}>
-            Your feedback goes straight to the team. We read every message.
+            Your message is waiting in your email app. Once it's sent, it comes straight to
+            us, and we can write back.
           </Text>
           <Button
             title="Back to the studio"
@@ -148,24 +158,9 @@ export default function FeedbackScreen() {
             textAlignVertical="top"
           />
 
-          {/* Email */}
-          <Text style={styles.fieldLabel}>
-            Email{' '}
-            <Text style={styles.optional}>(optional)</Text>
-          </Text>
-          <TextInput
-            style={styles.input}
-            value={email}
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            placeholderTextColor={theme.color.fg4}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
-
           {/* Send */}
           <Button
-            title={sending ? 'Sending…' : 'Send feedback'}
+            title={sending ? 'Opening email…' : 'Continue in email'}
             pill
             disabled={!canSend}
             onPress={handleSend}
@@ -173,7 +168,8 @@ export default function FeedbackScreen() {
           />
 
           <Text style={styles.disclaimer}>
-            Your feedback goes straight to the team. We read every message.
+            Opens your email app with this message addressed to {SUPPORT_EMAIL}. We read
+            every message.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -266,12 +262,6 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     textTransform: 'uppercase',
   },
-  optional: {
-    fontWeight: '400',
-    color: theme.color.fg4,
-    textTransform: 'none',
-    letterSpacing: 0,
-  },
 
   textArea: {
     fontFamily: theme.font.ui,
@@ -286,19 +276,6 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
-  input: {
-    fontFamily: theme.font.ui,
-    fontSize: 15,
-    color: theme.color.fg1,
-    backgroundColor: theme.color.surface,
-    borderWidth: 1.5,
-    borderColor: theme.palette.hairline,
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
-    height: 46,
-    marginBottom: 24,
-  },
 
   sendBtn: {
     width: '100%',
