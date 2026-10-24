@@ -963,8 +963,10 @@ function PlacedItemView({
   const startVY = useSharedValue(0);
 
   /**
-   * Corner resize handle: proportional scale from the item center — except
-   * washi tape, which stretches length and width independently.
+   * Corner resize handle: proportional scale from the item center, so art is
+   * never squashed — the only resize handles there are. Washi tape is the
+   * exception: it is a strip, so its corners stretch length and width
+   * independently.
    */
   function makeCornerGesture(hx: number, hy: number) {
     const isTape = item.kind === 'tape';
@@ -1001,44 +1003,6 @@ function PlacedItemView({
         const f = Math.max(fMin, Math.min(fMax, d / d0));
         itemW.value = startW.value * f;
         itemH.value = startH.value * f;
-      })
-      .onEnd(() => {
-        runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
-        runOnJS(fitAfterGesture)(itemH.value);
-      })
-      .onFinalize(() => {
-        runOnJS(setGestureBusy)(false);
-      });
-  }
-
-  /**
-   * Edge handle: stretches one axis only, so an item can be taken out of
-   * proportion deliberately. The corners stay proportional — that's the common
-   * case and the one you want to be hard to break by accident.
-   *
-   * ex/ey is the edge's direction from the centre: (±1, 0) left/right,
-   * (0, ±1) top/bottom. The drag is rotated into the item's own axes first, so
-   * stretching follows the edge you grabbed however the item is turned.
-   */
-  function makeEdgeGesture(ex: number, ey: number) {
-    return Gesture.Pan()
-      .onBegin(() => {
-        startW.value = itemW.value;
-        startH.value = itemH.value;
-        runOnJS(setGestureBusy)(true);
-      })
-      .onUpdate((e) => {
-        const rad = (rot.value * Math.PI) / 180;
-        const ldx = (e.translationX * Math.cos(rad) + e.translationY * Math.sin(rad)) / spreadScale;
-        const ldy = (-e.translationX * Math.sin(rad) + e.translationY * Math.cos(rad)) / spreadScale;
-        // ×2 because the item grows from its centre: dragging an edge out by d
-        // moves that edge d, so the whole dimension changes by 2d.
-        if (ex !== 0) {
-          itemW.value = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startW.value + 2 * ex * ldx));
-        }
-        if (ey !== 0) {
-          itemH.value = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startH.value + 2 * ey * ldy));
-        }
       })
       .onEnd(() => {
         runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
@@ -1173,14 +1137,6 @@ function PlacedItemView({
     { hx: 1, hy: -1 },
     { hx: 1, hy: 1 },
     { hx: -1, hy: 1 },
-  ];
-
-  /** Mid-edge handles: left, right, top, bottom. */
-  const EDGES = [
-    { ex: -1, ey: 0 },
-    { ex: 1, ey: 0 },
-    { ex: 0, ey: -1 },
-    { ex: 0, ey: 1 },
   ];
 
   /**
@@ -1345,21 +1301,6 @@ function PlacedItemView({
             />
           ))}
 
-          {/* Edge handles — stretch one axis */}
-          {EDGES.map(({ ex, ey }) => (
-            <EdgeHandle
-              key={`e${ex},${ey}`}
-              ex={ex}
-              ey={ey}
-              gesture={makeEdgeGesture(ex, ey)}
-              tx={tx}
-              ty={ty}
-              itemW={itemW}
-              itemH={itemH}
-              pad={EDGE_PAD}
-            />
-          ))}
-
           {/* Rotate handle: stem + knob below the frame */}
           <Animated.View style={[styles.rotateHandleWrap, rotateWrapStyle]} pointerEvents="box-none">
             <View style={styles.rotateStem} />
@@ -1372,53 +1313,6 @@ function PlacedItemView({
         </Animated.View>
       )}
     </>
-  );
-}
-
-/**
- * One mid-edge handle. Same edge-nudging as the corners; the bar is oriented
- * along the edge it sits on so it reads as "stretch this way".
- */
-function EdgeHandle({
-  ex,
-  ey,
-  gesture,
-  tx,
-  ty,
-  itemW,
-  itemH,
-  pad,
-}: {
-  ex: number;
-  ey: number;
-  gesture: ReturnType<typeof Gesture.Pan>;
-  tx: SharedValue<number>;
-  ty: SharedValue<number>;
-  itemW: SharedValue<number>;
-  itemH: SharedValue<number>;
-  pad: number;
-}) {
-  const style = useAnimatedStyle(() => {
-    const edgeX = tx.value + (ex * itemW.value) / 2;
-    const edgeY = ty.value + (ey * itemH.value) / 2;
-    const dx = edgeX < pad ? pad - edgeX : edgeX > SPREAD_W - pad ? SPREAD_W - pad - edgeX : 0;
-    const dy = edgeY < pad ? pad - edgeY : edgeY > SPREAD_H - pad ? SPREAD_H - pad - edgeY : 0;
-    return { transform: [{ translateX: dx }, { translateY: dy }] };
-  });
-  const vertical = ex !== 0; // a left/right handle is a tall bar
-  return (
-    <GestureDetector gesture={gesture}>
-      <Animated.View
-        style={[
-          styles.handleTouch,
-          ex === 0 ? { left: 0, right: 0 } : ex < 0 ? { left: -12 } : { right: -12 },
-          ey === 0 ? { top: 0, bottom: 0 } : ey < 0 ? { top: -12 } : { bottom: -12 },
-          style,
-        ]}
-      >
-        <View style={[styles.handleBar, vertical ? styles.handleBarV : styles.handleBarH]} />
-      </Animated.View>
-    </GestureDetector>
   );
 }
 
@@ -4934,14 +4828,6 @@ const styles = StyleSheet.create({
     zIndex: 20,
     cursor: 'pointer',
   },
-  handleBar: {
-    backgroundColor: theme.palette.cream,
-    borderWidth: 1.5,
-    borderColor: theme.palette.forest,
-    borderRadius: 3,
-  },
-  handleBarV: { width: 6, height: 22 },
-  handleBarH: { width: 22, height: 6 },
   handleDot: {
     width: 12,
     height: 12,
