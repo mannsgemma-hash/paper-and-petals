@@ -3,14 +3,17 @@
 // first visit already shows the editor tips, and a system dialog on top of a
 // half-made page interrupts the very thing the app is for.
 //
-//   push    → after the first journal visit, once ever
+//   push    → after the first journal visit, once ever: first our own question
+//             (Apple requires opt-in wording for promotional pushes), and the
+//             iOS dialog only if they say yes
 //   review  → after the third visit that left something on the page, once per
 //             app version (Apple also caps it at three a year and may show
 //             nothing — requestReview is a request, not a guarantee)
 
+import { Alert } from 'react-native'
 import Constants from 'expo-constants'
-import { getItem, setItem } from './storage'
-import { requestNotificationPermission } from './notifications'
+import { getItem, loadPrefs, savePrefs, setItem } from './storage'
+import { applyNotificationPrefs, requestNotificationPermission } from './notifications'
 
 let StoreReview: any = null
 try { StoreReview = require('expo-store-review') } catch {}
@@ -35,7 +38,12 @@ async function run(itemCount: number) {
   // One dialog per exit: the push ask always comes first and alone.
   if ((await getItem(KEY_PUSH_ASKED)) !== '1') {
     await setItem(KEY_PUSH_ASKED, '1')
-    requestNotificationPermission()
+    if (await askAboutNewCollections()) {
+      const prefs = { ...(await loadPrefs()), notifyNewItems: true, notifyCollections: true }
+      await savePrefs(prefs)
+      applyNotificationPrefs(prefs)
+      requestNotificationPermission()
+    }
     return
   }
   if (itemCount === 0) return
@@ -49,4 +57,19 @@ async function run(itemCount: number) {
   if (!StoreReview || !(await StoreReview.isAvailableAsync())) return
   await setItem(KEY_REVIEW_ASKED, version)
   await StoreReview.requestReview()
+}
+
+/** Our own opt-in question, worded for what will actually be sent. */
+function askAboutNewCollections(): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      'Hear about new collections?',
+      'We’ll send a note when new papers and collections arrive in the shop — a few times a month at most. You can change this any time in Settings.',
+      [
+        { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
+        { text: 'Yes please', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    )
+  })
 }

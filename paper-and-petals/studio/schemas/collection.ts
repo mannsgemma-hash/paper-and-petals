@@ -51,6 +51,13 @@ export default defineType({
       validation: r => r.required().min(1),
     }),
     defineField({ name: 'publishAt', title: 'Publish at', type: 'datetime' }),
+    defineField({
+      name: 'announcedAt',
+      title: 'Announced',
+      type: 'datetime',
+      readOnly: true,
+      description: 'When `npm run notify` sent the new-collection notification. Empty = not announced yet.',
+    }),
   ],
   preview: { select: { title: 'name', subtitle: 'palette', media: 'cover' } },
 })

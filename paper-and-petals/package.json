@@ -24,6 +24,7 @@
     "expo-status-bar": "~56.0.4",
     "expo-store-review": "~56.0.3",
     "jszip": "^3.10.1",
+    "onesignal-expo-plugin": "^2.7.2",
     "perfect-freehand": "^1.2.3",
     "posthog-react-native": "^4.46.25",
     "react": "19.2.3",

@@ -124,9 +124,12 @@ export interface Prefs {
   notifyCollections: boolean;
 }
 
+// Notifications start off: Apple only allows promotional pushes to people who
+// opted in through the app's own wording (guideline 4.5.4). The question in
+// engagement.ts, or a switch in Settings, turns them on.
 export const DEFAULT_PREFS: Prefs = {
   analytics: true,
-  notifyNewItems: true,
+  notifyNewItems: false,
   notifyCollections: false,
 };
 

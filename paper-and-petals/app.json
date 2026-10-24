@@ -33,6 +33,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production",
+          "disableLocation": true
+        }
+      ],
       "expo-router",
       "expo-audio",
       [

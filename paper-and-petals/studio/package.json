@@ -13,7 +13,8 @@
     "extract": "node pipeline/extract.mjs",
     "prep": "node pipeline/prep.mjs",
     "check-types": "node scripts/check-types.mjs",
-    "prune-orphans": "node scripts/prune-orphans.mjs"
+    "prune-orphans": "node scripts/prune-orphans.mjs",
+    "notify": "node scripts/notify.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",

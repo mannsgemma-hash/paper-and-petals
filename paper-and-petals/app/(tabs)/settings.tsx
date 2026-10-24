@@ -19,7 +19,7 @@ import { restorePurchases } from '../../src/lib/revenuecat';
 import { useAppStore } from '../../src/store/app';
 import { DEFAULT_PREFS, loadPrefs, savePrefs, type Prefs } from '../../src/lib/storage';
 import { setAnalyticsEnabled } from '../../src/lib/analytics';
-import { applyNotificationPrefs } from '../../src/lib/notifications';
+import { applyNotificationPrefs, requestNotificationPermission } from '../../src/lib/notifications';
 
 // SCR-23 Settings. Single-column scrollable page with grouped section cards:
 // Your journals · Membership · Notifications · Privacy & data · About. Calm,
@@ -64,7 +64,12 @@ export default function SettingsScreen() {
     setPrefs(next);
     savePrefs(next).catch(() => {});
     if (k === 'analytics') setAnalyticsEnabled(v);
-    else applyNotificationPrefs(next);
+    else {
+      applyNotificationPrefs(next);
+      // Turning one on is a clear yes: ask iOS now, or point to iOS Settings
+      // if permission was refused before.
+      if (v) requestNotificationPermission(true);
+    }
   };
 
   return (

@@ -189,7 +189,34 @@ don't use entitlements. Only Studio does.
 
 ---
 
-## 8 · Confirm  ·  2 min
+## 8 · Tell people  ·  1 min
+
+After the new collections are buyable (steps 6–7), announce them:
+
+```powershell
+cd ..\..\studio
+$env:ONESIGNAL_APP_ID="..."
+$env:ONESIGNAL_API_KEY="..."      # OneSignal → Settings → Keys & IDs
+npm run notify                    # preview: which collections, the wording, who gets it
+npm run notify -- --yes           # send
+```
+
+It goes to everyone who said yes to new-collection notifications, at 10am in
+their own time zone, and tapping it opens the Shop. Only collections never
+announced before are included, so re-cutting an old one won't announce it
+again. `--now` sends straight away; `--title "…" --message "…"` uses your own
+wording.
+
+**The very first time only** (before launch), mark the existing catalogue as
+already announced so nobody gets a notification about 30 collections at once:
+
+```powershell
+npm run notify -- --mark-all --yes
+```
+
+---
+
+## 9 · Confirm  ·  2 min
 
 Open the app on the iPad — no new build needed — and check the shop:
 
@@ -216,7 +243,8 @@ cd ..\scripts\asc-iap-sync
 node sync.mjs ; node sync.mjs --list
 ```
 
-Then RevenueCat → Products → Import, and open the app.
+Then RevenueCat → Products → Import, then from `studio\`: `npm run notify`,
+`npm run notify -- --yes`, and open the app.
 
 ## Things that are not part of Saturday
 

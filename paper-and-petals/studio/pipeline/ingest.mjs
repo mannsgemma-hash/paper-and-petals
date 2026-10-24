@@ -704,13 +704,17 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
   // Pin the store product id. An explicit value wins (collection.json, or one
   // already set in Sanity — never clobber a deliberate pin on a re-run);
   // otherwise derive it from the slug within the current series.
+  // `announcedAt` (set by `npm run notify`) is carried over the same way: the
+  // write below replaces the whole document, and losing it would announce a
+  // re-cut collection as new all over again.
   let productId = overrides.productId
-  if (!productId) {
-    try {
-      productId = await sanity.fetch('*[_id == $id][0].productId', { id: collectionDocId })
-    } catch {
-      /* fetch failed — fall through to the derived id */
-    }
+  let announcedAt
+  try {
+    const prev = await sanity.fetch('*[_id == $id][0]{productId, announcedAt}', { id: collectionDocId })
+    if (!productId) productId = prev?.productId
+    announcedAt = prev?.announcedAt
+  } catch {
+    /* fetch failed — fall through to the derived id */
   }
   if (!productId) productId = productIdForSlug(collectionSlug)
 
@@ -723,6 +727,7 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
     price,
     productId,
     whatYouGet,
+    announcedAt,
     cover: coverAssetId ? imageField(coverAssetId) : undefined,
     // Weak refs so the draft validates before the member items are published.
     items: items.map((i) => ({ _type: 'reference', _key: i.id, _ref: `item-${i.id}`, _weak: true })),
