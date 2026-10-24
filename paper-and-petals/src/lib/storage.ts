@@ -122,6 +122,8 @@ export interface Prefs {
   notifyNewItems: boolean;
   /** OneSignal tag `notify_collections` — larger seasonal collections. */
   notifyCollections: boolean;
+  /** OneSignal tag `notify_reminders` — a nudge after a couple of weeks away. */
+  notifyReminders: boolean;
 }
 
 // Notifications start off: Apple only allows promotional pushes to people who
@@ -131,6 +133,7 @@ export const DEFAULT_PREFS: Prefs = {
   analytics: true,
   notifyNewItems: false,
   notifyCollections: false,
+  notifyReminders: false,
 };
 
 const KEY_PREFS = 'pp:prefs';

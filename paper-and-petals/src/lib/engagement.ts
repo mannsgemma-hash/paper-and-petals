@@ -39,7 +39,12 @@ async function run(itemCount: number) {
   if ((await getItem(KEY_PUSH_ASKED)) !== '1') {
     await setItem(KEY_PUSH_ASKED, '1')
     if (await askAboutNewCollections()) {
-      const prefs = { ...(await loadPrefs()), notifyNewItems: true, notifyCollections: true }
+      const prefs = {
+        ...(await loadPrefs()),
+        notifyNewItems: true,
+        notifyCollections: true,
+        notifyReminders: true,
+      }
       await savePrefs(prefs)
       applyNotificationPrefs(prefs)
       requestNotificationPermission()
@@ -64,7 +69,7 @@ function askAboutNewCollections(): Promise<boolean> {
   return new Promise((resolve) => {
     Alert.alert(
       'Hear about new collections?',
-      'We’ll send a note when new papers and collections arrive in the shop — a few times a month at most. You can change this any time in Settings.',
+      'We’ll send a note when new papers and collections arrive in the shop, and the odd journalling idea if you’ve been away a while — a few times a month at most. You can change this any time in Settings.',
       [
         { text: 'Not now', style: 'cancel', onPress: () => resolve(false) },
         { text: 'Yes please', onPress: () => resolve(true) },

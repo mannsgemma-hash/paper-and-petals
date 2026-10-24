@@ -1,6 +1,6 @@
 /**
  * Starter templates — pre-laid-out spreads so a blank page isn't intimidating.
- * Each template lays a handful of glyph/tape/text placeholders in spread
+ * Each template lays a handful of glyph/text placeholders in spread
  * coordinates (720 × 500). The editor instantiates these as real PlacedItems
  * (assigning ids + z-order), so everything stays movable and editable.
  *
@@ -9,7 +9,7 @@
  */
 
 export interface TemplateItem {
-  kind?: 'item' | 'text' | 'tape';
+  kind?: 'item' | 'text';
   glyph?: string;
   tone?: string;
   text?: string;
@@ -42,7 +42,6 @@ export const JOURNAL_TEMPLATES: JournalTemplate[] = [
     tone: 'blue',
     items: [
       { kind: 'text', text: 'Our trip', fontKey: 'caveat', color: '#2B2A28', x: 200, y: 90, w: 260, h: 70, rotate: -3 },
-      { kind: 'tape', tone: 'blue', x: 200, y: 150, w: 180, h: 30, rotate: -4 },
       { glyph: 'image', tone: 'cream', x: 210, y: 290, w: 190, h: 150, rotate: -2, shadow: true },
       { glyph: 'credit-card', tone: 'amber', x: 470, y: 180, w: 150, h: 90, rotate: 6, shadow: true },
       { glyph: 'map-pin', tone: 'oxblood', x: 540, y: 330, w: 70, h: 70, rotate: 0 },
@@ -73,7 +72,6 @@ export const JOURNAL_TEMPLATES: JournalTemplate[] = [
     icon: 'calendar',
     tone: 'sage',
     items: [
-      { kind: 'tape', tone: 'sage', x: 360, y: 70, w: 300, h: 34, rotate: 0 },
       { kind: 'text', text: 'This month', fontKey: 'spectral', color: '#2B2A28', x: 360, y: 70, w: 280, h: 56 },
       { glyph: 'square', tone: 'cream', x: 210, y: 250, w: 200, h: 150, rotate: 0, shadow: true },
       { glyph: 'square', tone: 'cream', x: 510, y: 250, w: 200, h: 150, rotate: 0, shadow: true },
@@ -88,7 +86,6 @@ export const JOURNAL_TEMPLATES: JournalTemplate[] = [
     tone: 'amber',
     items: [
       { glyph: 'image', tone: 'cream', x: 250, y: 240, w: 240, h: 200, rotate: -3, shadow: true },
-      { kind: 'tape', tone: 'amber', x: 250, y: 150, w: 150, h: 30, rotate: -10 },
       { kind: 'text', text: 'a day to remember', fontKey: 'caveat', color: '#4B4038', x: 500, y: 300, w: 240, h: 60, rotate: 4 },
       { glyph: 'disc', tone: 'oxblood', x: 540, y: 180, w: 80, h: 80, rotate: 0, shadow: true },
       { glyph: 'feather', tone: 'rose', x: 480, y: 410, w: 90, h: 90, rotate: -12 },

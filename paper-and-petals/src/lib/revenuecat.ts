@@ -1,4 +1,5 @@
 import { Platform } from 'react-native'
+import { applyTrialReminder } from './notifications'
 
 // react-native-purchases requires a native build; stub gracefully for web/Expo Go
 let Purchases: any = null
@@ -90,7 +91,16 @@ function legacyItemIdFromProduct(productId: string): string | null {
   return productId.startsWith(LEGACY_PACK_PREFIX) ? productId.slice(LEGACY_PACK_PREFIX.length) : null
 }
 
+/** When a still-renewing Studio free trial ends (ms), or null. */
+function renewingTrialEnd(info: any): number | null {
+  const e = info?.entitlements?.active?.[STUDIO_ENTITLEMENT]
+  if (!e || e.periodType !== 'TRIAL' || !e.willRenew) return null
+  return typeof e.expirationDateMillis === 'number' ? e.expirationDateMillis : null
+}
+
 function entitlementsFromInfo(info: any): Entitlements {
+  // Every fresh read of the customer keeps the trial reminder in step with it.
+  applyTrialReminder(renewingTrialEnd(info))
   const studio = !!info?.entitlements?.active?.[STUDIO_ENTITLEMENT]
   const txns = info?.nonSubscriptionTransactions ?? []
   const ownedCollectionIds = txns
@@ -136,6 +146,7 @@ export async function purchaseStudio(plan: StudioPlan): Promise<boolean> {
   const pkg = plan === 'annual' ? current.annual : current.monthly
   if (!pkg) throw new Error('That plan isn’t available right now. Please try the other option.')
   const { customerInfo } = await Purchases.purchasePackage(pkg)
+  applyTrialReminder(renewingTrialEnd(customerInfo))
   return !!customerInfo?.entitlements?.active?.[STUDIO_ENTITLEMENT]
 }
 

@@ -160,6 +160,15 @@ export default function SettingsScreen() {
               <Toggle on={prefs.notifyCollections} onChange={setPref('notifyCollections')} />
             }
           />
+          <SettingsRow
+            divider
+            icon="feather"
+            title="Journalling ideas"
+            description="A gentle nudge with a prompt if you haven’t visited in a couple of weeks."
+            trailing={
+              <Toggle on={prefs.notifyReminders} onChange={setPref('notifyReminders')} />
+            }
+          />
         </SectionCard>
 
         {/* Privacy & data */}

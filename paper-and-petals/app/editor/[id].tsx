@@ -84,14 +84,6 @@ const FLIP_EASING = Easing.bezier(0.32, 0.72, 0.32, 1);
 const TEXT_FILL = 0.55;
 const NEW_TEXT_W = 240;
 const NEW_TEXT_H = 72;
-// Washi tape — a stretchy strip; corner handles resize length and width
-// independently (unlike the proportional scale used by every other kind).
-// The tape TOOL was retired, but existing journals still contain tape items,
-// so the rendering + resize rules stay.
-const TAPE_MIN_W = 40;
-const TAPE_MAX_W = SPREAD_W * 2;
-const TAPE_MIN_H = 14;
-const TAPE_MAX_H = 320;
 
 // Doodle pen
 const DOODLE_STROKE = 3;
@@ -698,8 +690,8 @@ function noop() {}
 interface PlacedItem {
   id: string;
   itemId: string;
-  /** 'item' (shop art / glyph), 'text', 'photo', 'tape' (washi strip), 'doodle' (pen stroke), 'shape'. */
-  kind?: 'item' | 'text' | 'photo' | 'tape' | 'doodle' | 'shape';
+  /** 'item' (shop art / glyph), 'text', 'photo', 'doodle' (pen stroke), 'shape'. */
+  kind?: 'item' | 'text' | 'photo' | 'doodle' | 'shape';
   glyph: string;
   tone: string;
   flowerAsset?: number | { uri: string };
@@ -926,10 +918,13 @@ function PlacedItemView({
       runOnJS(onSelect)(item.id);
     })
     .onUpdate((e) => {
-      const newW = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startW.value * e.scale));
-      const newH = Math.max(MIN_ITEM_SIZE, Math.min(MAX_ITEM_SIZE, startH.value * e.scale));
-      itemW.value = newW;
-      itemH.value = newH;
+      // One factor for both sides, clamped as a whole (like the corners), so a
+      // pinch that hits the size limit stops rather than distorting the piece.
+      const fMin = MIN_ITEM_SIZE / Math.min(startW.value, startH.value);
+      const fMax = MAX_ITEM_SIZE / Math.max(startW.value, startH.value);
+      const f = Math.max(fMin, Math.min(fMax, e.scale));
+      itemW.value = startW.value * f;
+      itemH.value = startH.value * f;
     })
     .onEnd(() => {
       runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
@@ -963,13 +958,10 @@ function PlacedItemView({
   const startVY = useSharedValue(0);
 
   /**
-   * Corner resize handle: proportional scale from the item center, so art is
-   * never squashed — the only resize handles there are. Washi tape is the
-   * exception: it is a strip, so its corners stretch length and width
-   * independently.
+   * Corner resize handle: proportional scale from the item center, so nothing
+   * is ever squashed. These are the only resize handles.
    */
   function makeCornerGesture(hx: number, hy: number) {
-    const isTape = item.kind === 'tape';
     return Gesture.Pan()
       .onBegin(() => {
         startW.value = itemW.value;
@@ -983,15 +975,6 @@ function PlacedItemView({
         startVY.value = (lx * Math.sin(rad) + ly * Math.cos(rad)) * spreadScale;
       })
       .onUpdate((e) => {
-        if (isTape) {
-          // Free stretch: rotate the screen-space drag into item-local axes.
-          const rad = (rot.value * Math.PI) / 180;
-          const ldx = (e.translationX * Math.cos(rad) + e.translationY * Math.sin(rad)) / spreadScale;
-          const ldy = (-e.translationX * Math.sin(rad) + e.translationY * Math.cos(rad)) / spreadScale;
-          itemW.value = Math.max(TAPE_MIN_W, Math.min(TAPE_MAX_W, startW.value + 2 * hx * ldx));
-          itemH.value = Math.max(TAPE_MIN_H, Math.min(TAPE_MAX_H, startH.value + 2 * hy * ldy));
-          return;
-        }
         const d0 = Math.sqrt(startVX.value * startVX.value + startVY.value * startVY.value);
         if (d0 < 1) return;
         const vx = startVX.value + e.translationX;
@@ -1127,7 +1110,6 @@ function PlacedItemView({
   const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
   const isText = item.kind === 'text';
   const isPhoto = item.kind === 'photo';
-  const isTape = item.kind === 'tape';
   const isDoodle = item.kind === 'doodle';
   const isShape = item.kind === 'shape';
   const liftShadow = item.shadow ? ITEM_SHADOW : undefined;
@@ -1225,12 +1207,6 @@ function PlacedItemView({
                 <Image source={resolveUploadSource(item.flowerAsset) as any} style={styles.photoImage} resizeMode="cover" />
               </View>
             )
-          ) : isTape ? (
-            <View style={[styles.tapeInner, { backgroundColor: bg }, liftShadow]}>
-              {/* Torn-looking ends: lighter notches biting into each end */}
-              <View style={[styles.tapeNotch, { left: -5 }]} />
-              <View style={[styles.tapeNotch, { right: -5 }]} />
-            </View>
           ) : isDoodle ? (
             <Svg
               width="100%"
@@ -2649,8 +2625,14 @@ export default function EditorScreen() {
       loadedRef.current = true;
     };
 
-    const adopt = (loaded: PageState[]) => {
+    const adopt = (saved: PageState[]) => {
       if (cancelled) return;
+      // Washi tape strips were retired; drop any a journal still holds rather
+      // than render a kind the editor no longer knows.
+      const loaded = saved.map((p) => ({
+        ...p,
+        items: p.items.filter((it) => (it.kind as string) !== 'tape'),
+      }));
       setPages(loaded);
       setHistory([loaded]);
       setHistoryIdx(0);
@@ -3847,11 +3829,9 @@ export default function EditorScreen() {
                       ? (item.text || 'Text').trim() || 'Text'
                       : item.kind === 'photo'
                         ? 'Photo'
-                        : item.kind === 'tape'
-                          ? 'Washi tape'
-                          : item.kind === 'doodle'
-                            ? 'Doodle'
-                            : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
+                        : item.kind === 'doodle'
+                          ? 'Doodle'
+                          : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
                   const dragging = layerDrag?.id === item.id;
                   // react-native-gesture-handler, not PanResponder: the
                   // enclosing ScrollView is a NATIVE recogniser, and the JS
@@ -5363,7 +5343,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // Mini floating tools (text / photo / tape / pen) stacked under the FAB
+  // Mini floating tools (text / photo / pen) stacked under the FAB
   miniFab: {
     position: 'absolute',
     right: 23,
@@ -5479,22 +5459,6 @@ const styles = StyleSheet.create({
   },
   toolBtnActive: {
     backgroundColor: 'rgba(78,102,82,0.12)',
-  },
-
-  // Washi tape
-  tapeInner: {
-    flex: 1,
-    opacity: 0.82,
-    borderRadius: 1,
-    overflow: 'hidden',
-  },
-  tapeNotch: {
-    position: 'absolute',
-    top: '20%',
-    bottom: '20%',
-    width: 10,
-    backgroundColor: 'rgba(246,238,221,0.55)',
-    transform: [{ rotate: '12deg' }],
   },
 
   // Text editor modal
