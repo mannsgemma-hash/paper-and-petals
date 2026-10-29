@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,6 +20,11 @@ import {
   type StudioPlan,
 } from '../src/lib/revenuecat';
 import { screen, track } from '../src/lib/analytics';
+
+// Apple requires working Terms and Privacy links on an auto-renewing
+// subscription's purchase screen (guideline 3.1.2).
+const TERMS_URL = 'https://www.paperandpetals.app/terms';
+const PRIVACY_URL = 'https://www.paperandpetals.app/privacy';
 
 // Studio subscription screen. Presented as a modal. Annual is pre-selected as
 // the best value; a 7-day trial and "cancel anytime" remove the pressure, and
@@ -189,6 +195,15 @@ export default function StudioScreen() {
           Subscriptions renew automatically unless cancelled at least 24 hours before the end
           of the period. Manage or cancel anytime in your App Store account settings.
         </Text>
+        <View style={styles.legalRow}>
+          <Pressable onPress={() => Linking.openURL(TERMS_URL).catch(() => {})} hitSlop={8}>
+            <Text style={styles.legalLink}>Terms of Use</Text>
+          </Pressable>
+          <Text style={styles.fineDot}>·</Text>
+          <Pressable onPress={() => Linking.openURL(PRIVACY_URL).catch(() => {})} hitSlop={8}>
+            <Text style={styles.legalLink}>Privacy Policy</Text>
+          </Pressable>
+        </View>
       </ScrollView>
     </Screen>
   );
@@ -429,5 +444,23 @@ const styles = StyleSheet.create({
     color: theme.color.fg4,
     textAlign: 'center',
     marginTop: 18,
+  },
+  legalRow: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 10,
+  },
+  legalLink: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg3,
+    textDecorationLine: 'underline',
+  },
+  fineDot: {
+    fontFamily: theme.font.ui,
+    fontSize: 12,
+    color: theme.color.fg4,
   },
 });
