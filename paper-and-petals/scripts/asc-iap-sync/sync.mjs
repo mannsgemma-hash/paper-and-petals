@@ -115,6 +115,19 @@ async function api(method, url, body) {
   } catch {
     json = text;
   }
+  if (res.status === 401) {
+    // The token is built locally from these three, so a 401 is always one of
+    // them (or the PC's clock) — never the request itself.
+    throw new Error(
+      'App Store Connect rejected the API key (401).\n' +
+        `  Key ID     ${ASC_KEY_ID}\n  Issuer ID  ${ASC_ISSUER_ID}\n  Key file   ${ASC_PRIVATE_KEY_PATH}\n\n` +
+        'Check, at App Store Connect → Users and Access → Integrations → App Store Connect API → Team Keys:\n' +
+        '  1. that Key ID is listed and not revoked (revoked → generate a new one, App Manager access);\n' +
+        '  2. the Issuer ID at the top of that page matches the one above exactly;\n' +
+        '  3. the key file is the AuthKey_<Key ID>.p8 downloaded for THAT key.\n' +
+        "Also make sure this PC's clock is right (Settings → Time & language → Sync now).",
+    );
+  }
   if (!res.ok) {
     const detail = json?.errors ? JSON.stringify(json.errors, null, 2) : text;
     throw new Error(`${method} ${url} → ${res.status}\n${detail}`);
