@@ -95,15 +95,27 @@ Delete any junk pieces now, before they become documents.
 ## 3 · Preview the metadata  ·  2 min
 
 ```powershell
-npm run ingest -- --dry-run
+npm run ingest -- --dry-run --release-every 3
 ```
 
-Writes nothing. Check the collection names, prices and piece counts look right:
+Writes nothing. Check the collection names, prices, piece counts and release
+dates look right:
 
 ```
+Releasing NEW collections one every 3 day(s), from 2026-11-18 (Brisbane).
 📦 Collection: The Victorian Lantern Maker's Moonlit Workshop
-  ↳ (dry-run) Victorian Lantern Maker · 44 pieces · $5.99 · amber
+  ↳ (dry-run) Victorian Lantern Maker · 44 pieces · $5.99 · amber · releases 2026-11-18
 ```
+
+**Release dates.** A whole batch is uploaded today but released one at a time,
+so the shop has something new every few days and nobody gets one notification
+about ten collections. `--release-every 3` spaces NEW collections three days
+apart, starting tomorrow, or after the last release already scheduled if an
+earlier batch is still going out. `--release-start 2026-11-18` picks the first
+date. Collections already in the shop are never moved. To put one collection
+on a particular day, add `"publishAt": "2026-11-25"` to its `collection.json`,
+or `"publishAt": "now"` to release it straight away. Leave `--release-every` off
+and everything goes live at once, as before.
 
 A name or price you don't like is fixed in that collection's `collection.json`
 rather than after the fact. A collection showing `[incoming/_free/...] · FREE`
@@ -114,10 +126,12 @@ is in the free folder — move it out if it shouldn't be.
 ## 4 · Upload  ·  5–10 min
 
 ```powershell
-npm run ingest
+npm run ingest -- --release-every 3
 ```
 
-Goes **live** — there's no publish step to forget. Art already in Sanity is
+Use the same `--release-every` as the preview. Each collection, and its new
+pieces, appears in the app on its release date, so there's no publish step to
+forget. Art already in Sanity is
 skipped, so this costs roughly what the new art costs:
 
 ```
@@ -196,15 +210,25 @@ After the new collections are buyable (steps 6–7), announce them:
 ```powershell
 cd ..\..\studio
 $env:ONESIGNAL_API_KEY="..."      # OneSignal → Settings → Keys & IDs
-npm run notify                    # preview: which collections, the wording, who gets it
-npm run notify -- --yes           # send
+npm run notify                    # preview: one notification per release day
+npm run notify -- --yes           # send today's, schedule the rest
 ```
 
-It goes to everyone who said yes to new-collection notifications, at 10am in
-their own time zone, and tapping it opens the Shop. Only collections never
-announced before are included, so re-cutting an old one won't announce it
-again. `--now` sends straight away; `--title "…" --message "…"` uses your own
-wording.
+You run this **once** on upload day. Every release day gets its own
+notification, scheduled now and delivered on that day, naming the collection.
+Each person gets it at the hour they usually open the app (OneSignal's
+Intelligent Delivery, which can take up to a day). It goes only to people who
+said yes to new-collection notifications, and tapping it opens the Shop.
+
+- `--at "7:30PM"`: a fixed time in each person's own time zone instead.
+- `--now`: collections that are already live are announced this minute.
+- `--title "…" --message "…"`: your own wording (only when there's one release day).
+- **Changed your mind about dates?** `npm run notify -- --cancel --yes`
+  cancels every scheduled notification that hasn't gone yet. Change the dates
+  (`collection.json` `publishAt`), re-run the ingest, then `npm run notify` again.
+
+Only collections never announced before are included, so re-cutting an old one
+won't announce it again.
 
 **The very first time only** (before launch), mark the existing catalogue as
 already announced so nobody gets a notification about 30 collections at once:
@@ -235,15 +259,15 @@ reach the sandbox).
 ```powershell
 cd C:\Users\Gemma\paper-and-petals\paper-and-petals\studio
 npm run prep                  # then LOOK at the piece counts
-npm run ingest -- --dry-run   # then LOOK at names and prices
-npm run ingest
+npm run ingest -- --dry-run --release-every 3   # then LOOK at names, prices and dates
+npm run ingest -- --release-every 3
 npm run check-types
 cd ..\scripts\asc-iap-sync
 node sync.mjs ; node sync.mjs --list
 ```
 
 Then RevenueCat → Products → Import, then from `studio\`: `npm run notify`,
-`npm run notify -- --yes`, and open the app.
+`npm run notify -- --yes` (once — it schedules every release day), and open the app.
 
 ## Things that are not part of Saturday
 

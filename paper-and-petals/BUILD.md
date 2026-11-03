@@ -67,7 +67,7 @@ leave their first journal) or turned on a switch in Settings.
 
 | Notification | Sent by | Goes to (tag) | Tapping opens |
 |---|---|---|---|
-| New collections | `npm run notify -- --yes` (studio), each Saturday | `notify_new_items = 1` | Shop |
+| New collections | `npm run notify -- --yes` (studio) on upload day: one per release day, scheduled, at each person's usual app time | `notify_new_items = 1` | Shop |
 | Seasonal collections | `npm run notify -- --yes --audience seasonal` | `notify_collections = 1` | Shop |
 | Journalling idea after 14 days away | Journey (below) | `notify_reminders = 1` | Home |
 

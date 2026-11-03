@@ -5,7 +5,8 @@
 //   studio/incoming/
 //     Spring Meadow/         ← one folder = one COLLECTION (bundle)
 //       cover.png            ← optional explicit cover (else the first item is used)
-//       collection.json      ← optional overrides { name, palette, price, free, whatYouGet }
+//       collection.json      ← optional overrides { name, palette, price, free, whatYouGet,
+//                                publishAt: "2026-11-18" | "now" }
 //       pressed-rose.png
 //       linen-paper.png
 //     _free/                 ← special: images here become standalone FREE items (no collection)
@@ -24,6 +25,8 @@
 //   npm run ingest -- --batch          # generate all metadata via the Batch API (~50% cheaper, slower) then upload
 //   npm run ingest -- --dry-run        # process + metadata only, write to pipeline/out, no upload
 //   npm run ingest -- --drafts         # park in Studio for review instead of going live
+//   npm run ingest -- --release-every 3          # NEW collections go live one every 3 days
+//   npm run ingest -- --release-every 3 --release-start 2026-11-18   # …from that date
 //   npm run ingest -- --model claude-opus-4-8
 //   npm run ingest -- --remove-bg      # force background removal even if the PNG already has alpha
 //   npm run ingest -- --no-bg          # never remove background
@@ -120,6 +123,39 @@ const BATCH = hasFlag('--batch') // generate all metadata via the Batch API (~50
 const MODEL = getOpt('--model', 'claude-haiku-4-5')
 const INPUT_DIR = path.resolve(getOpt('--input', path.join(SCRIPT_DIR, '..', 'incoming')))
 const PRUNE = hasFlag('--prune')
+
+// ── Staggered release ──────────────────────────────────────────────────────────
+// Upload a batch in one sitting, release it over the following weeks. With
+// --release-every N, each collection NEW to Sanity gets a publishAt N days after
+// the previous one (and after any release already scheduled), and the app hides
+// it — and its new pieces — until then. Collections already in Sanity keep the
+// date they have; collection.json `publishAt` ("YYYY-MM-DD" or "now") overrides.
+// Releases happen at midnight Brisbane time, which is already the release day
+// nearly everywhere the app is sold, so `npm run notify` can reach each person
+// at their own best hour that day.
+const DAY_MS = 24 * 60 * 60 * 1000
+const RELEASE_EVERY = Number(getOpt('--release-every', 0)) || 0
+const RELEASE_START = getOpt('--release-start', '')
+/** Midnight in Brisbane (UTC+10, no daylight saving) on a YYYY-MM-DD date. */
+const releaseMidnight = (ymd) => Date.parse(`${ymd}T00:00:00+10:00`)
+const brisbaneDate = (ms) => new Date(ms + 10 * 60 * 60 * 1000).toISOString().slice(0, 10)
+let releaseCursor = 0 // next free release slot (ms), set up in main()
+function nextRelease() {
+  const at = releaseCursor
+  releaseCursor += RELEASE_EVERY * DAY_MS
+  return new Date(at).toISOString()
+}
+/** collection.json publishAt → ISO string, null for "now", undefined when absent. */
+function overridePublishAt(v) {
+  if (v == null || v === '') return undefined
+  if (String(v).toLowerCase() === 'now') return null
+  const ms = /^\d{4}-\d{2}-\d{2}$/.test(String(v)) ? releaseMidnight(String(v)) : Date.parse(String(v))
+  if (!Number.isFinite(ms)) {
+    console.warn(`  ⚠ collection.json publishAt ${JSON.stringify(v)} isn't a date — ignored`)
+    return undefined
+  }
+  return new Date(ms).toISOString()
+}
 // --only <name> restricts the run to matching collection folders, so fixing one
 // collection doesn't mean re-walking the whole catalogue. Repeatable, and
 // comma-separated lists work too. Matching is loose: case, spaces, punctuation
@@ -603,7 +639,7 @@ async function processOneImage(dir, filename, { free, brandVoice, hint, notes, s
   }
   await sanity.createOrReplace(doc)
   console.log(`    ↳ ${doc._id}  [${meta.category} · ${meta.tone}]  "${meta.description}"`)
-  return { id, meta, assetId, free }
+  return { id, meta, assetId, free, created: true }
 }
 
 async function processCollectionFolder(dir, folderName, brandVoice, { forceFree = false } = {}) {
@@ -686,6 +722,29 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
     coverAssetId = await uploadAsset(coverPng, `collection-${slug(name)}-cover.png`)
   }
 
+  // Release date — decided before the dry-run return so the preview shows it.
+  const collectionSlug = slug(name)
+  const collectionDocId = docId(`collection-${collectionSlug}`)
+  let prev = null
+  try {
+    prev = await sanity.fetch('*[_id == $id][0]{productId, announcedAt, announceId, publishAt}', {
+      id: collectionDocId,
+    })
+  } catch {
+    /* fetch failed — treated as new, which only matters with --release-every */
+  }
+  const explicit = overridePublishAt(overrides.publishAt)
+  const publishAt =
+    explicit !== undefined
+      ? (explicit ?? undefined)
+      : prev
+        ? (prev.publishAt ?? undefined)
+        : RELEASE_EVERY
+          ? nextRelease()
+          : undefined
+  const scheduled = !!publishAt && Date.parse(publishAt) > Date.now()
+  const releaseNote = scheduled ? ` · releases ${brisbaneDate(Date.parse(publishAt))}` : ' · live now'
+
   if (DRY_RUN) {
     await fs.mkdir(OUT_DIR, { recursive: true })
     await fs.writeFile(
@@ -694,28 +753,21 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
     )
     // A free collection has no price; printing one read as if it were for sale.
     console.log(
-      `  ↳ (dry-run) ${name} · ${items.length} pieces · ${free ? 'FREE' : `$${price}`} · ${palette}`,
+      `  ↳ (dry-run) ${name} · ${items.length} pieces · ${free ? 'FREE' : `$${price}`} · ${palette}${releaseNote}`,
     )
     return
   }
 
-  const collectionSlug = slug(name)
-  const collectionDocId = docId(`collection-${collectionSlug}`)
   // Pin the store product id. An explicit value wins (collection.json, or one
   // already set in Sanity — never clobber a deliberate pin on a re-run);
   // otherwise derive it from the slug within the current series.
   // `announcedAt` (set by `npm run notify`) is carried over the same way: the
   // write below replaces the whole document, and losing it would announce a
   // re-cut collection as new all over again.
-  let productId = overrides.productId
-  let announcedAt
-  try {
-    const prev = await sanity.fetch('*[_id == $id][0]{productId, announcedAt}', { id: collectionDocId })
-    if (!productId) productId = prev?.productId
-    announcedAt = prev?.announcedAt
-  } catch {
-    /* fetch failed — fall through to the derived id */
-  }
+  // `announceId` (its scheduled notification) is carried over too.
+  let productId = overrides.productId || prev?.productId
+  const announcedAt = prev?.announcedAt
+  const announceId = prev?.announceId
   if (!productId) productId = productIdForSlug(collectionSlug)
 
   const doc = {
@@ -728,6 +780,8 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
     productId,
     whatYouGet,
     announcedAt,
+    announceId,
+    publishAt,
     cover: coverAssetId ? imageField(coverAssetId) : undefined,
     // Weak refs so the draft validates before the member items are published.
     items: items.map((i) => ({ _type: 'reference', _key: i.id, _ref: `item-${i.id}`, _weak: true })),
@@ -751,7 +805,33 @@ async function processCollectionFolder(dir, folderName, brandVoice, { forceFree 
   }
 
   await sanity.createOrReplace(doc)
-  console.log(`  ↳ ${doc._id}  ${items.length} pieces · $${price} · ${palette}`)
+  console.log(`  ↳ ${doc._id}  ${items.length} pieces · $${price} · ${palette}${releaseNote}`)
+
+  // A scheduled collection's pieces wait with it: the app lists every released
+  // item (Studio's drawer shows them all), so new art would otherwise appear
+  // before its collection does. Only pieces written in this run, or already
+  // waiting on a date, are touched — art shared with a live collection stays
+  // visible.
+  if (scheduled) {
+    let waiting = []
+    try {
+      waiting = await sanity.fetch('*[_id in $ids && defined(publishAt)]._id', {
+        ids: items.map((i) => docId(`item-${i.id}`)),
+      })
+    } catch {
+      /* none known to be waiting */
+    }
+    const hold = new Set([...items.filter((i) => i.created).map((i) => docId(`item-${i.id}`)), ...waiting])
+    if (hold.size) {
+      const tx = [...hold].reduce((t, id) => t.patch(id, (p) => p.set({ publishAt })), sanity.transaction())
+      try {
+        await tx.commit()
+        console.log(`     ${hold.size} new piece(s) held until ${brisbaneDate(Date.parse(publishAt))} too`)
+      } catch (e) {
+        console.warn(`     ⚠ couldn't hold the pieces back (${e?.message ?? e}) — they may show early`)
+      }
+    }
+  }
   console.log(`     product: ${productId}`)
 
   if (stale.length) {
@@ -1029,6 +1109,31 @@ async function main() {
       process.exit(1)
     }
     console.log(`Only: ${collections.map((c) => c.name).join(', ')}\n`)
+  }
+
+  // Staggered release: the first free slot is the later of the start date
+  // (default tomorrow, Brisbane) and one interval after the last release
+  // already scheduled — so a second batch queues behind the first.
+  if (RELEASE_EVERY) {
+    let start = RELEASE_START
+      ? releaseMidnight(RELEASE_START)
+      : releaseMidnight(brisbaneDate(Date.now() + DAY_MS))
+    if (!Number.isFinite(start)) {
+      console.error(`--release-start must be a date like 2026-11-18 (got ${JSON.stringify(RELEASE_START)}).`)
+      process.exit(1)
+    }
+    try {
+      const last = await sanity.fetch(
+        '*[_type == "collection" && !(_id in path("drafts.**")) && publishAt > now()] | order(publishAt desc)[0].publishAt',
+      )
+      if (last) start = Math.max(start, Date.parse(last) + RELEASE_EVERY * DAY_MS)
+    } catch {
+      /* nothing scheduled yet */
+    }
+    releaseCursor = start
+    console.log(
+      `Releasing NEW collections one every ${RELEASE_EVERY} day(s), from ${brisbaneDate(start)} (Brisbane).\n`,
+    )
   }
 
   // Batch mode: pre-generate all new metadata cheaply, then the loop runs cache-only.
