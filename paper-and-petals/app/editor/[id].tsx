@@ -2608,6 +2608,9 @@ export default function EditorScreen() {
   }));
 
   const toggleDrawer = (open: boolean) => {
+    // Picking up any other tool puts the pen down, so nobody has to find the
+    // pen button again to get out of drawing mode.
+    if (open) setPenMode(false);
     setDrawerOpen(open);
     drawerX.value = withTiming(open ? 0 : 420, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
   };
@@ -2867,6 +2870,7 @@ export default function EditorScreen() {
 
   function pasteClipboard() {
     if (!clipboard) return;
+    setPenMode(false);
     const currentItems = pages[activePage - 1]?.items ?? [];
     const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
     const pasted: PlacedItem = {
@@ -2899,6 +2903,7 @@ export default function EditorScreen() {
 
   // ── Text tool ─────────────────────────────────────────────────────────────
   function addText() {
+    setPenMode(false);
     const currentItems = pages[activePage - 1].items;
     const maxZ = currentItems.reduce((m, i) => Math.max(m, i.z), 0);
     const newItem: PlacedItem = {
@@ -3167,6 +3172,7 @@ export default function EditorScreen() {
 
   // ── Photo import ──────────────────────────────────────────────────────────
   async function addPhoto() {
+    setPenMode(false);
     try {
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
@@ -3461,7 +3467,7 @@ export default function EditorScreen() {
             {/* Layer count */}
             <Pressable
               style={[styles.layersBtn, layerPanelOpen && styles.layersBtnActive]}
-              onPress={() => setLayerPanelOpen((o) => !o)}
+              onPress={() => { setPenMode(false); setLayerPanelOpen((o) => !o); }}
             >
               <Feather name="layers" size={16} color={theme.color.fg1} />
               <Text style={styles.layersText}>{currentPageItems.length}</Text>
@@ -3683,7 +3689,7 @@ export default function EditorScreen() {
             {/* Starter templates — hidden until the template set is finished
                 (TEMPLATES_ENABLED); the picker and apply logic stay put. */}
             {TEMPLATES_ENABLED && (
-              <Pressable style={[styles.miniFab, { top: 234 }]} onPress={() => setTemplatePickerOpen(true)}>
+              <Pressable style={[styles.miniFab, { top: 234 }]} onPress={() => { setPenMode(false); setTemplatePickerOpen(true); }}>
                 <Feather name="grid" size={20} color={theme.palette.forest} />
               </Pressable>
             )}
@@ -3697,7 +3703,7 @@ export default function EditorScreen() {
             </Pressable>
 
             {/* Shapes */}
-            <Pressable style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 334 : 284 }]} onPress={() => setShapePickerOpen(true)}>
+            <Pressable style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 334 : 284 }]} onPress={() => { setPenMode(false); setShapePickerOpen(true); }}>
               <Feather name="hexagon" size={20} color={theme.palette.forest} />
             </Pressable>
 
