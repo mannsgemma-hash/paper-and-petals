@@ -21,7 +21,7 @@
     "expo-secure-store": "^56.0.4",
     "expo-sharing": "~56.0.17",
     "expo-status-bar": "~56.0.4",
-    "expo-store-review": "~56.0.3",
+    "expo-store-review": "56.0.3",
     "jszip": "^3.10.1",
     "onesignal-expo-plugin": "^2.7.2",
     "perfect-freehand": "^1.2.3",
