@@ -849,6 +849,8 @@ function PlacedItemView({
   const startW = useSharedValue(item.w);
   const startH = useSharedValue(item.h);
   const startRot = useSharedValue(item.rotate);
+  /** How far the rotate knob is pushed up when there's no room beneath. */
+  const rotateLift = useSharedValue(0);
 
   // Edge-based clamp: the item occupies [x - w/2, x + w/2]; at least MIN_VIS px
   // of it must stay inside the spread. Off the LEFT edge: x + w/2 >= MIN_VIS,
@@ -870,6 +872,52 @@ function PlacedItemView({
       Math.min(SPREAD_H - MIN_VIS + itemH.value / 2, y),
     );
   }
+
+  // Everything the gesture worklets below call has to exist BEFORE the
+  // gestures are built: a worklet copies the values it uses at the moment it
+  // is created, so one declared further down is captured as undefined and
+  // throws on the UI thread at the first touch — a hard crash, not a JS error.
+  /**
+   * Grow (or shrink) a text box to fit what's actually in it.
+   *
+   * The font is derived from the box height (F = h · TEXT_FILL · textScale), so
+   * a taller box would mean bigger letters. textScale absorbs the change
+   * instead — set to h·textScale / h' it leaves F exactly where it was, and the
+   * pair is idempotent, so the re-measure that follows an update settles rather
+   * than looping.
+   *
+   * The target keeps the breathing room a single line has today: one line sits
+   * in a box F / TEXT_FILL tall while the line itself is only `lineH`, so the
+   * difference is the padding to carry over to n lines. Both heights are
+   * measured rather than assumed, since line height varies by font.
+   */
+  const textMetrics = useRef<{ contentH: number; lineH: number; atH: number } | null>(null);
+  const gestureBusy = useRef(false);
+  const setGestureBusy = (v: boolean) => {
+    gestureBusy.current = v;
+  };
+
+  function fitTextBox(contentH: number, lineH: number, h: number) {
+    if (item.kind !== 'text' || h <= 0 || contentH <= 0 || lineH <= 0) return;
+    const font = h * TEXT_FILL * textScale;
+    const pad = font / TEXT_FILL - lineH; // what one line gets above + below
+    const target = Math.max(MIN_ITEM_SIZE, Math.min(contentH + pad, MAX_ITEM_SIZE));
+    if (Math.abs(target - h) < 1) return;
+    onTextFit(item.id, target, (h * textScale) / target);
+  }
+
+  /**
+   * After a resize gesture the box is committed but the text hasn't been
+   * re-measured (the font stopped changing, so no new layout pass fires).
+   * The last measurement still applies, scaled by how much the box grew.
+   */
+  const fitAfterGesture = (h: number) => {
+    gestureBusy.current = false;
+    const m = textMetrics.current;
+    if (!m || m.atH <= 0) return;
+    const f = h / m.atH;
+    fitTextBox(m.contentH * f, m.lineH * f, h);
+  };
 
   // runOnJS(true): run the callback directly on the JS thread so a mouse click
   // on web reliably re-selects the item.
@@ -1064,48 +1112,6 @@ function PlacedItemView({
     };
   });
 
-  /**
-   * Grow (or shrink) a text box to fit what's actually in it.
-   *
-   * The font is derived from the box height (F = h · TEXT_FILL · textScale), so
-   * a taller box would mean bigger letters. textScale absorbs the change
-   * instead — set to h·textScale / h' it leaves F exactly where it was, and the
-   * pair is idempotent, so the re-measure that follows an update settles rather
-   * than looping.
-   *
-   * The target keeps the breathing room a single line has today: one line sits
-   * in a box F / TEXT_FILL tall while the line itself is only `lineH`, so the
-   * difference is the padding to carry over to n lines. Both heights are
-   * measured rather than assumed, since line height varies by font.
-   */
-  const textMetrics = useRef<{ contentH: number; lineH: number; atH: number } | null>(null);
-  const gestureBusy = useRef(false);
-  const setGestureBusy = (v: boolean) => {
-    gestureBusy.current = v;
-  };
-
-  function fitTextBox(contentH: number, lineH: number, h: number) {
-    if (item.kind !== 'text' || h <= 0 || contentH <= 0 || lineH <= 0) return;
-    const font = h * TEXT_FILL * textScale;
-    const pad = font / TEXT_FILL - lineH; // what one line gets above + below
-    const target = Math.max(MIN_ITEM_SIZE, Math.min(contentH + pad, MAX_ITEM_SIZE));
-    if (Math.abs(target - h) < 1) return;
-    onTextFit(item.id, target, (h * textScale) / target);
-  }
-
-  /**
-   * After a resize gesture the box is committed but the text hasn't been
-   * re-measured (the font stopped changing, so no new layout pass fires).
-   * The last measurement still applies, scaled by how much the box grew.
-   */
-  const fitAfterGesture = (h: number) => {
-    gestureBusy.current = false;
-    const m = textMetrics.current;
-    if (!m || m.atH <= 0) return;
-    const f = h / m.atH;
-    fitTextBox(m.contentH * f, m.lineH * f, h);
-  };
-
   const toneKey = item.tone as keyof typeof SHOP_TONES;
   const { bg, accent } = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
   const isText = item.kind === 'text';
@@ -1140,8 +1146,6 @@ function PlacedItemView({
     return 0;
   };
 
-  /** How far the rotate knob is pushed up when there's no room beneath. */
-  const rotateLift = useSharedValue(0);
   const rotateWrapStyle = useAnimatedStyle(() => {
     // The knob hangs ROTATE_HANDLE_DIST + half its size below the item's bottom
     // edge; if that lands past the spread, pull it up by the overshoot (never
