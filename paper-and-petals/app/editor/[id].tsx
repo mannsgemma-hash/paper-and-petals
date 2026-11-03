@@ -841,6 +841,13 @@ function PlacedItemView({
   const rot = useSharedValue(item.rotate);
   const itemW = useSharedValue(item.w);
   const itemH = useSharedValue(item.h);
+  // Text only: font = height · TEXT_FILL · textScale. Height and scale change
+  // TOGETHER when a box refits, so both live on the UI thread and are set in
+  // the same effect. (textScale used to be a render-time constant: the new
+  // scale met the old height for a frame, the text was drawn too small, got
+  // measured at that size, and the box was refitted to the wrong height —
+  // leaving text cut off.)
+  const textScaleSV = useSharedValue(item.kind === 'text' ? (item.textScale ?? 1) : 1);
 
   // Sync when item prop changes from undo/redo or external updates
   useEffect(() => {
@@ -849,7 +856,8 @@ function PlacedItemView({
     rot.value = item.rotate;
     itemW.value = item.w;
     itemH.value = item.h;
-  }, [item.x, item.y, item.rotate, item.w, item.h]);
+    textScaleSV.value = item.kind === 'text' ? (item.textScale ?? 1) : 1;
+  }, [item.x, item.y, item.rotate, item.w, item.h, item.textScale, item.kind]);
 
   const startX = useSharedValue(item.x);
   const startY = useSharedValue(item.y);
@@ -1108,7 +1116,7 @@ function PlacedItemView({
   // corner resize handles scale text for free.
   const textScale = item.kind === 'text' ? (item.textScale ?? 1) : 1;
   const textAnimStyle = useAnimatedStyle(() => {
-    const fs = Math.max(8, itemH.value * TEXT_FILL * textScale);
+    const fs = Math.max(8, itemH.value * TEXT_FILL * textScaleSV.value);
     return {
       fontSize: fs,
       // Script faces like Ballet carry tall ascenders and deep descenders that
