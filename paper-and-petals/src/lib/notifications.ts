@@ -5,7 +5,10 @@ import { JOURNAL_PROMPTS } from '../data/prompts'
 let OneSignal: any = null
 try { OneSignal = require('react-native-onesignal').OneSignal } catch {}
 
-const APP_ID = process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID ?? ''
+// OneSignal App ID — public by design (it ships in every copy of the app), so a
+// built-in default is safe, like the RevenueCat iOS key. EXPO_PUBLIC_ONESIGNAL_APP_ID
+// overrides it. The App API key is the secret one and never belongs here.
+const APP_ID = process.env.EXPO_PUBLIC_ONESIGNAL_APP_ID || 'd50abe7b-a314-4d1b-8c05-0b838b72aacd'
 
 /**
  * Where a tapped notification may take someone. A notification carries only a

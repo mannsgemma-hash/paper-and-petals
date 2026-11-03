@@ -195,7 +195,6 @@ After the new collections are buyable (steps 6–7), announce them:
 
 ```powershell
 cd ..\..\studio
-$env:ONESIGNAL_APP_ID="..."
 $env:ONESIGNAL_API_KEY="..."      # OneSignal → Settings → Keys & IDs
 npm run notify                    # preview: which collections, the wording, who gets it
 npm run notify -- --yes           # send

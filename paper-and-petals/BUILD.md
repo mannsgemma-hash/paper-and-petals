@@ -33,7 +33,7 @@ eas env:create --name EXPO_PUBLIC_SUPABASE_ANON_KEY  --value "<your anon key>"  
 # Android IAP (only needed for Android builds):
 eas env:create --name EXPO_PUBLIC_REVENUECAT_ANDROID_KEY --value "<goog_...>"             --environment production --visibility plaintext
 
-# Push notifications (optional):
+# Push notifications (only to override the built-in App ID):
 eas env:create --name EXPO_PUBLIC_ONESIGNAL_APP_ID   --value "<onesignal app id>"        --environment production --visibility plaintext
 ```
 
@@ -97,8 +97,10 @@ A notification picks its screen with Additional Data `route` = `shop` or
    and your Team ID.
 2. OneSignal → Settings → Push & In-App → **Apple iOS (APNs)** → upload the
    `.p8`, Key ID, Team ID, bundle ID `com.paperandpetals.app`.
-3. OneSignal → Settings → Keys & IDs: the **App ID** goes into EAS as
-   `EXPO_PUBLIC_ONESIGNAL_APP_ID`. The **App API key** is a secret: only ever
+3. OneSignal → Settings → Keys & IDs: the **App ID**
+   (`d50abe7b-a314-4d1b-8c05-0b838b72aacd`) is built into the app and
+   `npm run notify`; `EXPO_PUBLIC_ONESIGNAL_APP_ID` only overrides it. The
+   **App API key** is a secret: only ever
    set it in PowerShell for `npm run notify` (`$env:ONESIGNAL_API_KEY`).
 4. The next `eas build` asks to set up credentials for
    `OneSignalNotificationServiceExtension` — say yes.

@@ -22,7 +22,7 @@
 //
 // On Windows PowerShell:
 //   $env:SANITY_WRITE_TOKEN="sk..."
-//   $env:ONESIGNAL_APP_ID="…"        (OneSignal → Settings → Keys & IDs)
+//   $env:ONESIGNAL_APP_ID="…"        (optional — Paper & Petals' App ID is built in)
 //   $env:ONESIGNAL_API_KEY="…"       (same page — the App API key. A secret:
 //                                     never put it in the app or in git)
 
@@ -81,10 +81,10 @@ function defaultWording(cols) {
 }
 
 async function send({ title, message }) {
-  const appId = process.env.ONESIGNAL_APP_ID
+  const appId = process.env.ONESIGNAL_APP_ID || 'd50abe7b-a314-4d1b-8c05-0b838b72aacd'
   const apiKey = process.env.ONESIGNAL_API_KEY
   if (!appId || !apiKey) {
-    console.error('Missing ONESIGNAL_APP_ID or ONESIGNAL_API_KEY — both are on OneSignal → Settings → Keys & IDs.')
+    console.error('Missing ONESIGNAL_API_KEY — the App API key on OneSignal → Settings → Keys & IDs.')
     process.exit(1)
   }
   const body = {
