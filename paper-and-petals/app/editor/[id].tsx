@@ -89,39 +89,46 @@ const NEW_TEXT_H = 72;
 const DOODLE_STROKE = 3;
 const DOODLE_MIN_BOX = 24;
 
+type TourRefs = {
+  fab: React.RefObject<View | null>;
+  firstTool: React.RefObject<View | null>;
+  lastTool: React.RefObject<View | null>;
+  strip: React.RefObject<View | null>;
+  name: React.RefObject<View | null>;
+  topRight: React.RefObject<View | null>;
+};
+
 /**
- * First-open feature tour. Rings are positioned over the fixed chrome: the "+"
- * drawer FAB (canvas top-right), the mini-FAB tool rail beneath it, the page
- * rail on the left, and the top bar. Coordinates mirror the layout constants
- * (topbar ≈64 tall; FAB top:18/right:18; mini-FABs top 84–334, right 23).
+ * First-run editor tour. Each ring is measured around the real controls
+ * (see Tour), so it stays on them on any iPad, in either orientation.
  */
-const EDITOR_TOUR: TourStep[] = [
+const editorTour = (r: TourRefs): TourStep[] => [
   {
     icon: 'plus',
     title: 'Your collection',
     body: 'Open the drawer of papers, stickers and treasures — tap any piece to place it on the page.',
-    ring: { top: 74, right: 10, width: 72, height: 72 },
+    targets: [r.fab],
     card: { top: 156, right: 20 },
   },
   {
     icon: 'edit-3',
     title: 'Craft tools',
-    body: 'Add handwritten text, your own photos, freehand doodles, ready-made layouts, and cosy soundscapes.',
-    ring: { top: 140, right: 16, width: 60, height: 312, borderRadius: 30 },
+    body: 'Add text, your own photos, freehand doodles, cosy soundscapes and shapes.',
+    targets: [r.firstTool, r.lastTool],
     card: { top: 200, right: 88 },
   },
   {
     icon: 'book-open',
     title: 'Pages',
     body: 'Your journal has many spreads — tap a page here to flip to it, and add more with the +.',
-    ring: { top: 76, left: 4, width: 66, height: 320, borderRadius: 24 },
+    targets: [r.strip],
     card: { top: 140, left: 84 },
   },
   {
     icon: 'rotate-ccw',
     title: 'Undo, name & share',
     body: 'Rename your journal, undo and redo any change, and share or save a picture of your finished spread.',
-    ring: { top: 6, right: 12, width: 270, height: 52, borderRadius: 26 },
+    targets: [r.name, r.topRight],
     card: { top: 70, right: 20 },
   },
   {
@@ -2559,6 +2566,15 @@ export default function EditorScreen() {
   /** Id of a shape whose colour is being edited via the toolbar pencil. */
   const [colorEditId, setColorEditId] = useState<string | null>(null);
   const [showTips, setShowTips] = useState(false);
+  // What the first-run tour points at (measured, not guessed).
+  const tourRefs: TourRefs = {
+    fab: useRef<View>(null),
+    firstTool: useRef<View>(null),
+    lastTool: useRef<View>(null),
+    strip: useRef<View>(null),
+    name: useRef<View>(null),
+    topRight: useRef<View>(null),
+  };
   const [showSoundPanel, setShowSoundPanel] = useState(false);
   const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
   const [penColorPickerOpen, setPenColorPickerOpen] = useState(false);
@@ -3403,7 +3419,7 @@ export default function EditorScreen() {
               autoFocus
             />
           ) : (
-            <Pressable style={styles.nameWrap} onPress={() => setEditingName(true)}>
+            <Pressable ref={tourRefs.name} style={styles.nameWrap} onPress={() => setEditingName(true)}>
               <Text style={styles.name} numberOfLines={1}>
                 {journal?.name ?? journalName}
               </Text>
@@ -3411,7 +3427,7 @@ export default function EditorScreen() {
             </Pressable>
           )}
 
-          <View style={styles.topRight}>
+          <View ref={tourRefs.topRight} style={styles.topRight}>
             {/* Undo */}
             <Pressable
               style={[styles.iconBtn, !canUndo && styles.dimmed]}
@@ -3485,7 +3501,7 @@ export default function EditorScreen() {
 
         <View style={styles.body}>
           {/* ── Page strip ───────────────────────────────────────────── */}
-          <View style={styles.strip}>
+          <View ref={tourRefs.strip} style={styles.strip}>
             <ScrollView contentContainerStyle={styles.stripScroll}>
               {pages.map((_, i) => {
                 const p = i + 1;
@@ -3664,12 +3680,12 @@ export default function EditorScreen() {
             </Pressable>
 
             {/* Floating add button */}
-            <Pressable style={styles.fab} onPress={() => toggleDrawer(true)}>
+            <Pressable ref={tourRefs.fab} style={styles.fab} onPress={() => toggleDrawer(true)}>
               <Feather name="plus" size={26} color={theme.palette.cream} />
             </Pressable>
 
             {/* Add text */}
-            <Pressable style={[styles.miniFab, { top: 84 }]} onPress={addText}>
+            <Pressable ref={tourRefs.firstTool} style={[styles.miniFab, { top: 84 }]} onPress={addText}>
               <Feather name="type" size={20} color={theme.palette.forest} />
             </Pressable>
 
@@ -3703,7 +3719,7 @@ export default function EditorScreen() {
             </Pressable>
 
             {/* Shapes */}
-            <Pressable style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 334 : 284 }]} onPress={() => { setPenMode(false); setShapePickerOpen(true); }}>
+            <Pressable ref={tourRefs.lastTool} style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 334 : 284 }]} onPress={() => { setPenMode(false); setShapePickerOpen(true); }}>
               <Feather name="hexagon" size={20} color={theme.palette.forest} />
             </Pressable>
 
@@ -4235,7 +4251,7 @@ export default function EditorScreen() {
         <SoundscapeBar visible={showSoundPanel} onClose={() => setShowSoundPanel(false)} />
 
         {/* ── First-run tour — steps through each feature ──────────── */}
-        {showTips && <Tour steps={EDITOR_TOUR} onDone={dismissTips} />}
+        {showTips && <Tour steps={editorTour(tourRefs)} onDone={dismissTips} />}
 
         {/* ── Purchase arrival ──────────────────────────────────────── */}
         {pendingDelivery.length > 0 && (

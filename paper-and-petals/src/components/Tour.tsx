@@ -5,6 +5,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type StyleProp,
   type ViewStyle,
 } from 'react-native';
@@ -13,8 +14,9 @@ import { theme } from '../theme/theme';
 
 // A tiny step-by-step feature tour: dims the screen, draws a soft pulsing
 // highlight around one feature at a time, and shows a card explaining it.
-// Purely presentational — pass absolute-positioned styles for the ring/card
-// per step (the surrounding screen knows where its features live).
+// A step can name the views it is about (`targets`); the ring is then measured
+// around them on screen, so it lands on the real buttons whatever the device,
+// orientation or safe area. A fixed `ring` style is the fallback.
 
 export interface TourStep {
   icon?: React.ComponentProps<typeof Feather>['name'];
@@ -22,8 +24,25 @@ export interface TourStep {
   body: string;
   /** Absolute position for the explaining card. */
   card: StyleProp<ViewStyle>;
-  /** Optional absolute position/size for the highlight ring. */
+  /**
+   * The views this step is about. The ring is measured to surround all of
+   * them (one button, or the first and last of a row/column).
+   */
+  targets?: React.RefObject<View | null>[];
+  /** Fixed position/size for the ring, used when there are no targets. */
   ring?: StyleProp<ViewStyle>;
+}
+
+/** Breathing room between a measured target and its ring. */
+const RING_PAD = 8;
+
+type Rect = { x: number; y: number; w: number; h: number };
+
+function measure(view: View | null): Promise<Rect | null> {
+  return new Promise((resolve) => {
+    if (!view?.measureInWindow) return resolve(null);
+    view.measureInWindow((x, y, w, h) => resolve(w > 0 && h > 0 ? { x, y, w, h } : null));
+  });
 }
 
 export function Tour({ steps, onDone }: { steps: TourStep[]; onDone: () => void }) {
@@ -31,6 +50,49 @@ export function Tour({ steps, onDone }: { steps: TourStep[]; onDone: () => void 
   const pulse = useRef(new Animated.Value(0)).current;
   const step = steps[idx];
   const last = idx === steps.length - 1;
+  const rootRef = useRef<View>(null);
+  const [measured, setMeasured] = useState<ViewStyle | null>(null);
+  const { width: winW, height: winH } = useWindowDimensions();
+
+  // Measure the step's targets relative to this overlay. Re-run on rotation;
+  // the short delay lets the screen beneath finish its first layout.
+  // Keyed on the step index, not the step object: screens may rebuild their
+  // steps on every render, which must not restart the measurement.
+  useEffect(() => {
+    setMeasured(null);
+    const targets = steps[idx]?.targets ?? [];
+    if (targets.length === 0) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const [origin, ...rects] = await Promise.all([
+        measure(rootRef.current),
+        ...targets.map((r) => measure(r.current)),
+      ]);
+      const found = rects.filter((r): r is Rect => !!r);
+      if (cancelled || !origin || found.length === 0) return;
+      const x0 = Math.min(...found.map((r) => r.x)) - origin.x;
+      const y0 = Math.min(...found.map((r) => r.y)) - origin.y;
+      const x1 = Math.max(...found.map((r) => r.x + r.w)) - origin.x;
+      const y1 = Math.max(...found.map((r) => r.y + r.h)) - origin.y;
+      let w = x1 - x0 + RING_PAD * 2;
+      let h = y1 - y0 + RING_PAD * 2;
+      let left = x0 - RING_PAD;
+      let top = y0 - RING_PAD;
+      // A single round-ish button gets a true circle, centred on it.
+      if (Math.abs(w - h) < 12) {
+        const d = Math.max(w, h);
+        left -= (d - w) / 2;
+        top -= (d - h) / 2;
+        w = h = d;
+      }
+      setMeasured({ left, top, width: w, height: h, borderRadius: Math.min(w, h) / 2 });
+    }, 60);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idx, winW, winH]);
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -48,17 +110,18 @@ export function Tour({ steps, onDone }: { steps: TourStep[]; onDone: () => void 
   const next = () => (last ? onDone() : setIdx(idx + 1));
 
   return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="auto">
+    <View ref={rootRef} style={StyleSheet.absoluteFill} pointerEvents="auto">
       {/* Dim layer — tapping anywhere advances */}
       <Pressable style={styles.scrim} onPress={next} />
 
-      {/* Pulsing highlight around the feature */}
-      {step.ring && (
+      {/* Pulsing highlight around the feature. A step with targets waits for
+          its measurement rather than flashing the ring somewhere wrong. */}
+      {(step.targets?.length ? measured : step.ring) && (
         <Animated.View
           pointerEvents="none"
           style={[
             styles.ring,
-            step.ring,
+            step.targets?.length ? measured : step.ring,
             {
               opacity: pulse.interpolate({ inputRange: [0, 1], outputRange: [0.95, 0.45] }),
               transform: [
