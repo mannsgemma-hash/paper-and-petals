@@ -7,6 +7,12 @@ eas build --profile production --platform ios
 eas submit --profile production --platform ios   # or use the EAS dashboard
 ```
 
+`app.json` must keep `extra.eas.projectId` (the link to the **paperandpetals**
+account's project). It is committed on purpose: never `git restore` it away. If
+`eas` ever says "EAS project not configured", run `eas init`, link the
+existing project (never create a new one, which restarts the build numbers),
+and commit the change.
+
 `production` has `autoIncrement: true`, so the build number bumps automatically
 (the last TestFlight build was 9 → this will be 10).
 
