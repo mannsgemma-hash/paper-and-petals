@@ -74,28 +74,6 @@ export function applyNotificationPrefs(prefs: Prefs) {
   })
 }
 
-/**
- * Studio free-trial reminder. While a trial is set to renew, tag the moment
- * the reminder is due (two days before it ends, unix seconds); a OneSignal
- * Journey sends it then. Cancelling the trial, or it converting, clears the
- * tag, so nobody is reminded about a trial they've already dealt with —
- * provided the app has been opened since.
- */
-const TRIAL_REMINDER_LEAD_S = 2 * 24 * 60 * 60
-
-export function applyTrialReminder(trialEndsAtMs: number | null) {
-  try {
-    if (trialEndsAtMs) {
-      OneSignal.User.addTag(
-        'trial_reminder_at',
-        String(Math.floor(trialEndsAtMs / 1000) - TRIAL_REMINDER_LEAD_S),
-      )
-    } else {
-      OneSignal.User.removeTag('trial_reminder_at')
-    }
-  } catch {}
-}
-
 export function setNotificationUserId(userId: string) {
   try { OneSignal.login(userId) } catch {}
 }

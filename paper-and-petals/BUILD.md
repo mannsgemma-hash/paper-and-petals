@@ -61,7 +61,7 @@ that data too.
 
 ## Push notifications (OneSignal)
 
-Four notifications, all opt-in through the app (Apple guideline 4.5.4). Nobody
+Three notifications, all opt-in through the app (Apple guideline 4.5.4). Nobody
 gets one until they've said yes to "Hear about new collections?" (asked as they
 leave their first journal) or turned on a switch in Settings.
 
@@ -69,7 +69,6 @@ leave their first journal) or turned on a switch in Settings.
 |---|---|---|---|
 | New collections | `npm run notify -- --yes` (studio), each Saturday | `notify_new_items = 1` | Shop |
 | Seasonal collections | `npm run notify -- --yes --audience seasonal` | `notify_collections = 1` | Shop |
-| Studio trial ends in 2 days | Journey (below) | has `trial_reminder_at` | Shop |
 | Journalling idea after 14 days away | Journey (below) | `notify_reminders = 1` | Home |
 
 A notification picks its screen with Additional Data `route` = `shop` or
@@ -94,21 +93,10 @@ A notification picks its screen with Additional Data `route` = `shop` or
 
 ### Segments (Audience → Segments → New Segment)
 
-- **Trial reminder due**: User Tag `trial_reminder_at` **time elapsed greater
-  than** 0 seconds, AND User Tag `trial_reminder_at` **time elapsed less than**
-  1 day. (The upper bound stops a stale tag sending a reminder weeks late.)
 - **Away 14 days**: Last Session **greater than** 336 hours, AND User Tag
   `notify_reminders` **is** `1`.
 
 ### Journeys (Messages → Journeys → New Journey)
-
-**Studio trial reminder**
-- Entry: segment *Trial reminder due*. Re-entry: off.
-- Step: Push.
-  - Title: `Your Studio trial ends in 2 days`
-  - Message: `Keep it and it carries on automatically. To cancel, open iPad Settings → your name → Subscriptions.`
-  - Additional Data: `route` = `shop`
-- Exit: after the push.
 
 **Journalling idea**
 - Entry: segment *Away 14 days*. Re-entry: allowed after 30 days.
@@ -118,4 +106,6 @@ A notification picks its screen with Additional Data `route` = `shop` or
   - Additional Data: `route` = `home`
 - Exit: after the push, or when the person opens the app.
 
-Send each one to yourself first (Journeys → Test) before turning it on.
+Send it to yourself first (Journeys → Test) before turning it on.
+
+There is deliberately no free-trial-ending reminder.
