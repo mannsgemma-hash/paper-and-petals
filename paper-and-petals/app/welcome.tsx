@@ -42,8 +42,8 @@ export default function WelcomeScreen() {
   const finish = () => {
     const email = form.email.trim();
     track('welcome_completed', { gaveEmail: email.length > 0, consent });
-    // Records to RevenueCat (+ best-effort Supabase); fire-and-forget so the
-    // door never waits on the network.
+    // Records to RevenueCat; fire-and-forget so the door never waits on the
+    // network.
     captureSubscriber({ name: form.name, email: email || undefined, marketingConsent: consent });
     setLaunchState('returning');
     // Persist welcome completion so the next launch routes straight home.

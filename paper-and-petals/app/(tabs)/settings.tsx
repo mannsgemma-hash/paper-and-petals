@@ -266,7 +266,7 @@ Questions: admin@paperandpetals.app`,
   },
   privacy: {
     title: 'Privacy Policy',
-    body: `Last updated 20 October 2026
+    body: `Last updated 3 November 2026
 
 Paper & Petals makes a digital scrapbooking app. This policy explains what we collect, why, and the choices you have. We collect as little as possible.
 
@@ -279,7 +279,7 @@ WHAT WE COLLECT
 • Push notifications. If you allow them, a device token is stored (via OneSignal) so we can send reminders and news. You can turn these off in your device settings.
 
 WHO WE SHARE WITH
-We do not sell your data. We use a small number of providers who process data on our behalf: Apple (payments), RevenueCat (purchase records and your name and email), PostHog (analytics), OneSignal (notifications) and Supabase (mailing list). Each receives only what it needs.
+We do not sell your data. We use a small number of providers who process data on our behalf: Apple (payments), RevenueCat (purchase records, and your name and email), PostHog (analytics) and OneSignal (notifications). Each receives only what it needs.
 
 HOW LONG WE KEEP IT
 We keep your name, email and purchase records for as long as you use the app. You can ask us to delete your name and email at any time. We hold no copy of your journals to delete.

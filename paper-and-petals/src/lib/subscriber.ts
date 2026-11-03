@@ -1,4 +1,3 @@
-import { supabase, supabaseConfigured } from './supabase'
 import { setSubscriberInfo } from './revenuecat'
 
 export interface SubscriberInput {
@@ -9,34 +8,12 @@ export interface SubscriberInput {
 }
 
 /**
- * Records a new sign-up for the mailing list / win-back audience.
- *
- * RevenueCat is the source of truth (it's always live and is what campaign
- * tools read), so we always set the profile attributes there. Supabase gives
- * you a durable list you own, but it's written best-effort: a paused or
- * misconfigured project must never block someone from entering the app.
- *
- * Requires a `subscribers` table in Supabase (see the SQL in BUILD.md) with
- * a unique `email`; without it the Supabase half simply no-ops.
+ * Records a new sign-up for the mailing list / win-back audience on the
+ * person's RevenueCat profile — the one place this is kept. Export from
+ * RevenueCat (filtered to marketing_consent = true) before any mailing.
  */
-export async function captureSubscriber(input: SubscriberInput): Promise<void> {
+export function captureSubscriber(input: SubscriberInput): void {
   const name = input.name.trim()
   const email = input.email?.trim().toLowerCase() || undefined
-
   setSubscriberInfo({ email, name: name || undefined, marketingConsent: input.marketingConsent })
-
-  if (!email || !supabaseConfigured) return
-  try {
-    await supabase.from('subscribers').upsert(
-      {
-        email,
-        name: name || null,
-        marketing_consent: input.marketingConsent,
-        source: 'welcome',
-      },
-      { onConflict: 'email', ignoreDuplicates: true },
-    )
-  } catch {
-    // Best-effort: never surface a storage error during onboarding.
-  }
 }
