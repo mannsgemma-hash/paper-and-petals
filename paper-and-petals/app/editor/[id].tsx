@@ -12,7 +12,13 @@ import {
   View,
   useWindowDimensions,
 } from 'react-native';
-import { GestureDetector, Gesture, GestureHandlerRootView } from 'react-native-gesture-handler';
+import {
+  GestureDetector,
+  Gesture,
+  GestureHandlerRootView,
+  ScrollView as GHScrollView,
+} from 'react-native-gesture-handler';
+import { Image as ExpoImage } from 'expo-image';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -49,7 +55,7 @@ import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../s
 import type { Upload } from '../../src/lib/uploads';
 import { persistUploadFile, deleteUploadFile } from '../../src/lib/uploadFiles';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
-import { thumbSource } from '../../src/lib/images';
+import { drawerThumbSource, thumbSource } from '../../src/lib/images';
 import { resolveUploadSource } from '../../src/lib/uploadFiles';
 import { fetchCatalogue } from '../../src/services/content';
 import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
@@ -74,16 +80,31 @@ const MIN_ITEM_SIZE = 60;
 // overflow: 'hidden'). The ceiling is just a sanity guard against runaway
 // gestures — twice the spread is far bigger than the visible page.
 const MAX_ITEM_SIZE = SPREAD_W * 2;
-// Rotate handle sits below the selection frame: 14px stem + half of the 26px knob.
-const ROTATE_HANDLE_DIST = 14 + 13;
+// Rotate handle sits below the selection frame: a stem, then the 26px knob.
+// The stem is long enough that a finger on the knob isn't also on the piece.
+const ROTATE_STEM = 26;
+const ROTATE_KNOB = 26;
+const ROTATE_HANDLE_DIST = ROTATE_STEM + ROTATE_KNOB / 2;
 const FLIP_DURATION = 310; // per half-turn — 620ms total
 const FLIP_EASING = Easing.bezier(0.32, 0.72, 0.32, 1);
 
-// Text tool — rendered font size tracks the box height so resize handles scale
-// the lettering for free; tune TEXT_FILL to taste.
+// Text tool. A text box keeps its own font size (spread units): resizing the box
+// scales the lettering with it, like a picture, and the box's height simply
+// follows the text. Nothing is derived from the box, so nothing can loop.
+// TEXT_FILL only converts boxes saved before fontSize existed.
 const TEXT_FILL = 0.55;
+const TEXT_MIN_FONT = 8;
+const TEXT_MAX_FONT = 240;
+/** Breathing room above + below the lettering, as a fraction of the font size. */
+const TEXT_AIR = 0.3;
+const NEW_TEXT_FONT = 36;
 const NEW_TEXT_W = 240;
 const NEW_TEXT_H = 72;
+
+/** A text item's font size: stored, or derived the old way for older boxes. */
+function textFontSize(item: { fontSize?: number; h: number; textScale?: number }): number {
+  return item.fontSize ?? Math.max(TEXT_MIN_FONT, item.h * TEXT_FILL * (item.textScale ?? 1));
+}
 
 // Doodle pen
 const DOODLE_STROKE = 3;
@@ -125,10 +146,17 @@ const editorTour = (r: TourRefs): TourStep[] => [
     card: { top: 140, left: 84 },
   },
   {
+    icon: 'edit-2',
+    title: 'Name your journal',
+    body: 'Tap the name to rename this journal at any time.',
+    targets: [r.name],
+    card: { top: 70, left: 80 },
+  },
+  {
     icon: 'rotate-ccw',
-    title: 'Undo, name & share',
-    body: 'Rename your journal, undo and redo any change, and share or save a picture of your finished spread.',
-    targets: [r.name, r.topRight],
+    title: 'Undo, copy & share',
+    body: 'Undo and redo any change, copy and paste pieces, zoom, see your layers, and share or save a picture of your finished spread.',
+    targets: [r.topRight],
     card: { top: 70, right: 20 },
   },
   {
@@ -712,7 +740,9 @@ interface PlacedItem {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
-  /** Lettering size multiplier on top of the box-height-based size. */
+  /** Text: lettering size in spread units. */
+  fontSize?: number;
+  /** Legacy text sizing (font = h · TEXT_FILL · textScale); read only for boxes without fontSize. */
   textScale?: number;
   // Doodle fields (kind === 'doodle'): stroke points in [0..srcW]×[0..srcH]
   points?: { x: number; y: number }[];
@@ -818,9 +848,9 @@ interface PlacedItemViewProps {
   /** null clears the selection — tapping the selected item lets it go. */
   onSelect: (id: string | null) => void;
   onMoveEnd: (id: string, x: number, y: number) => void;
-  onResizeEnd: (id: string, w: number, h: number) => void;
+  onResizeEnd: (id: string, w: number, h: number, fontSize?: number) => void;
   /** Text grew/shrank: box height + compensating scale so the letters stay put. */
-  onTextFit: (id: string, h: number, textScale: number) => void;
+  onTextHeight: (id: string, h: number) => void;
   onRotateEnd: (id: string, rotate: number) => void;
   onRequestEdit: (id: string) => void;
 }
@@ -832,7 +862,7 @@ function PlacedItemView({
   onSelect,
   onMoveEnd,
   onResizeEnd,
-  onTextFit,
+  onTextHeight,
   onRotateEnd,
   onRequestEdit,
 }: PlacedItemViewProps) {
@@ -841,13 +871,10 @@ function PlacedItemView({
   const rot = useSharedValue(item.rotate);
   const itemW = useSharedValue(item.w);
   const itemH = useSharedValue(item.h);
-  // Text only: font = height · TEXT_FILL · textScale. Height and scale change
-  // TOGETHER when a box refits, so both live on the UI thread and are set in
-  // the same effect. (textScale used to be a render-time constant: the new
-  // scale met the old height for a frame, the text was drawn too small, got
-  // measured at that size, and the box was refitted to the wrong height —
-  // leaving text cut off.)
-  const textScaleSV = useSharedValue(item.kind === 'text' ? (item.textScale ?? 1) : 1);
+  // Text only: the lettering size. Scaled live by the resize gestures, and
+  // set from the item whenever it changes (undo, edit, reopen).
+  const fontSV = useSharedValue(textFontSize(item));
+  const startFont = useSharedValue(textFontSize(item));
 
   // Sync when item prop changes from undo/redo or external updates
   useEffect(() => {
@@ -856,8 +883,8 @@ function PlacedItemView({
     rot.value = item.rotate;
     itemW.value = item.w;
     itemH.value = item.h;
-    textScaleSV.value = item.kind === 'text' ? (item.textScale ?? 1) : 1;
-  }, [item.x, item.y, item.rotate, item.w, item.h, item.textScale, item.kind]);
+    fontSV.value = textFontSize(item);
+  }, [item.x, item.y, item.rotate, item.w, item.h, item.fontSize, item.textScale]);
 
   const startX = useSharedValue(item.x);
   const startY = useSharedValue(item.y);
@@ -892,47 +919,13 @@ function PlacedItemView({
   // gestures are built: a worklet copies the values it uses at the moment it
   // is created, so one declared further down is captured as undefined and
   // throws on the UI thread at the first touch — a hard crash, not a JS error.
-  /**
-   * Grow (or shrink) a text box to fit what's actually in it.
-   *
-   * The font is derived from the box height (F = h · TEXT_FILL · textScale), so
-   * a taller box would mean bigger letters. textScale absorbs the change
-   * instead — set to h·textScale / h' it leaves F exactly where it was, and the
-   * pair is idempotent, so the re-measure that follows an update settles rather
-   * than looping.
-   *
-   * The target keeps the breathing room a single line has today: one line sits
-   * in a box F / TEXT_FILL tall while the line itself is only `lineH`, so the
-   * difference is the padding to carry over to n lines. Both heights are
-   * measured rather than assumed, since line height varies by font.
-   */
-  const textMetrics = useRef<{ contentH: number; lineH: number; atH: number } | null>(null);
+  // While a resize gesture runs, the text box is already scaling in step with
+  // its font, so its own height reports are ignored until the gesture ends.
   const gestureBusy = useRef(false);
   const setGestureBusy = (v: boolean) => {
     gestureBusy.current = v;
   };
-
-  function fitTextBox(contentH: number, lineH: number, h: number) {
-    if (item.kind !== 'text' || h <= 0 || contentH <= 0 || lineH <= 0) return;
-    const font = h * TEXT_FILL * textScale;
-    const pad = font / TEXT_FILL - lineH; // what one line gets above + below
-    const target = Math.max(MIN_ITEM_SIZE, Math.min(contentH + pad, MAX_ITEM_SIZE));
-    if (Math.abs(target - h) < 1) return;
-    onTextFit(item.id, target, (h * textScale) / target);
-  }
-
-  /**
-   * After a resize gesture the box is committed but the text hasn't been
-   * re-measured (the font stopped changing, so no new layout pass fires).
-   * The last measurement still applies, scaled by how much the box grew.
-   */
-  const fitAfterGesture = (h: number) => {
-    gestureBusy.current = false;
-    const m = textMetrics.current;
-    if (!m || m.atH <= 0) return;
-    const f = h / m.atH;
-    fitTextBox(m.contentH * f, m.lineH * f, h);
-  };
+  const isTextItem = item.kind === 'text';
 
   // runOnJS(true): run the callback directly on the JS thread so a mouse click
   // on web reliably re-selects the item.
@@ -977,21 +970,27 @@ function PlacedItemView({
     .onBegin(() => {
       startW.value = itemW.value;
       startH.value = itemH.value;
+      startFont.value = fontSV.value;
       runOnJS(setGestureBusy)(true);
       runOnJS(onSelect)(item.id);
     })
     .onUpdate((e) => {
       // One factor for both sides, clamped as a whole (like the corners), so a
       // pinch that hits the size limit stops rather than distorting the piece.
-      const fMin = MIN_ITEM_SIZE / Math.min(startW.value, startH.value);
-      const fMax = MAX_ITEM_SIZE / Math.max(startW.value, startH.value);
+      // Text is limited by its lettering size, not the box's.
+      const fMin = isTextItem
+        ? TEXT_MIN_FONT / startFont.value
+        : MIN_ITEM_SIZE / Math.min(startW.value, startH.value);
+      const fMax = isTextItem
+        ? Math.min(TEXT_MAX_FONT / startFont.value, MAX_ITEM_SIZE / startW.value)
+        : MAX_ITEM_SIZE / Math.max(startW.value, startH.value);
       const f = Math.max(fMin, Math.min(fMax, e.scale));
       itemW.value = startW.value * f;
       itemH.value = startH.value * f;
+      if (isTextItem) fontSV.value = startFont.value * f;
     })
     .onEnd(() => {
-      runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
-      runOnJS(fitAfterGesture)(itemH.value);
+      runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value, isTextItem ? fontSV.value : undefined);
     })
     .onFinalize(() => {
       runOnJS(setGestureBusy)(false);
@@ -1029,6 +1028,7 @@ function PlacedItemView({
       .onBegin(() => {
         startW.value = itemW.value;
         startH.value = itemH.value;
+        startFont.value = fontSV.value;
         runOnJS(setGestureBusy)(true);
         const rad = (rot.value * Math.PI) / 180;
         const lx = (hx * itemW.value) / 2;
@@ -1043,16 +1043,21 @@ function PlacedItemView({
         const vx = startVX.value + e.translationX;
         const vy = startVY.value + e.translationY;
         const d = Math.sqrt(vx * vx + vy * vy);
-        // Clamp the factor so both dimensions stay in range without breaking aspect.
-        const fMin = MIN_ITEM_SIZE / Math.min(startW.value, startH.value);
-        const fMax = MAX_ITEM_SIZE / Math.max(startW.value, startH.value);
+        // Clamp the factor so both dimensions stay in range without breaking
+        // aspect — for text, so the lettering stays readable and sane.
+        const fMin = isTextItem
+          ? TEXT_MIN_FONT / startFont.value
+          : MIN_ITEM_SIZE / Math.min(startW.value, startH.value);
+        const fMax = isTextItem
+          ? Math.min(TEXT_MAX_FONT / startFont.value, MAX_ITEM_SIZE / startW.value)
+          : MAX_ITEM_SIZE / Math.max(startW.value, startH.value);
         const f = Math.max(fMin, Math.min(fMax, d / d0));
         itemW.value = startW.value * f;
         itemH.value = startH.value * f;
+        if (isTextItem) fontSV.value = startFont.value * f;
       })
       .onEnd(() => {
-        runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value);
-        runOnJS(fitAfterGesture)(itemH.value);
+        runOnJS(onResizeEnd)(item.id, itemW.value, itemH.value, isTextItem ? fontSV.value : undefined);
       })
       .onFinalize(() => {
         runOnJS(setGestureBusy)(false);
@@ -1112,17 +1117,15 @@ function PlacedItemView({
     zIndex: SELECTION_Z,
   }));
 
-  // Live font sizing for text items: the lettering tracks the box height so the
-  // corner resize handles scale text for free.
-  const textScale = item.kind === 'text' ? (item.textScale ?? 1) : 1;
+  // Live font size for text items (scaled by the resize gestures).
   const textAnimStyle = useAnimatedStyle(() => {
-    const fs = Math.max(8, itemH.value * TEXT_FILL * textScaleSV.value);
+    const fs = fontSV.value;
     return {
       fontSize: fs,
       // Script faces like Ballet carry tall ascenders and deep descenders that
       // sit outside the default line box, so iOS clipped the tops and tails.
-      // An explicit, generous line height gives every face room; the box fit
-      // measures what's actually rendered, so it follows along.
+      // An explicit, generous line height gives every face room; the box's
+      // height is measured from what's actually rendered, so it follows along.
       lineHeight: fs * 1.42,
     };
   });
@@ -1165,7 +1168,7 @@ function PlacedItemView({
     // The knob hangs ROTATE_HANDLE_DIST + half its size below the item's bottom
     // edge; if that lands past the spread, pull it up by the overshoot (never
     // further than the item's own height, so it stays attached to its item).
-    const knobY = ty.value + itemH.value / 2 + ROTATE_HANDLE_DIST + 13;
+    const knobY = ty.value + itemH.value / 2 + ROTATE_HANDLE_DIST + ROTATE_KNOB / 2;
     const over = knobY - (SPREAD_H - 4);
     const lift = over > 0 ? Math.min(over, itemH.value + ROTATE_HANDLE_DIST) : 0;
     rotateLift.value = lift;
@@ -1197,16 +1200,16 @@ function PlacedItemView({
                   },
                   textAnimStyle,
                 ]}
-                onTextLayout={(e) => {
-                  const lines = e.nativeEvent.lines ?? [];
-                  if (lines.length === 0) return;
-                  const contentH = lines.reduce((t, l) => t + l.height, 0);
-                  const lineH = contentH / lines.length;
-                  textMetrics.current = { contentH, lineH, atH: item.h };
-                  // Mid-gesture the font is scaling live while item.h is still
-                  // the old value, so the maths would be off — the gesture's
-                  // own end handler refits from this measurement instead.
-                  if (!gestureBusy.current) fitTextBox(contentH, lineH, item.h);
+                onLayout={(e) => {
+                  // The box follows the text: its height is the lettering plus a
+                  // little air. Skipped mid-gesture, where the box is already
+                  // scaling in step with the font.
+                  if (gestureBusy.current) return;
+                  const target = Math.max(
+                    TEXT_MIN_FONT,
+                    e.nativeEvent.layout.height + textFontSize(item) * TEXT_AIR,
+                  );
+                  if (Math.abs(target - item.h) > 1) onTextHeight(item.id, target);
                 }}
               >
                 {item.text || ' '}
@@ -1308,6 +1311,51 @@ function PlacedItemView({
         </Animated.View>
       )}
     </>
+  );
+}
+
+/**
+ * The ☰ handle on a layers-panel row: hold, then drag to restack.
+ *
+ * Its own component so the drag gesture is built ONCE per row. Built inline it
+ * was a new gesture on every render — and picking a row up re-renders — so the
+ * drag could be dropped the moment it began. The callbacks change every render
+ * (they close over the current stack), so they're read through a ref.
+ */
+function LayerDragHandle({
+  active,
+  onStart,
+  onMove,
+  onEnd,
+  onCancel,
+}: {
+  active: boolean;
+  onStart: () => void;
+  onMove: (dy: number) => void;
+  onEnd: () => void;
+  onCancel: () => void;
+}) {
+  const cb = useRef({ onStart, onMove, onEnd, onCancel });
+  cb.current = { onStart, onMove, onEnd, onCancel };
+  const pan = useMemo(
+    () =>
+      Gesture.Pan()
+        .activateAfterLongPress(140)
+        .runOnJS(true)
+        .onStart(() => cb.current.onStart())
+        .onUpdate((e) => cb.current.onMove(e.translationY))
+        .onEnd(() => cb.current.onEnd())
+        .onFinalize((_e, success) => {
+          if (!success) cb.current.onCancel();
+        }),
+    [],
+  );
+  return (
+    <GestureDetector gesture={pan}>
+      <View style={styles.layerHandle} hitSlop={8}>
+        <Feather name="menu" size={18} color={active ? theme.palette.forest : theme.color.fg3} />
+      </View>
+    </GestureDetector>
   );
 }
 
@@ -1720,7 +1768,14 @@ function DrawerBody({ shopItems, drawerCat, setDrawerCat, placeItem, pickUpload,
           } as any)}
         >
           {item.flowerAsset ? (
-            <Image source={thumbSource(item.flowerAsset)} style={styles.tileFlower} resizeMode="contain" />
+            <ExpoImage
+              source={drawerThumbSource(item.flowerAsset)}
+              style={styles.tileFlower}
+              contentFit="contain"
+              cachePolicy="memory-disk"
+              recyclingKey={item.id}
+              transition={120}
+            />
           ) : (
             <Feather name={item.glyph as any} size={28} color={tone.accent} />
           )}
@@ -2039,7 +2094,7 @@ function SpreadHalf({ pages, page, side }: { pages: PageState[]; page: number; s
           onSelect={noop}
           onMoveEnd={noop}
           onResizeEnd={noop}
-          onTextFit={noop}
+          onTextHeight={noop}
           onRotateEnd={noop}
           onRequestEdit={noop}
         />
@@ -2099,9 +2154,9 @@ interface SpreadViewProps {
   /** null clears the selection — tapping the selected item lets it go. */
   onSelect: (id: string | null) => void;
   onMoveEnd: (id: string, x: number, y: number) => void;
-  onResizeEnd: (id: string, w: number, h: number) => void;
+  onResizeEnd: (id: string, w: number, h: number, fontSize?: number) => void;
   /** Text grew/shrank: box height + compensating scale so the letters stay put. */
-  onTextFit: (id: string, h: number, textScale: number) => void;
+  onTextHeight: (id: string, h: number) => void;
   onRotateEnd: (id: string, rotate: number) => void;
   onRequestEdit: (id: string) => void;
 }
@@ -2115,7 +2170,7 @@ function SpreadView({
   onSelect,
   onMoveEnd,
   onResizeEnd,
-  onTextFit,
+  onTextHeight,
   onRotateEnd,
   onRequestEdit,
 }: SpreadViewProps) {
@@ -2156,7 +2211,7 @@ function SpreadView({
             onSelect={onSelect}
             onMoveEnd={onMoveEnd}
             onResizeEnd={onResizeEnd}
-            onTextFit={onTextFit}
+            onTextHeight={onTextHeight}
             onRotateEnd={onRotateEnd}
             onRequestEdit={onRequestEdit}
           />
@@ -2772,10 +2827,15 @@ export default function EditorScreen() {
     scheduleSave(newPages);
   }
 
-  function handleResizeEnd(id: string, w: number, h: number) {
+  function handleResizeEnd(id: string, w: number, h: number, fontSize?: number) {
     const newPages = pages.map((p, i) =>
       i === activePage - 1
-        ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, w, h } : it)) }
+        ? {
+            ...p,
+            items: p.items.map((it) =>
+              it.id === id ? { ...it, w, h, ...(fontSize ? { fontSize } : {}) } : it,
+            ),
+          }
         : p,
     );
     pushHistory(newPages);
@@ -2787,7 +2847,7 @@ export default function EditorScreen() {
    * edit the user made, so it saves but never adds an undo step — otherwise
    * simply opening a journal would fill the history with refits.
    */
-  function handleTextFit(id: string, h: number, textScale: number) {
+  function handleTextHeight(id: string, h: number) {
     // Functional update: several text boxes can report at once (opening a
     // journal measures them all), and a stale closure would let the last one
     // wipe out the others' fits.
@@ -2795,11 +2855,11 @@ export default function EditorScreen() {
       const pageIdx = activePage - 1;
       const current = prev[pageIdx]?.items.find((it) => it.id === id);
       if (!current) return prev;
-      if (Math.abs(current.h - h) < 1 && (current.textScale ?? 1) === textScale) return prev;
+      if (Math.abs(current.h - h) < 1) return prev;
       fitDirty.current = true;
       return prev.map((p, i) =>
         i === pageIdx
-          ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, h, textScale } : it)) }
+          ? { ...p, items: p.items.map((it) => (it.id === id ? { ...it, h } : it)) }
           : p,
       );
     });
@@ -2943,6 +3003,7 @@ export default function EditorScreen() {
       y: SPREAD_H * 0.4 + Math.random() * SPREAD_H * 0.2,
       w: NEW_TEXT_W,
       h: NEW_TEXT_H,
+      fontSize: NEW_TEXT_FONT,
       rotate: 0,
       z: maxZ + 1,
     };
@@ -3394,8 +3455,12 @@ export default function EditorScreen() {
   const toolbarAbove = selectedItem
     ? containerH / 2 + (selectedItem.y - selectedItem.h / 2 - SPREAD_H / 2) * spreadScale - 56
     : 0;
+  // Below the piece, the rotate knob hangs first — clear it, or the toolbar
+  // sits right on top of it.
   const toolbarBelow = selectedItem
-    ? containerH / 2 + (selectedItem.y + selectedItem.h / 2 - SPREAD_H / 2) * spreadScale + 12
+    ? containerH / 2 +
+      (selectedItem.y + selectedItem.h / 2 + ROTATE_STEM + ROTATE_KNOB - SPREAD_H / 2) * spreadScale +
+      12
     : 0;
   const rawTop = toolbarAbove < 4 ? toolbarBelow : toolbarAbove;
   const toolbarTop = selectedItem
@@ -3608,7 +3673,7 @@ export default function EditorScreen() {
                         onSelect={setSelectedId}
                         onMoveEnd={handleMoveEnd}
                         onResizeEnd={handleResizeEnd}
-                        onTextFit={handleTextFit}
+                        onTextHeight={handleTextHeight}
                         onRotateEnd={handleRotateEnd}
                         onRequestEdit={(id) => { setSelectedId(id); setTextEditorId(id); }}
                       />
@@ -3841,7 +3906,8 @@ export default function EditorScreen() {
                   <Feather name="x" size={16} color={theme.color.fg2} />
                 </Pressable>
               </View>
-              <ScrollView scrollEnabled={!layerDrag}>
+              {/* RNGH's ScrollView, so a held handle wins over the scroll. */}
+              <GHScrollView scrollEnabled={!layerDrag}>
                 {(() => {
                   const stacked = [...currentPageItems].sort((a, b) => b.z - a.z);
                   // While dragging, show the list as it will end up so the gap
@@ -3867,41 +3933,26 @@ export default function EditorScreen() {
                           ? 'Doodle'
                           : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
                   const dragging = layerDrag?.id === item.id;
-                  // react-native-gesture-handler, not PanResponder: the
-                  // enclosing ScrollView is a NATIVE recogniser, and the JS
-                  // responder system loses a vertical drag to it however many
-                  // capture handlers it sets — which is why this never worked.
-                  // activateAfterLongPress also makes the intent unambiguous:
-                  // a flick scrolls the list, a hold picks the row up.
-                  const pan = Gesture.Pan()
-                    .activateAfterLongPress(140)
-                    .runOnJS(true)
-                    .onStart(() => {
-                      const from = stacked.findIndex((it) => it.id === item.id);
-                      setLayerDrag({ id: item.id, from, to: from, dy: 0 });
-                    })
-                    .onUpdate((e) => {
-                      setLayerDrag((d) => {
-                        if (!d) return d;
-                        const to = Math.max(
-                          0,
-                          Math.min(stacked.length - 1, d.from + Math.round(e.translationY / LAYER_ROW_H)),
-                        );
-                        return { ...d, to, dy: e.translationY };
-                      });
-                    })
-                    .onEnd(() => {
-                      setLayerDrag((d) => {
-                        if (d && d.to !== d.from) {
-                          const ids = stacked.map((it) => it.id);
-                          const [moved] = ids.splice(d.from, 1);
-                          ids.splice(d.to, 0, moved);
-                          reorderLayers(ids);
-                        }
-                        return null;
-                      });
-                    })
-                    .onFinalize(() => setLayerDrag(null));
+                  const startDrag = () => {
+                    const from = stacked.findIndex((it) => it.id === item.id);
+                    setLayerDrag({ id: item.id, from, to: from, dy: 0 });
+                  };
+                  const moveDrag = (dy: number) =>
+                    setLayerDrag((d) => {
+                      if (!d) return d;
+                      const to = Math.max(0, Math.min(stacked.length - 1, d.from + Math.round(dy / LAYER_ROW_H)));
+                      return { ...d, to, dy };
+                    });
+                  const endDrag = () =>
+                    setLayerDrag((d) => {
+                      if (d && d.to !== d.from) {
+                        const ids = stacked.map((it) => it.id);
+                        const [moved] = ids.splice(d.from, 1);
+                        ids.splice(d.to, 0, moved);
+                        reorderLayers(ids);
+                      }
+                      return null;
+                    });
                   return (
                     // The row is a plain View: a Pressable wrapping the handle
                     // would fire its onPress when the drag is released, which
@@ -3934,11 +3985,13 @@ export default function EditorScreen() {
                         <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
                       </Pressable>
                       {/* Drag handle — hold, then move to restack. */}
-                      <GestureDetector gesture={pan}>
-                        <View style={styles.layerHandle}>
-                          <Feather name="menu" size={16} color={dragging ? theme.palette.forest : theme.color.fg3} />
-                        </View>
-                      </GestureDetector>
+                      <LayerDragHandle
+                        active={dragging}
+                        onStart={startDrag}
+                        onMove={moveDrag}
+                        onEnd={endDrag}
+                        onCancel={() => setLayerDrag(null)}
+                      />
                     </View>
                   );
                   });
@@ -3948,7 +4001,7 @@ export default function EditorScreen() {
                     <Text style={styles.layerEmptyText}>No items on this page</Text>
                   </View>
                 )}
-              </ScrollView>
+              </GHScrollView>
             </View>
           </>
         )}
@@ -4619,8 +4672,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   layerHandle: {
-    width: 34,
-    height: 34,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -4861,13 +4914,13 @@ const styles = StyleSheet.create({
   },
   rotateStem: {
     width: 1.5,
-    height: 14,
+    height: ROTATE_STEM,
     backgroundColor: theme.palette.forest,
   },
   rotateHandle: {
-    width: 26,
-    height: 26,
-    borderRadius: 13,
+    width: ROTATE_KNOB,
+    height: ROTATE_KNOB,
+    borderRadius: ROTATE_KNOB / 2,
     backgroundColor: theme.color.surface,
     borderWidth: 1.5,
     borderColor: theme.palette.forest,

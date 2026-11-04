@@ -38,3 +38,20 @@ export function thumbSource<T>(source: T, px: number = THUMB_PX): T {
   const sep = uri.includes('?') ? '&' : '?';
   return { ...(source as object), uri: `${uri}${sep}w=${px}&h=${px}&fit=max` } as T;
 }
+
+/** Drawer tiles are 78×92pt — 240px covers them on any retina iPad. */
+export const DRAWER_THUMB_PX = 240;
+
+/**
+ * thumbSource for an expo-image <Image>: small and in WebP. expo-image decodes
+ * WebP (with transparency), which is typically far smaller than the same PNG
+ * at the same size, and with cachePolicy="memory-disk" each tile downloads
+ * once rather than on every drawer open.
+ * Only for expo-image — React Native's own <Image> on iOS can't show WebP.
+ */
+export function drawerThumbSource<T>(source: T, px: number = DRAWER_THUMB_PX): T {
+  const sized = thumbSource(source, px);
+  const uri = (sized as { uri?: unknown } | null)?.uri;
+  if (typeof uri !== 'string' || !SANITY_CDN.test(uri) || /[?&]fm=/.test(uri)) return sized;
+  return { ...(sized as object), uri: `${uri}&fm=webp&q=80` } as T;
+}

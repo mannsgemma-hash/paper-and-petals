@@ -63,7 +63,7 @@ export function Tour({ steps, onDone }: { steps: TourStep[]; onDone: () => void 
     const targets = steps[idx]?.targets ?? [];
     if (targets.length === 0) return;
     let cancelled = false;
-    const t = setTimeout(async () => {
+    const measureNow = async () => {
       const [origin, ...rects] = await Promise.all([
         measure(rootRef.current),
         ...targets.map((r) => measure(r.current)),
@@ -86,10 +86,14 @@ export function Tour({ steps, onDone }: { steps: TourStep[]; onDone: () => void 
         w = h = d;
       }
       setMeasured({ left, top, width: w, height: h, borderRadius: Math.min(w, h) / 2 });
-    }, 60);
+    };
+    // Measure soon, then again once the screen beneath has surely settled
+    // (fonts, the page strip, the canvas fitting itself) — the first reading
+    // can be taken mid-layout and land a little off.
+    const timers = [setTimeout(measureNow, 60), setTimeout(measureNow, 450)];
     return () => {
       cancelled = true;
-      clearTimeout(t);
+      timers.forEach(clearTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idx, winW, winH]);
