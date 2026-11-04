@@ -311,13 +311,17 @@ function LegalModal({
   const copy = doc ? LEGAL_COPY[doc] : null;
   return (
     <Modal visible={!!doc} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose}>
-        <Pressable style={styles.legalCard} onPress={() => {}}>
+      {/* The tap-to-close scrim sits BEHIND the card rather than around it: a
+          Pressable wrapping the card took the touches the ScrollView needed,
+          so the long legal text couldn't be scrolled. */}
+      <View style={styles.scrim}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={styles.legalCard}>
           {copy && (
             <>
               <Text style={styles.legalEyebrow}>PAPER & PETALS</Text>
               <Text style={styles.legalTitle}>{copy.title}</Text>
-              <ScrollView style={styles.legalScroll}>
+              <ScrollView style={styles.legalScroll} showsVerticalScrollIndicator>
                 <Text style={styles.legalBody}>{copy.body}</Text>
               </ScrollView>
               <Pressable style={styles.doneBtn} onPress={onClose}>
@@ -325,8 +329,8 @@ function LegalModal({
               </Pressable>
             </>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -428,7 +432,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
     marginBottom: 12,
   },
-  legalScroll: { flexGrow: 0 },
+  // flexShrink lets the text area give way inside the card's maxHeight, so it
+  // scrolls instead of growing past the card and being cut off.
+  legalScroll: { flexGrow: 0, flexShrink: 1 },
   legalBody: {
     fontFamily: theme.font.ui,
     fontSize: 14,

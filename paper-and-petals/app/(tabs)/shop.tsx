@@ -595,8 +595,11 @@ function CollectionDetail({
 
   return (
     <Modal visible={!!collection} transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={styles.scrim} onPress={onClose}>
-        <Pressable style={[styles.detailLg, narrow && styles.detailLgNarrow]} onPress={() => {}}>
+      {/* Tap-to-close scrim BEHIND the card, not wrapped around it: a Pressable
+          card took the touches the page gallery's ScrollView needed. */}
+      <View style={styles.scrim}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+        <View style={[styles.detailLg, narrow && styles.detailLgNarrow]}>
           {collection && (
             <>
               {/* Left info panel */}
@@ -712,8 +715,8 @@ function CollectionDetail({
               </Pressable>
             </>
           )}
-        </Pressable>
-      </Pressable>
+        </View>
+      </View>
     </Modal>
   );
 }
