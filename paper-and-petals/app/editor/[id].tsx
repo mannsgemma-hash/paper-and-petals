@@ -16,7 +16,6 @@ import {
   GestureDetector,
   Gesture,
   GestureHandlerRootView,
-  ScrollView as GHScrollView,
 } from 'react-native-gesture-handler';
 import { Image as ExpoImage } from 'expo-image';
 import Animated, {
@@ -230,12 +229,7 @@ const BRUSHES: { key: string; label: string }[] = [
  */
 const SELECTION_Z = 100000;
 
-/**
- * Height of one layers-panel row. It is the step size when dragging to reorder,
- * so the row is given this height explicitly — derived from padding and content
- * it would drift the moment either changes, and a couple of px of drift is a
- * drop landing one place off after a few rows.
- */
+/** Height of one layers-panel row. */
 const LAYER_ROW_H = 52;
 
 /** Starter templates need more work — off until a later release. */
@@ -1311,51 +1305,6 @@ function PlacedItemView({
         </Animated.View>
       )}
     </>
-  );
-}
-
-/**
- * The ☰ handle on a layers-panel row: hold, then drag to restack.
- *
- * Its own component so the drag gesture is built ONCE per row. Built inline it
- * was a new gesture on every render — and picking a row up re-renders — so the
- * drag could be dropped the moment it began. The callbacks change every render
- * (they close over the current stack), so they're read through a ref.
- */
-function LayerDragHandle({
-  active,
-  onStart,
-  onMove,
-  onEnd,
-  onCancel,
-}: {
-  active: boolean;
-  onStart: () => void;
-  onMove: (dy: number) => void;
-  onEnd: () => void;
-  onCancel: () => void;
-}) {
-  const cb = useRef({ onStart, onMove, onEnd, onCancel });
-  cb.current = { onStart, onMove, onEnd, onCancel };
-  const pan = useMemo(
-    () =>
-      Gesture.Pan()
-        .activateAfterLongPress(140)
-        .runOnJS(true)
-        .onStart(() => cb.current.onStart())
-        .onUpdate((e) => cb.current.onMove(e.translationY))
-        .onEnd(() => cb.current.onEnd())
-        .onFinalize((_e, success) => {
-          if (!success) cb.current.onCancel();
-        }),
-    [],
-  );
-  return (
-    <GestureDetector gesture={pan}>
-      <View style={styles.layerHandle} hitSlop={8}>
-        <Feather name="menu" size={18} color={active ? theme.palette.forest : theme.color.fg3} />
-      </View>
-    </GestureDetector>
   );
 }
 
@@ -2642,7 +2591,6 @@ export default function EditorScreen() {
   const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
   const [penColorPickerOpen, setPenColorPickerOpen] = useState(false);
   const [penWidth, setPenWidth] = useState(4);
-  const [layerDrag, setLayerDrag] = useState<{ id: string; from: number; to: number; dy: number } | null>(null);
   /** Set when a text refit changed `pages`, so the save uses the merged result. */
   const fitDirty = useRef(false);
   const penTrackW = useRef(0);
@@ -3901,26 +3849,15 @@ export default function EditorScreen() {
             <View style={styles.layerPanel}>
               <View style={styles.layerPanelHeader}>
                 <Text style={styles.layerPanelTitle}>Layers</Text>
-                <Text style={styles.layerPanelHint}>hold ⠿ to reorder</Text>
+                <Text style={styles.layerPanelHint}>top of the list is on top</Text>
                 <Pressable onPress={() => setLayerPanelOpen(false)} hitSlop={8}>
                   <Feather name="x" size={16} color={theme.color.fg2} />
                 </Pressable>
               </View>
-              {/* RNGH's ScrollView, so a held handle wins over the scroll. */}
-              <GHScrollView scrollEnabled={!layerDrag}>
+              <ScrollView>
                 {(() => {
                   const stacked = [...currentPageItems].sort((a, b) => b.z - a.z);
-                  // While dragging, show the list as it will end up so the gap
-                  // follows the finger.
-                  const arr = layerDrag
-                    ? (() => {
-                        const next = [...stacked];
-                        const [moved] = next.splice(layerDrag.from, 1);
-                        if (moved) next.splice(layerDrag.to, 0, moved);
-                        return next;
-                      })()
-                    : stacked;
-                  return arr.map((item, idx) => {
+                  return stacked.map((item, idx) => {
                   const toneKey = item.tone as keyof typeof SHOP_TONES;
                   const tone = SHOP_TONES[toneKey] ?? SHOP_TONES.sage;
                   const isSelected = item.id === selectedId;
@@ -3932,44 +3869,22 @@ export default function EditorScreen() {
                         : item.kind === 'doodle'
                           ? 'Doodle'
                           : shopItems.find((s) => s.id === item.itemId)?.name ?? item.glyph;
-                  const dragging = layerDrag?.id === item.id;
-                  const startDrag = () => {
-                    const from = stacked.findIndex((it) => it.id === item.id);
-                    setLayerDrag({ id: item.id, from, to: from, dy: 0 });
+                  // Move one step up (towards the top of the stack) or down.
+                  // Buttons rather than drag-to-reorder: a tap can't be lost
+                  // to the list's scrolling the way a drag gesture was.
+                  const move = (step: -1 | 1) => {
+                    const to = idx + step;
+                    if (to < 0 || to >= stacked.length) return;
+                    const ids = stacked.map((it) => it.id);
+                    [ids[idx], ids[to]] = [ids[to], ids[idx]];
+                    reorderLayers(ids);
                   };
-                  const moveDrag = (dy: number) =>
-                    setLayerDrag((d) => {
-                      if (!d) return d;
-                      const to = Math.max(0, Math.min(stacked.length - 1, d.from + Math.round(dy / LAYER_ROW_H)));
-                      return { ...d, to, dy };
-                    });
-                  const endDrag = () =>
-                    setLayerDrag((d) => {
-                      if (d && d.to !== d.from) {
-                        const ids = stacked.map((it) => it.id);
-                        const [moved] = ids.splice(d.from, 1);
-                        ids.splice(d.to, 0, moved);
-                        reorderLayers(ids);
-                      }
-                      return null;
-                    });
                   return (
-                    // The row is a plain View: a Pressable wrapping the handle
-                    // would fire its onPress when the drag is released, which
-                    // selected the item and shut the panel instead of
-                    // reordering. Only the left part is pressable now.
+                    // The row is a plain View: only its left part selects the
+                    // piece, so pressing an arrow never also selects it.
                     <View
                       key={item.id}
-                      style={[
-                        styles.layerRow,
-                        isSelected && styles.layerRowActive,
-                        dragging && styles.layerRowDragging,
-                        dragging && {
-                          transform: [
-                            { translateY: layerDrag!.dy - (layerDrag!.to - layerDrag!.from) * LAYER_ROW_H },
-                          ],
-                        },
-                      ]}
+                      style={[styles.layerRow, isSelected && styles.layerRowActive]}
                     >
                       <Pressable
                         style={styles.layerRowPress}
@@ -3984,14 +3899,25 @@ export default function EditorScreen() {
                         </View>
                         <Text style={styles.layerName} numberOfLines={1}>{itemName}</Text>
                       </Pressable>
-                      {/* Drag handle — hold, then move to restack. */}
-                      <LayerDragHandle
-                        active={dragging}
-                        onStart={startDrag}
-                        onMove={moveDrag}
-                        onEnd={endDrag}
-                        onCancel={() => setLayerDrag(null)}
-                      />
+                      {/* Restack: up brings it forward, down sends it back. */}
+                      <Pressable
+                        style={[styles.layerHandle, idx === 0 && styles.dimmed]}
+                        onPress={() => move(-1)}
+                        disabled={idx === 0}
+                        hitSlop={4}
+                        accessibilityLabel="Move up a layer"
+                      >
+                        <Feather name="chevron-up" size={20} color={theme.color.fg2} />
+                      </Pressable>
+                      <Pressable
+                        style={[styles.layerHandle, idx === stacked.length - 1 && styles.dimmed]}
+                        onPress={() => move(1)}
+                        disabled={idx === stacked.length - 1}
+                        hitSlop={4}
+                        accessibilityLabel="Move down a layer"
+                      >
+                        <Feather name="chevron-down" size={20} color={theme.color.fg2} />
+                      </Pressable>
                     </View>
                   );
                   });
@@ -4001,7 +3927,7 @@ export default function EditorScreen() {
                     <Text style={styles.layerEmptyText}>No items on this page</Text>
                   </View>
                 )}
-              </GHScrollView>
+              </ScrollView>
             </View>
           </>
         )}
@@ -4599,16 +4525,6 @@ const styles = StyleSheet.create({
   },
   layerRowActive: {
     backgroundColor: 'rgba(78,102,82,0.08)',
-  },
-  layerRowDragging: {
-    backgroundColor: theme.palette.cream,
-    borderRadius: 10,
-    zIndex: 10,
-    elevation: 6,
-    shadowColor: '#2b2621',
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
   },
   // Collections tab in the drawer
   colBackRow: {
