@@ -80,7 +80,8 @@ export default function SettingsScreen() {
           <Feather name="arrow-left" size={20} color={theme.color.fg1} />
         </Pressable>
         <Text style={styles.topTitle}>Settings</Text>
-        <View style={styles.backBtn} />
+        {/* Keeps the title centred; invisible, same width as the back button. */}
+        <View style={styles.topbarSpacer} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -343,6 +344,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 20,
   },
+  topbarSpacer: { width: 44, height: 44 },
   backBtn: {
     width: 44,
     height: 44,
