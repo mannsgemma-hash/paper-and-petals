@@ -18,6 +18,10 @@ of each section; move an item to "Done" (or delete it) when it ships.
   (expo-image + `drawerThumbSource` in `src/lib/images.ts`).
 
 ## Accounts & platforms
+- **iPhone.** Version 1 is iPad-only (`ios.isTabletOnly` in app.json). Adding
+  iPhone later is allowed; removing it once shipped is not. Before turning it
+  on: walk every screen at phone width (the editor especially), and take
+  6.9-inch iPhone screenshots for App Store Connect.
 - **Accounts and cloud sync** for journals (needs sign-in, Sign in with Apple,
   per-user storage, photo upload, in-app account deletion).
 - **Android** — RevenueCat Android key, Play Store build and listing.

@@ -9,6 +9,7 @@
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
+      "isTabletOnly": true,
       "requireFullScreen": false,
       "bundleIdentifier": "com.paperandpetals.app",
       "infoPlist": {
