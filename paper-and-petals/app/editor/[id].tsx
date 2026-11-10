@@ -3,6 +3,7 @@ import {
   Alert,
   Image,
   PanResponder,
+  PixelRatio,
   Platform,
   Pressable,
   ScrollView,
@@ -54,7 +55,7 @@ import { DRAWER_CATEGORIES, SHOP_TONES, ShopItem, isItemUnlocked } from '../../s
 import type { Upload } from '../../src/lib/uploads';
 import { persistUploadFile, deleteUploadFile } from '../../src/lib/uploadFiles';
 import { JOURNAL_TEMPLATES, type JournalTemplate } from '../../src/data/templates';
-import { drawerThumbSource, thumbSource } from '../../src/lib/images';
+import { canvasSource, drawerThumbSource, thumbSource } from '../../src/lib/images';
 import { resolveUploadSource } from '../../src/lib/uploadFiles';
 import { fetchCatalogue } from '../../src/services/content';
 import { loadLocalSpreads, saveLocalSpreads } from '../../src/lib/spreads';
@@ -1255,10 +1256,23 @@ function PlacedItemView({
             <View style={[styles.itemInner, !item.flowerAsset && { backgroundColor: bg }, !item.flowerAsset && liftShadow]}>
               {item.flowerAsset ? (
                 // Shadow on the image itself so iOS shapes it to the cut-out art.
-                <Image
-                  source={resolveUploadSource(item.flowerAsset) as any}
+                //
+                // The spread is laid out at SPREAD_W × SPREAD_H and magnified by
+                // a transform, and React Native's Image decodes at the PRE-transform
+                // size — so a page-sized paper was blown up from a small bitmap and
+                // looked soft. expo-image with downscaling off keeps the pixels it
+                // is given, and canvasSource asks for as many as the piece covers
+                // on screen at the current zoom.
+                <ExpoImage
+                  source={canvasSource(
+                    item.flowerAsset,
+                    Math.max(item.w, item.h) * spreadScale * PixelRatio.get(),
+                  ) as any}
                   style={[styles.itemImage, item.shadow && ITEM_IMG_SHADOW]}
-                  resizeMode="contain"
+                  contentFit="contain"
+                  allowDownscaling={false}
+                  cachePolicy="memory-disk"
+                  recyclingKey={item.id}
                 />
               ) : (
                 <Feather name={item.glyph as any} size={Math.min(item.w, item.h) * 0.4} color={accent} />

@@ -55,3 +55,18 @@ export function drawerThumbSource<T>(source: T, px: number = DRAWER_THUMB_PX): T
   if (typeof uri !== 'string' || !SANITY_CDN.test(uri) || /[?&]fm=/.test(uri)) return sized;
   return { ...(sized as object), uri: `${uri}&fm=webp&q=80` } as T;
 }
+
+/**
+ * Sizes the canvas asks Sanity for. A piece is fetched at the first step at or
+ * above the pixels it covers on screen, so a sticker stays small while a
+ * full-page paper gets the full 2400px asset — sharp, without decoding every
+ * piece on a busy page at full size (which runs the iPad out of memory).
+ * Steps rather than exact sizes, so resizing a piece rarely refetches it.
+ */
+const CANVAS_STEPS = [256, 384, 512, 768, 1024, 1536, 2048, 2400];
+
+/** thumbSource for art placed on the journal canvas, at its on-screen pixel size. */
+export function canvasSource<T>(source: T, displayPx: number): T {
+  const step = CANVAS_STEPS.find((s) => s >= displayPx) ?? CANVAS_STEPS[CANVAS_STEPS.length - 1];
+  return thumbSource(source, step);
+}
