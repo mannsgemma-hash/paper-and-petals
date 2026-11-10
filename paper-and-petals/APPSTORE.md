@@ -89,7 +89,7 @@ Don't add other apps' names (GoodNotes and the like): Apple rejects that
 |---|---|
 | **Version** | `1.0.0` (matches app.json) |
 | **Copyright** | `2026 [your name or business name]` |
-| **Screenshots** | iPad 13-inch: the ten captioned images, 01 first (Apple's maximum) |
+| **Screenshots** | iPad 13-inch: the nine captioned images, 01 first |
 | **Build** | the newest iPad-only build, once processed |
 | **In-App Purchases and Subscriptions** | tick **every collection** and **both Studio plans**; leave the four old orphans unticked |
 | **What's New** | not shown for a first version |
