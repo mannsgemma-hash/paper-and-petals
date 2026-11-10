@@ -3424,7 +3424,15 @@ export default function EditorScreen() {
       (selectedItem.y + selectedItem.h / 2 + ROTATE_STEM + ROTATE_KNOB - SPREAD_H / 2) * spreadScale +
       12
     : 0;
-  const rawTop = toolbarAbove < 4 ? toolbarBelow : toolbarAbove;
+  // No room above, and below would be pushed back up over the rotate knob
+  // (a piece that fills the page): sit just inside the piece's top edge
+  // instead, well clear of the knob at its bottom.
+  const noRoomBelow = toolbarBelow > containerH - TB_H - 8;
+  const toolbarInside = selectedItem
+    ? containerH / 2 + (selectedItem.y - selectedItem.h / 2 - SPREAD_H / 2) * spreadScale + 16
+    : 0;
+  const rawTop =
+    toolbarAbove >= 4 ? toolbarAbove : noRoomBelow ? toolbarInside : toolbarBelow;
   const toolbarTop = selectedItem
     ? Math.max(8, Math.min(rawTop, containerH - TB_H - 8))
     : 0;
