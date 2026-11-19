@@ -1080,6 +1080,22 @@ function PlacedItemView({
       runOnJS(onRotateEnd)(item.id, rot.value);
     });
 
+  // The item's committed geometry as a plain style, under the animated one.
+  // The animated style moves the view on the UI thread, but React's own copy
+  // of its props still held the position from when it mounted — and any
+  // re-render (adding a piece re-renders the page) could commit that stale
+  // copy, snapping the art back to where it first appeared while its controls
+  // stayed put. Giving React the current geometry every render means a commit
+  // can only ever restate where the piece really is.
+  const baseGeom = {
+    position: 'absolute' as const,
+    left: item.x - item.w / 2,
+    top: item.y - item.h / 2,
+    width: item.w,
+    height: item.h,
+    transform: [{ rotate: `${item.rotate}deg` }],
+  };
+
   const animStyle = useAnimatedStyle(() => ({
     position: 'absolute' as const,
     left: tx.value - itemW.value / 2,
@@ -1175,7 +1191,7 @@ function PlacedItemView({
   // their pans never compete with the move pan.
   return (
     <>
-    <Animated.View style={animStyle}>
+    <Animated.View style={[baseGeom, { zIndex: item.z }, animStyle]}>
       <GestureDetector gesture={composed}>
         <Animated.View
           style={[styles.itemFill, item.flipX && { transform: [{ scaleX: -1 }] }]}
@@ -1288,7 +1304,7 @@ function PlacedItemView({
           box-none: only the handles themselves take touches, so a tap in the
           middle still reaches the item underneath. */}
       {isSelected && (
-        <Animated.View style={overlayStyle} pointerEvents="box-none">
+        <Animated.View style={[baseGeom, { zIndex: SELECTION_Z }, overlayStyle]} pointerEvents="box-none">
           {/* Selection frame */}
           <View style={styles.selectionFrame} pointerEvents="none" />
 
