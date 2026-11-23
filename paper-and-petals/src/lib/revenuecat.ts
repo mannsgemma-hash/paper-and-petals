@@ -52,6 +52,15 @@ export function initRevenueCat() {
     Purchases.configure({ apiKey })
   } catch (e) {
     console.warn('RevenueCat init failed', e)
+    return
+  }
+  // Apple Ads attribution: hands RevenueCat Apple's AdServices token, so trials
+  // and purchases show up against the Apple Ads campaign and keyword that
+  // brought each person in (RevenueCat → Integrations → Apple Search Ads).
+  // AdServices is Apple's privacy-preserving attribution: no tracking
+  // permission prompt, nothing collected across other apps.
+  if (Platform.OS === 'ios') {
+    Promise.resolve(Purchases.enableAdServicesAttributionTokenCollection?.()).catch(() => {})
   }
 }
 
