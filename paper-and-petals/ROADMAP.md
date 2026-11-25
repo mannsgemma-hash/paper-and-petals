@@ -10,6 +10,12 @@ of each section; move an item to "Done" (or delete it) when it ships.
 - **Text box width.** Corners scale text like a picture (size and wrap width
   together). A separate way to make a box wider or narrower *without* changing
   the lettering size may be wanted once people use it.
+- **Drag to reorder layers.** 1.0 uses ▲/▼ buttons; drag-and-drop failed twice
+  without a device to test on. Worth another go once it can be tried on an
+  iPad during development.
+- **Sharper torn-edge, shape-masked and photo pieces.** Shop art now renders at
+  its on-screen resolution (`canvasSource`); these still draw the old way and
+  may look soft at full-page size.
 
 ## Shop
 - **"New this week" row and browsing by theme/season** — at ~10 collections a
@@ -26,9 +32,24 @@ of each section; move an item to "Done" (or delete it) when it ships.
   per-user storage, photo upload, in-app account deletion).
 - **Android** — RevenueCat Android key, Play Store build and listing.
 
-## App Store
+## App Store & growth
 - **"Rate Paper & Petals" row in Settings** — opens the App Store review page;
-  needs the App Store app ID once the listing exists.
+  needs the App Store app ID (App Store Connect → App Information → Apple ID).
+- **English (UK) listing with a second set of keywords** — the Australian store
+  also reads it, roughly doubling the search terms the app can be found for.
+- **App Preview video** (15–30 s, on the product page) cut from a screen
+  recording.
+- **Competitor-name Apple Ads campaign** — only once Category is profitable
+  (see ADS.md).
+
+## Subscriptions
+- **Win-back offer** (App Store Connect, no build): 50% off Studio Monthly for
+  3 months for people whose Studio lapsed. Turn on after a month or two of
+  RevenueCat cancellation data.
+- **In-app "Manage subscription" with a retention offer** (RevenueCat Customer
+  Center): offers the discount when someone cancels from inside the app.
+  Needs a new library, the In-App Purchase key in RevenueCat and a promotional
+  offer in App Store Connect.
 
 ## Housekeeping
 - **Home tour rings** still use fixed positions; measure them like the editor
