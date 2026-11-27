@@ -74,6 +74,10 @@ const SPREAD_W = 720;
 const SPREAD_H = 500;
 const MIN_VIS = 30;
 const PAGE_W = SPREAD_W / 2;
+/** Phone layout: room kept clear on each side for the floating buttons. */
+const PHONE_RAIL = 72;
+/** Phone layout: breathing room above and below the spread. */
+const PHONE_GAP = 6;
 const DEFAULT_ITEM_SIZE = 120;
 const MIN_ITEM_SIZE = 60;
 // No practical upper bound: items may be sized larger than a page, in which
@@ -124,7 +128,8 @@ type TourRefs = {
  * First-run editor tour. Each ring is measured around the real controls
  * (see Tour), so it stays on them on any iPad, in either orientation.
  */
-const editorTour = (r: TourRefs): TourStep[] => [
+const editorTour = (r: TourRefs, phone = false): TourStep[] => {
+  const steps: TourStep[] = [
   {
     icon: 'plus',
     title: 'Your collection',
@@ -142,7 +147,9 @@ const editorTour = (r: TourRefs): TourStep[] => [
   {
     icon: 'book-open',
     title: 'Pages',
-    body: 'Your journal has many spreads — tap a page here to flip to it, and add more with the +.',
+    body: phone
+      ? 'Your journal has many spreads — tap the page number to jump to any page or add a new one, and use the arrows to turn.'
+      : 'Your journal has many spreads — tap a page here to flip to it, and add more with the +.',
     targets: [r.strip],
     card: { top: 140, left: 84 },
   },
@@ -155,8 +162,9 @@ const editorTour = (r: TourRefs): TourStep[] => [
   },
   {
     icon: 'rotate-ccw',
-    title: 'Sounds, undo & share',
-    body: 'Play a cosy soundscape while you work, undo and redo any change, copy and paste pieces, zoom, see your layers, and share or save a picture of your finished spread.',
+    title: phone ? 'The ••• menu' : 'Sounds, undo & share',
+    body: (phone ? 'Everything else lives under •••: rename the journal, play a cosy soundscape, undo and redo any change,' : 'Play a cosy soundscape while you work, undo and redo any change,')
+      + ' copy and paste pieces, zoom, see your layers, and share or save a picture of your finished spread.',
     targets: [r.topRight],
     card: { top: 70, right: 20 },
   },
@@ -173,6 +181,9 @@ const editorTour = (r: TourRefs): TourStep[] => [
     card: { top: '30%', left: '50%', width: 340, marginLeft: -170 },
   },
 ];
+  // On a phone the name lives in the ••• menu, so its own step is dropped.
+  return phone ? steps.filter((st) => st.targets?.[0] !== r.name) : steps;
+};
 
 /** Soft paper lift behind items when their shadow toggle is on. */
 const ITEM_SHADOW = {
@@ -2663,7 +2674,20 @@ export default function EditorScreen() {
   // ── Layout ────────────────────────────────────────────────────────────────
   const canvasW = screenW - 80;
   const canvasH = screenH - 64;
-  const baseScale = Math.min(canvasW / SPREAD_W, canvasH / SPREAD_H) * 0.9;
+  // A phone on its side (short screen): no top bar or page strip — everything
+  // folds into floating buttons and the spread takes the whole height. It is
+  // sized from the measured canvas, which already excludes the notch/home bar.
+  const phoneLayout = screenH < 500;
+  const [areaBox, setAreaBox] = useState<{ w: number; h: number } | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [pagePickerOpen, setPagePickerOpen] = useState(false);
+  const baseScale =
+    phoneLayout && areaBox
+      ? Math.max(
+          0.2,
+          Math.min((areaBox.w - PHONE_RAIL * 2) / SPREAD_W, (areaBox.h - PHONE_GAP * 2) / SPREAD_H),
+        )
+      : Math.min(canvasW / SPREAD_W, canvasH / SPREAD_H) * 0.9;
   const spreadScale = baseScale * zoom;
 
   // ── Page flip animation ───────────────────────────────────────────────────
@@ -3427,6 +3451,10 @@ export default function EditorScreen() {
   // real content size; the spread is laid out at full size and scaled in place
   // around its center, which exactly fills this box.
   const containerW = SPREAD_W * spreadScale;
+  // Opening sounds or layers from the phone menu tucks the menu away again.
+  useEffect(() => {
+    if (showSoundPanel || layerPanelOpen) setMenuOpen(false);
+  }, [showSoundPanel, layerPanelOpen]);
   const containerH = SPREAD_H * spreadScale;
 
   // Toolbar position in (unscaled) container coords, from item spread coords.
@@ -3471,34 +3499,9 @@ export default function EditorScreen() {
       : 'left'
     : 'right';
 
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <Screen texture={false} style={styles.root}>
-        {/* ── Top bar ─────────────────────────────────────────────────── */}
-        <View style={styles.topbar}>
-          <Pressable style={styles.iconBtn} onPress={() => router.back()}>
-            <Feather name="arrow-left" size={20} color={theme.color.fg1} />
-          </Pressable>
-
-          {editingName ? (
-            <TextInput
-              style={styles.nameInput}
-              value={journalName}
-              onChangeText={setJournalName}
-              onBlur={commitName}
-              onSubmitEditing={commitName}
-              autoFocus
-            />
-          ) : (
-            <Pressable ref={tourRefs.name} style={styles.nameWrap} onPress={() => setEditingName(true)}>
-              <Text style={styles.name} numberOfLines={1}>
-                {journal?.name ?? journalName}
-              </Text>
-              <Feather name="edit-2" size={14} color={theme.color.fg3} />
-            </Pressable>
-          )}
-
-          <View ref={tourRefs.topRight} style={styles.topRight}>
+  // The top bar's buttons — in the bar on iPad, in the ••• menu on a phone.
+  const topControls = (
+    <>
             {/* Soundscapes — in the top bar, with a label, so it isn't
                 forgotten among the side tools. Lit while a sound plays. */}
             <Pressable
@@ -3583,11 +3586,46 @@ export default function EditorScreen() {
             >
               <Feather name="share" size={18} color={theme.color.fg1} />
             </Pressable>
+    </>
+  );
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <Screen texture={false} style={styles.root}>
+        {/* ── Top bar (tablet) ────────────────────────────────────────── */}
+        {!phoneLayout && (
+        <View style={styles.topbar}>
+          <Pressable style={styles.iconBtn} onPress={() => router.back()}>
+            <Feather name="arrow-left" size={20} color={theme.color.fg1} />
+          </Pressable>
+
+          {editingName ? (
+            <TextInput
+              style={styles.nameInput}
+              value={journalName}
+              onChangeText={setJournalName}
+              onBlur={commitName}
+              onSubmitEditing={commitName}
+              autoFocus
+            />
+          ) : (
+            <Pressable ref={tourRefs.name} style={styles.nameWrap} onPress={() => setEditingName(true)}>
+              <Text style={styles.name} numberOfLines={1}>
+                {journal?.name ?? journalName}
+              </Text>
+              <Feather name="edit-2" size={14} color={theme.color.fg3} />
+            </Pressable>
+          )}
+
+          <View ref={tourRefs.topRight} style={styles.topRight}>
+            {topControls}
           </View>
         </View>
+        )}
 
         <View style={styles.body}>
           {/* ── Page strip ───────────────────────────────────────────── */}
+          {!phoneLayout && (
           <View ref={tourRefs.strip} style={styles.strip}>
             <ScrollView contentContainerStyle={styles.stripScroll}>
               {pages.map((_, i) => {
@@ -3621,9 +3659,16 @@ export default function EditorScreen() {
               </Pressable>
             </ScrollView>
           </View>
+          )}
 
           {/* ── Canvas ───────────────────────────────────────────────── */}
-          <View style={styles.canvasArea}>
+          <View
+            style={styles.canvasArea}
+            onLayout={(e) => {
+              const { width: w, height: h } = e.nativeEvent.layout;
+              setAreaBox((prev) => (prev && prev.w === w && prev.h === h ? prev : { w, h }));
+            }}
+          >
             {/* Nested ScrollViews: vertical outer + horizontal inner, so the
                 zoomed spread can be scrolled with wheel/scrollbars on web and
                 never paints over the page strip, top bar, or toolbar (the
@@ -3638,7 +3683,7 @@ export default function EditorScreen() {
             >
               <ScrollView
                 horizontal
-                contentContainerStyle={styles.canvasScrollHContent}
+                contentContainerStyle={[styles.canvasScrollHContent, phoneLayout && { padding: 0 }]}
                 scrollEnabled={zoom > 1 && !selectedId}
               >
                 <View style={[styles.spreadContainer, { width: containerW, height: containerH }]}>
@@ -3754,17 +3799,111 @@ export default function EditorScreen() {
 
             {/* Page nav affordances */}
             <Pressable
-              style={[styles.pageNav, { left: 8 }, activePage <= 1 && styles.hidden]}
+              style={[styles.pageNav, phoneLayout ? styles.pageNavPhoneLeft : { left: 8 }, activePage <= 1 && styles.hidden]}
               onPress={() => goToPage(activePage - 1)}
             >
               <Feather name="chevron-left" size={24} color={theme.color.fg2} />
             </Pressable>
             <Pressable
-              style={[styles.pageNav, { right: 80 }, activePage >= pages.length && styles.hidden]}
+              style={[styles.pageNav, phoneLayout ? styles.pageNavPhoneRight : { right: 80 }, activePage >= pages.length && styles.hidden]}
               onPress={() => goToPage(activePage + 1)}
             >
               <Feather name="chevron-right" size={24} color={theme.color.fg2} />
             </Pressable>
+
+            {/* ── Phone: floating back / ••• and the page button ─────── */}
+            {phoneLayout && (
+              <>
+                <View style={styles.phoneRail}>
+                  <Pressable style={styles.phoneBtn} onPress={() => router.back()} accessibilityLabel="Back">
+                    <Feather name="arrow-left" size={19} color={theme.color.fg1} />
+                  </Pressable>
+                  <Pressable
+                    ref={tourRefs.topRight}
+                    style={[styles.phoneBtn, menuOpen && styles.phoneBtnActive]}
+                    onPress={() => { setPagePickerOpen(false); setMenuOpen((o) => !o); }}
+                    accessibilityLabel="Menu"
+                  >
+                    <Feather name="more-horizontal" size={20} color={menuOpen ? theme.palette.cream : theme.color.fg1} />
+                  </Pressable>
+                </View>
+
+                {menuOpen && (
+                  <View style={styles.phoneMenu}>
+                    <View style={styles.phoneMenuName}>
+              {editingName ? (
+                <TextInput
+                  style={styles.nameInput}
+                  value={journalName}
+                  onChangeText={setJournalName}
+                  onBlur={commitName}
+                  onSubmitEditing={commitName}
+                  autoFocus
+                />
+              ) : (
+                <Pressable style={styles.nameWrap} onPress={() => setEditingName(true)}>
+                  <Text style={styles.name} numberOfLines={1}>
+                    {journal?.name ?? journalName}
+                  </Text>
+                  <Feather name="edit-2" size={14} color={theme.color.fg3} />
+                </Pressable>
+              )}
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phoneMenuRow}>
+                      {topControls}
+                    </ScrollView>
+                  </View>
+                )}
+
+                <Pressable
+                  ref={tourRefs.strip}
+                  style={[styles.phonePageBtn, pagePickerOpen && styles.phoneBtnActive]}
+                  onPress={() => { setMenuOpen(false); setPagePickerOpen((o) => !o); }}
+                  accessibilityLabel={`Page ${activePage} of ${pages.length}`}
+                >
+                  <Text style={[styles.phonePageNum, pagePickerOpen && { color: theme.palette.cream }]}>{activePage}</Text>
+                  <Text style={[styles.phonePageOf, pagePickerOpen && { color: theme.palette.cream }]}>of {pages.length}</Text>
+                </Pressable>
+
+                {pagePickerOpen && (
+                  <View style={styles.phonePicker}>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.phonePickerRow}>
+                      {pages.map((_, i) => {
+                        const pg = i + 1;
+                        const on = pg === activePage;
+                        return (
+                          <Pressable
+                            key={pg}
+                            style={[styles.phonePickerChip, on && styles.thumbActive]}
+                            onPress={() => { setPagePickerOpen(false); goToPage(pg); }}
+                          >
+                            <Text style={[styles.thumbNum, on && styles.thumbNumActive]}>{pg}</Text>
+                          </Pressable>
+                        );
+                      })}
+                      <Pressable
+                        style={[styles.phonePickerChip, styles.phonePickerAdd, pages.length >= MAX_PAGES && styles.dimmed]}
+                        onPress={() => { setPagePickerOpen(false); addPage(); }}
+                        disabled={pages.length >= MAX_PAGES}
+                        accessibilityLabel="Add a page"
+                      >
+                        <Feather name="plus" size={16} color={theme.color.fg2} />
+                      </Pressable>
+                    </ScrollView>
+                    {!isCoverSpread && (
+                      <Pressable
+                        style={[styles.phonePickerDelete, !canDeletePage && styles.dimmed]}
+                        onPress={() => { setPagePickerOpen(false); handleDeletePage(); }}
+                        disabled={!canDeletePage}
+                        accessibilityLabel="Delete this page"
+                      >
+                        <Feather name="trash-2" size={15} color={canDeletePage ? theme.palette.danger : theme.color.fg4} />
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
 
             {/* Floating add button */}
             <Pressable ref={tourRefs.fab} style={styles.fab} onPress={() => toggleDrawer(true)}>
@@ -3879,7 +4018,7 @@ export default function EditorScreen() {
             />
 
             {/* Delete page — quiet affordance at the canvas bottom */}
-            {!isCoverSpread && (
+            {!isCoverSpread && !phoneLayout && (
               <Pressable
                 style={[styles.deletePageBtn, !canDeletePage && styles.dimmed]}
                 onPress={handleDeletePage}
@@ -3904,7 +4043,7 @@ export default function EditorScreen() {
         {layerPanelOpen && (
           <>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setLayerPanelOpen(false)} />
-            <View style={styles.layerPanel}>
+            <View style={[styles.layerPanel, phoneLayout && styles.layerPanelPhone]}>
               <View style={styles.layerPanelHeader}>
                 <Text style={styles.layerPanelTitle}>Layers</Text>
                 <Text style={styles.layerPanelHint}>top of the list is on top</Text>
@@ -4300,7 +4439,7 @@ export default function EditorScreen() {
         />
 
         {/* ── First-run tour — steps through each feature ──────────── */}
-        {showTips && <Tour steps={editorTour(tourRefs)} onDone={dismissTips} />}
+        {showTips && <Tour steps={editorTour(tourRefs, phoneLayout)} onDone={dismissTips} />}
 
         {/* ── Purchase arrival ──────────────────────────────────────── */}
         {pendingDelivery.length > 0 && (
@@ -4560,6 +4699,7 @@ const styles = StyleSheet.create({
   },
 
   // Layers panel
+  layerPanelPhone: { top: 8, maxHeight: '94%' },
   layerPanel: {
     position: 'absolute',
     top: 60,
@@ -4995,6 +5135,93 @@ const styles = StyleSheet.create({
   toolDanger: {},
 
   // Page nav
+  pageNavPhoneLeft: { left: 14, top: 'auto', bottom: 10, marginTop: 0 },
+  pageNavPhoneRight: { right: 24, top: 'auto', bottom: 10, marginTop: 0 },
+
+  // Phone layout — floating controls instead of the top bar and page strip
+  phoneRail: { position: 'absolute', top: 10, left: 14, gap: 10, zIndex: 40 },
+  phoneBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,253,246,0.94)',
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadow.paper,
+  },
+  phoneBtnActive: { backgroundColor: theme.palette.forest, borderColor: 'transparent' },
+  phoneMenu: {
+    position: 'absolute',
+    top: 10,
+    left: 68,
+    right: 88,
+    zIndex: 160,
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    paddingVertical: 8,
+    gap: 6,
+    ...theme.shadow.lift,
+  },
+  phoneMenuName: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, minHeight: 32 },
+  phoneMenuRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10 },
+  phonePageBtn: {
+    position: 'absolute',
+    left: 14,
+    bottom: 64,
+    zIndex: 40,
+    width: 44,
+    height: 50,
+    borderRadius: 14,
+    backgroundColor: 'rgba(255,253,246,0.94)',
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+    ...theme.shadow.paper,
+  },
+  phonePageNum: { fontFamily: theme.font.ui, fontSize: 15, fontWeight: '700', color: theme.color.fg1 },
+  phonePageOf: { fontFamily: theme.font.ui, fontSize: 9, color: theme.color.fg3, marginTop: -1 },
+  phonePicker: {
+    position: 'absolute',
+    left: 68,
+    right: 88,
+    bottom: 10,
+    zIndex: 160,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: theme.color.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    padding: 8,
+    gap: 8,
+    ...theme.shadow.lift,
+  },
+  phonePickerRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  phonePickerChip: {
+    width: 40,
+    height: 46,
+    borderRadius: theme.radius.xs,
+    backgroundColor: theme.color.surface,
+    borderWidth: 1,
+    borderColor: theme.palette.hairline,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  phonePickerAdd: { borderStyle: 'dashed', borderWidth: 1.5 },
+  phonePickerDelete: {
+    width: 40,
+    height: 46,
+    borderRadius: theme.radius.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: theme.palette.hairlineSoft,
+  },
   pageNav: {
     position: 'absolute',
     top: '50%',
