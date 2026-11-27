@@ -134,7 +134,7 @@ const editorTour = (r: TourRefs): TourStep[] => [
   {
     icon: 'edit-3',
     title: 'Craft tools',
-    body: 'Add text, your own photos, freehand doodles, cosy soundscapes and shapes.',
+    body: 'Add text, your own photos, freehand doodles and shapes.',
     targets: [r.firstTool, r.lastTool],
     card: { top: 200, right: 88 },
   },
@@ -154,8 +154,8 @@ const editorTour = (r: TourRefs): TourStep[] => [
   },
   {
     icon: 'rotate-ccw',
-    title: 'Undo, copy & share',
-    body: 'Undo and redo any change, copy and paste pieces, zoom, see your layers, and share or save a picture of your finished spread.',
+    title: 'Sounds, undo & share',
+    body: 'Play a cosy soundscape while you work, undo and redo any change, copy and paste pieces, zoom, see your layers, and share or save a picture of your finished spread.',
     targets: [r.topRight],
     card: { top: 70, right: 20 },
   },
@@ -2618,6 +2618,8 @@ export default function EditorScreen() {
     topRight: useRef<View>(null),
   };
   const [showSoundPanel, setShowSoundPanel] = useState(false);
+  /** A soundscape is playing — the top-bar button stays lit while it does. */
+  const [soundPlaying, setSoundPlaying] = useState(false);
   const [penColor, setPenColor] = useState<string>(theme.palette.charcoal);
   const [penColorPickerOpen, setPenColorPickerOpen] = useState(false);
   const [penWidth, setPenWidth] = useState(4);
@@ -3487,6 +3489,22 @@ export default function EditorScreen() {
           )}
 
           <View ref={tourRefs.topRight} style={styles.topRight}>
+            {/* Soundscapes — in the top bar, with a label, so it isn't
+                forgotten among the side tools. Lit while a sound plays. */}
+            <Pressable
+              style={[styles.layersBtn, styles.soundBtn, (showSoundPanel || soundPlaying) && styles.soundBtnActive]}
+              onPress={() => setShowSoundPanel((v) => !v)}
+              accessibilityLabel="Soundscapes"
+            >
+              <Feather
+                name="music"
+                size={16}
+                color={showSoundPanel || soundPlaying ? theme.palette.cream : theme.palette.forest}
+              />
+              <Text style={[styles.layersText, (showSoundPanel || soundPlaying) && styles.soundTextActive]}>
+                Sounds
+              </Text>
+            </Pressable>
             {/* Undo */}
             <Pressable
               style={[styles.iconBtn, !canUndo && styles.dimmed]}
@@ -3769,16 +3787,8 @@ export default function EditorScreen() {
               </Pressable>
             )}
 
-            {/* Ambient soundscapes */}
-            <Pressable
-              style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 284 : 234 }, showSoundPanel && styles.miniFabActive]}
-              onPress={() => setShowSoundPanel((v) => !v)}
-            >
-              <Feather name="music" size={20} color={showSoundPanel ? theme.palette.cream : theme.palette.forest} />
-            </Pressable>
-
             {/* Shapes */}
-            <Pressable ref={tourRefs.lastTool} style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 334 : 284 }]} onPress={() => { setPenMode(false); setShapePickerOpen(true); }}>
+            <Pressable ref={tourRefs.lastTool} style={[styles.miniFab, { top: TEMPLATES_ENABLED ? 284 : 234 }]} onPress={() => { setPenMode(false); setShapePickerOpen(true); }}>
               <Feather name="hexagon" size={20} color={theme.palette.forest} />
             </Pressable>
 
@@ -4273,7 +4283,11 @@ export default function EditorScreen() {
         )}
 
         {/* ── Soundscape player ────────────────────────────────────── */}
-        <SoundscapeBar visible={showSoundPanel} onClose={() => setShowSoundPanel(false)} />
+        <SoundscapeBar
+          visible={showSoundPanel}
+          onClose={() => setShowSoundPanel(false)}
+          onPlayingChange={setSoundPlaying}
+        />
 
         {/* ── First-run tour — steps through each feature ──────────── */}
         {showTips && <Tour steps={editorTour(tourRefs)} onDone={dismissTips} />}
@@ -4298,8 +4312,19 @@ export default function EditorScreen() {
 
 // ─── Soundscape bar ───────────────────────────────────────────────────────────
 
-function SoundscapeBar({ visible, onClose }: { visible: boolean; onClose: () => void }) {
+function SoundscapeBar({
+  visible,
+  onClose,
+  onPlayingChange,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onPlayingChange?: (playing: boolean) => void;
+}) {
   const [activeId, setActiveId] = useState<SoundscapeId | null>(null);
+  useEffect(() => {
+    onPlayingChange?.(activeId !== null);
+  }, [activeId]);
   const player = useAudioPlayer(null);
 
   useEffect(() => {
@@ -4511,6 +4536,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.palette.hairline,
   },
+  soundBtn: { borderColor: theme.palette.forest },
+  soundBtnActive: { backgroundColor: theme.palette.forest },
+  soundTextActive: { color: theme.palette.cream },
   layersText: {
     fontFamily: theme.font.ui,
     fontSize: 13,

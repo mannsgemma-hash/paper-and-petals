@@ -45,6 +45,14 @@ type CollectionStatus = 'free' | 'owned' | 'studio' | 'buy';
 // rather than rendered whole.
 const FREE_PAGE = 24;
 
+/** Collections released within this long count as "New this week". */
+const NEW_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+
+const isRecent = (c: Collection, now: number): boolean => {
+  const t = c.releasedAt ? Date.parse(c.releasedAt) : NaN;
+  return Number.isFinite(t) && t <= now && now - t < NEW_WINDOW_MS;
+};
+
 /** Never let a malformed price take the screen down — show it or show nothing. */
 const money = (v: unknown): string => (typeof v === 'number' && Number.isFinite(v) ? v.toFixed(2) : '—');
 
@@ -85,6 +93,8 @@ export default function ShopScreen() {
   const columns = width >= 900 ? 4 : width >= 640 ? 3 : 2;
   const colColumns = width >= 900 ? 3 : 2;
   const narrowDetail = width < 680;
+  // Same width as a grid card, so the row reads as part of the shop.
+  const newCardW = (Math.min(width, 920) - 48) / colColumns;
 
   const statusFor = (c: Collection): CollectionStatus =>
     c.free ? 'free' : ownedCollections[c.id] ? 'owned' : hasStudio ? 'studio' : 'buy';
@@ -96,9 +106,24 @@ export default function ShopScreen() {
     setFreeShown(FREE_PAGE);
   }, [category, q]);
 
+  // Worked out when shown rather than stored, so a saved catalogue never keeps
+  // calling something new. Newest first.
+  const withNew = useMemo(() => {
+    const now = Date.now();
+    return collections.map((c) => ({ ...c, isNew: isRecent(c, now) }));
+  }, [collections]);
+
+  const newThisWeek = useMemo(
+    () =>
+      withNew
+        .filter((c) => c.isNew)
+        .sort((a, b) => Date.parse(b.releasedAt ?? '') - Date.parse(a.releasedAt ?? '')),
+    [withNew],
+  );
+
   const visibleCollections = useMemo(
-    () => collections.filter((c) => !q || String(c.name ?? '').toLowerCase().includes(q)),
-    [collections, q],
+    () => withNew.filter((c) => !q || String(c.name ?? '').toLowerCase().includes(q)),
+    [withNew, q],
   );
 
   const freeItems = useMemo(
@@ -214,6 +239,34 @@ export default function ShopScreen() {
             </Pressable>
           )}
         </View>
+
+        {/* ── New this week ───────────────────────────────────────────── */}
+        {!q && newThisWeek.length > 0 && (
+          <>
+            <View style={[styles.sectionRow, { marginTop: 26 }]}>
+              <Text style={styles.sectionTitle}>New this week</Text>
+              <Text style={styles.sectionCount}>
+                {newThisWeek.length} {newThisWeek.length === 1 ? 'COLLECTION' : 'COLLECTIONS'}
+              </Text>
+            </View>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.newRow}
+              contentContainerStyle={styles.newRowInner}
+            >
+              {newThisWeek.map((c) => (
+                <View key={c.id} style={{ width: newCardW, padding: 7 }}>
+                  <CollectionCard
+                    collection={c}
+                    status={statusFor(c)}
+                    onOpen={() => setOpenCollection(c)}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+          </>
+        )}
 
         {/* ── Collections ─────────────────────────────────────────────── */}
         <View style={[styles.sectionRow, { marginTop: 26 }]}>
@@ -902,6 +955,9 @@ const styles = StyleSheet.create({
     color: theme.color.fg3,
   },
   grid: { flexDirection: 'row', flexWrap: 'wrap', margin: -7 },
+  // Bleeds to the screen edge so the next card peeks in, inviting a swipe.
+  newRow: { marginHorizontal: -24 },
+  newRowInner: { paddingHorizontal: 17 },
 
   // Card
   card: {

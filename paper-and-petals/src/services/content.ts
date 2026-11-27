@@ -33,6 +33,7 @@ const LIVE_COLLECTIONS_QUERY = `*[_type == "collection" && (!defined(publishAt) 
   productId,
   whatYouGet,
   publishAt,
+  "createdAt": _createdAt,
   "coverUrl": cover.asset->url,
   "items": items[]->{ _id, name, category, glyphFallback, tone, "assetUrl": asset.asset->url, "printUrl": printAsset.asset->url }
 }`
@@ -71,6 +72,7 @@ export interface SanityCollection {
   productId?: string
   whatYouGet?: string
   publishAt?: string
+  createdAt?: string
   coverUrl?: string
   items?: (SanityCollectionItem | null)[]
 }
@@ -169,6 +171,9 @@ export function sanityCollectionToCollection(sc: SanityCollection): Collection {
     productId: str(sc.productId) || undefined,
     free: sc.free === true,
     isNew: false,
+    // When it reached the shop: its release date, or when it was added for
+    // collections published straight away. Drives "New this week".
+    releasedAt: str(sc.publishAt) || str(sc.createdAt) || undefined,
     pieceCount: items.length,
     items,
   }

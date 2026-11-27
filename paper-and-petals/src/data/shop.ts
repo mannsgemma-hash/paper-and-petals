@@ -93,6 +93,8 @@ export interface Collection {
   productId?: string;
   free: boolean;
   isNew: boolean;
+  /** ISO date it appeared in the shop (Sanity publishAt, else creation). */
+  releasedAt?: string;
   /** Derived from `items.length` — never stored manually. */
   pieceCount: number;
   items: CollectionItemRef[];
