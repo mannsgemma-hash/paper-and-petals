@@ -203,3 +203,87 @@ so don't choose the Kids category.
 - [ ] Purchases and both Studio plans ticked on the version page
 - [ ] `npm run notify -- --mark-all --yes` (studio) so the existing catalogue is never announced
 - [ ] Website pages load: privacy, terms, support
+
+---
+
+## 9 · English (UK) localisation — more search terms, no build
+
+The Australian App Store also indexes the **English (UK)** localisation, so a
+second set of keywords there is found by Australian searches too — about
+double the words. Nothing new is shown to Australians, whose iPads read the
+English (Australia) page.
+
+**App Information → Localizable Information → language menu (top right) →
+Add Language → English (U.K.)**, then fill in:
+
+| Field | Value |
+|---|---|
+| **Name** | `Paper & Petals: Scrapbook` (same as now) |
+| **Subtitle** (30) | `Digital junk journal & collage` |
+| **Privacy Policy URL** | `https://www.paperandpetals.app/privacy` |
+
+**Version page → English (U.K.)** (same language menu):
+
+| Field | Value |
+|---|---|
+| **Keywords** (100) | `scrapbooking,notebook,cottagecore,botanical,floral,victorian,antique,retro,moodboard,cosy,album,bujo` |
+| **Description / Promotional text** | copy from English (Australia) |
+| **Screenshots** | tick "use the English (Australia) screenshots" if offered, otherwise upload the same nine |
+| **Support / Marketing URL** | same as English (Australia) |
+
+None of the keywords repeat the Australian ones: a word only counts once per
+store, so a repeat wastes characters. Keywords and subtitle need a new
+version to change (they go out with 1.1); App Information fields save
+immediately.
+
+---
+
+## 10 · Win-back offer — Studio, no build
+
+Offers lapsed Studio subscribers 50% off for three months. Apple shows it on
+the App Store (product page, Today/Games tabs, and the Subscriptions page in
+Settings) on iOS 18 and later; RevenueCat records the purchase like any
+other.
+
+**Monetization → Subscriptions → Studio → Studio Monthly → Win-Back Offers
+→ Create**
+
+| Field | Value |
+|---|---|
+| **Reference name** | `Monthly win-back 50% x3` |
+| **Offer ID** | `studio_monthly_winback_50` |
+| **Type** | Pay as you go |
+| **Duration** | 3 months |
+| **Price** | half of $5.99 → the nearest tier, **$2.99** a month (Apple fills in other countries) |
+| **Eligibility — paid duration** | at least 1 month |
+| **Eligibility — time since last subscribed** | 1 to 6 months |
+| **Wait between offers** | 6 months |
+| **Promotion** | on (lets Apple show it in the App Store) |
+| **Start / end** | start now, no end date |
+
+Leave Studio Yearly without one for now. After a month, RevenueCat →
+Charts → filter by offer shows whether it brings people back; if hardly
+anyone takes it, it costs nothing.
+
+---
+
+## 11 · Version 1.1 — first iPhone release
+
+- **iPhone screenshots** are required: the **6.9-inch** set (1320 × 2868
+  upright or 2868 × 1320 sideways). Take them on the largest iPhone you can
+  borrow or in the iOS Simulator; the editor ones are sideways, since the
+  editor turns the phone on its side.
+- **App Review notes**: add one line — "On iPhone the editor opens in
+  landscape; the rest of the app works in either orientation."
+- **What's New**:
+
+```
+Paper & Petals now works on iPhone as well as iPad — your journals open sideways for a roomy spread.
+• New this week: the latest collections now have their own row at the top of the shop
+• Soundscapes have moved to the top of the editor, so cosy rain is always a tap away
+• Small fixes and polish
+```
+
+- iPhone and iPad journals are **separate** — there's no syncing yet (see
+  ROADMAP, Accounts and cloud sync). The Settings "Saved on this device" row
+  already says so.

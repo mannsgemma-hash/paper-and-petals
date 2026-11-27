@@ -33,8 +33,18 @@ const logoSage = require('../../assets/logos/logo_sage.png');
 const CARD_W = 300;
 const CARD_H = 420;
 
-/** First-open tour of the home screen. Rings sit over the fixed chrome. */
-const HOME_TOUR: TourStep[] = [
+type HomeTourRefs = {
+  shop: React.RefObject<View | null>;
+  library: React.RefObject<View | null>;
+  prompt: React.RefObject<View | null>;
+};
+
+/**
+ * First-open tour of the home screen. Rings are measured around the real
+ * buttons (see Tour), so they fit the iPad's labelled buttons and the iPhone's
+ * round ones alike.
+ */
+const homeTour = (r: HomeTourRefs): TourStep[] => [
   {
     icon: 'book',
     title: 'Your bookshelf',
@@ -45,21 +55,21 @@ const HOME_TOUR: TourStep[] = [
     icon: 'shopping-bag',
     title: 'The shop',
     body: 'Browse curated collections of papers, stickers and treasures. There’s a free starter set, and new collections arrive every week.',
-    ring: { top: 16, right: 16, width: 340, height: 72, borderRadius: 36 },
+    targets: [r.shop],
     card: { top: 100, right: 24 },
   },
   {
     icon: 'download',
     title: 'My library',
     body: 'A Studio subscription unlocks every collection in the app. Buy a collection outright and it’s yours forever — you can even download the high-res art here for printing at home.',
-    ring: { top: 16, right: 16, width: 340, height: 72, borderRadius: 36 },
+    targets: [r.library],
     card: { top: 100, right: 24 },
   },
   {
     icon: 'feather',
     title: 'A little prompt',
     body: 'Every day brings a gentle crafting prompt down here — a nudge when you don’t know what to make.',
-    ring: { bottom: 42, left: '18%', right: '18%', height: 40, borderRadius: 20 },
+    targets: [r.prompt],
     card: { bottom: 100, left: '50%', width: 340, marginLeft: -170 },
   },
 ];
@@ -92,6 +102,13 @@ export default function HomeScreen() {
   const dragState = useRef({ dragging: false, lastDX: 0 });
   const { width, height } = useWindowDimensions();
   const compact = height < 560;
+  // iPhone held upright: no room for the name and three labelled buttons.
+  const narrow = width < 600;
+  const tourRefs: HomeTourRefs = {
+    shop: useRef<View>(null),
+    library: useRef<View>(null),
+    prompt: useRef<View>(null),
+  };
 
   // Size the cover to ~74% of the screen height (kept in the 300:420 aspect and
   // never wider than the screen) so journals feel substantial on large tablets
@@ -173,24 +190,29 @@ export default function HomeScreen() {
       {/* Top-left: logo + wordmark */}
       <View style={styles.brandRow}>
         <Image source={logoSage} style={styles.brandLogo} />
-        <Wordmark size={22} />
+        {!narrow && <Wordmark size={22} />}
       </View>
 
       {/* Top-right: shop + library + settings */}
       <View style={styles.topActions}>
         <TopButton
+          ref={tourRefs.shop}
+          compact={narrow}
           label="Shop"
           icon="shopping-bag"
           color={theme.palette.terracotta}
           onPress={() => router.push('/(tabs)/shop')}
         />
         <TopButton
+          ref={tourRefs.library}
+          compact={narrow}
           label="Library"
           icon="book-open"
           color={theme.palette.forest}
           onPress={() => router.push('/library')}
         />
         <TopButton
+          compact={narrow}
           label="Settings"
           icon="settings"
           color={theme.palette.sage}
@@ -245,7 +267,7 @@ export default function HomeScreen() {
       </View>
 
       {/* Prompt of the day — a soft nudge, never a nag */}
-      <View style={styles.promptRibbon} pointerEvents="none">
+      <View ref={tourRefs.prompt} style={styles.promptRibbon} pointerEvents="none">
         <Feather name="feather" size={13} color={theme.palette.terracotta} />
         <Text style={styles.promptText} numberOfLines={1}>{promptOfTheDay()}</Text>
       </View>
@@ -269,36 +291,39 @@ export default function HomeScreen() {
         <CoverPicker onPick={createWithCover} onClose={() => setPickingCover(false)} />
       )}
 
-      {showTour && <Tour steps={HOME_TOUR} onDone={dismissTour} />}
+      {showTour && <Tour steps={homeTour(tourRefs)} onDone={dismissTour} />}
     </Screen>
   );
 }
 
-function TopButton({
-  label,
-  icon,
-  color,
-  onPress,
-}: {
-  label: string;
-  icon: React.ComponentProps<typeof Feather>['name'];
-  color: string;
-  onPress: () => void;
-}) {
+const TopButton = React.forwardRef<
+  View,
+  {
+    label: string;
+    icon: React.ComponentProps<typeof Feather>['name'];
+    color: string;
+    onPress: () => void;
+    /** Round, icon-only — for an upright iPhone. */
+    compact?: boolean;
+  }
+>(function TopButton({ label, icon, color, onPress, compact }, ref) {
   return (
     <Pressable
+      ref={ref}
       onPress={onPress}
+      accessibilityLabel={label}
       style={({ pressed }) => [
         styles.topBtn,
+        compact && styles.topBtnCompact,
         { backgroundColor: color },
         pressed && { transform: [{ scale: 0.96 }] },
       ]}
     >
       <Feather name={icon} size={20} color={theme.palette.cream} />
-      <Text style={styles.topBtnLabel}>{label}</Text>
+      {!compact && <Text style={styles.topBtnLabel}>{label}</Text>}
     </Pressable>
   );
-}
+});
 
 function ArrowButton({
   side,
@@ -444,6 +469,7 @@ const styles = StyleSheet.create({
     gap: 6,
     ...theme.shadow.paper,
   },
+  topBtnCompact: { minWidth: 0, width: 50, height: 50, paddingHorizontal: 0 },
   topBtnLabel: {
     fontFamily: theme.font.ui,
     fontSize: 14,

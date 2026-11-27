@@ -64,6 +64,7 @@ import { onJournalClosed } from '../../src/lib/engagement';
 import { Tour, type TourStep } from '../../src/components/Tour';
 import { screen, track } from '../../src/lib/analytics';
 import { useAudioPlayer, setAudioModeAsync } from 'expo-audio';
+import * as ScreenOrientation from 'expo-screen-orientation';
 import { SOUNDSCAPES, type SoundscapeId } from '../../src/lib/soundscapes';
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -2617,6 +2618,15 @@ export default function EditorScreen() {
     name: useRef<View>(null),
     topRight: useRef<View>(null),
   };
+  // On iPhone a spread is far too small upright, so the editor turns the phone
+  // sideways and lets go again on the way out. iPad keeps every orientation.
+  useEffect(() => {
+    if (Platform.OS !== 'ios' || Platform.isPad) return;
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+    return () => {
+      ScreenOrientation.unlockAsync().catch(() => {});
+    };
+  }, []);
   const [showSoundPanel, setShowSoundPanel] = useState(false);
   /** A soundscape is playing — the top-bar button stays lit while it does. */
   const [soundPlaying, setSoundPlaying] = useState(false);

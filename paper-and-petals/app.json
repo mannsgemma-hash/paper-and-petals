@@ -2,14 +2,14 @@
   "expo": {
     "name": "Paper & Petals",
     "slug": "paper-and-petals",
-    "version": "1.0.1",
+    "version": "1.1.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "scheme": "paperandpetals",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "isTabletOnly": true,
+      "isTabletOnly": false,
       "requireFullScreen": false,
       "bundleIdentifier": "com.paperandpetals.app",
       "infoPlist": {
