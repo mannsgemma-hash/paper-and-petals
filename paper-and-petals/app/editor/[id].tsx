@@ -5,6 +5,7 @@ import {
   PanResponder,
   PixelRatio,
   Platform,
+  KeyboardAvoidingView,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -2221,27 +2222,25 @@ type TextPatch = Partial<
 /** Lettering size steps offered by the text tool (multiplier on box-based size). */
 
 interface TextEditorModalProps {
+  /** Phone: fill the editor, words on the left and styling on the right. */
+  full?: boolean;
   item: PlacedItem;
   onChange: (patch: TextPatch) => void;
   onClose: () => void;
 }
 
-function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
+function TextEditorModal({ item, onChange, onClose, full }: TextEditorModalProps) {
   const [text, setText] = useState(item.text ?? '');
   const [pickerOpen, setPickerOpen] = useState(false);
   const fontKey = item.fontKey ?? JOURNAL_FONTS[0].key;
   const color = item.color ?? theme.palette.charcoal;
   const align = item.align ?? 'center';
 
-  return (
-    <View style={styles.textModalScrim}>
-      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
-      <View style={styles.textModalCard}>
-        <Text style={styles.textModalTitle}>Write something</Text>
-
+  const input = (
         <TextInput
           style={[
             styles.textModalInput,
+            full && styles.textFullInput,
             {
               fontFamily: familyForFontKey(fontKey),
               color,
@@ -2261,7 +2260,10 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
           multiline
           autoFocus
         />
+  );
 
+  const controls = (
+    <>
         {/* Style + alignment + size — one compact row of controls */}
         <View style={styles.textCtrlRow}>
           {/* Bold / italic / underline removed — the journalling faces carry
@@ -2345,10 +2347,41 @@ function TextEditorModal({ item, onChange, onClose }: TextEditorModalProps) {
           </Pressable>
         </View>
 
-        <View style={styles.textModalActions}>
-          <Button title="Done" onPress={onClose} />
+    </>
+  );
+
+  return (
+    <View style={styles.textModalScrim}>
+      <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      {full ? (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.textFullCard}
+        >
+          <View style={styles.templateHeader}>
+            <Text style={styles.textModalTitle}>Write something</Text>
+            <Pressable style={styles.fullDone} onPress={onClose} hitSlop={8} accessibilityLabel="Done">
+              <Text style={styles.fullDoneText}>Done</Text>
+              <Feather name="x" size={18} color={theme.palette.cream} />
+            </Pressable>
+          </View>
+          <View style={styles.textFullBody}>
+            <View style={{ flex: 1 }}>{input}</View>
+            <ScrollView style={styles.textFullSide} contentContainerStyle={{ gap: 10 }} keyboardShouldPersistTaps="handled">
+              {controls}
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      ) : (
+        <View style={styles.textModalCard}>
+          <Text style={styles.textModalTitle}>Write something</Text>
+          {input}
+          {controls}
+          <View style={styles.textModalActions}>
+            <Button title="Done" onPress={onClose} />
+          </View>
         </View>
-      </View>
+      )}
 
       <ColorPickerModal
         visible={pickerOpen}
@@ -2700,12 +2733,21 @@ export default function EditorScreen() {
     transform: [{ translateX: drawerX.value }],
   }));
 
+  // Where the closed drawer waits: just off the right edge. On a phone the
+  // drawer is the full width, so that is the screen width.
+  const drawerOff = phoneLayout ? screenW + 40 : 420;
+  useEffect(() => {
+    // The editor turns the phone sideways after opening, so the width changes
+    // under a closed drawer — keep it out of sight.
+    if (!drawerOpen) drawerX.value = drawerOff;
+  }, [drawerOff]);
+
   const toggleDrawer = (open: boolean) => {
     // Picking up any other tool puts the pen down, so nobody has to find the
     // pen button again to get out of drawing mode.
     if (open) setPenMode(false);
     setDrawerOpen(open);
-    drawerX.value = withTiming(open ? 0 : 420, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
+    drawerX.value = withTiming(open ? 0 : drawerOff, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0.32, 1) });
   };
 
   // ── Load + save ─────────────────────────────────────────────────────────────
@@ -4137,6 +4179,7 @@ export default function EditorScreen() {
           style={[
             styles.drawer,
             isPhone && styles.drawerCompact,
+            phoneLayout && styles.drawerFull,
             drawerAnimStyle,
           ]}
         >
@@ -4189,6 +4232,7 @@ export default function EditorScreen() {
         {/* ── Text editor ───────────────────────────────────────────── */}
         {editingTextItem && (
           <TextEditorModal
+            full={phoneLayout}
             item={editingTextItem}
             onChange={(patch) => updateTextItem(editingTextItem.id, patch)}
             onClose={closeTextEditor}
@@ -4356,7 +4400,7 @@ export default function EditorScreen() {
         {shapePickerOpen && (
           <View style={styles.textModalScrim}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setShapePickerOpen(false)} />
-            <View style={styles.templateCard}>
+            <View style={[styles.templateCard, phoneLayout && styles.fullCard]}>
               <View style={styles.templateHeader}>
                 <View>
                   <Text style={styles.drawerEyebrow}>SOLID SHAPES</Text>
@@ -4397,7 +4441,7 @@ export default function EditorScreen() {
                 </Pressable>
               </View>
 
-              <ScrollView contentContainerStyle={styles.shapeGrid}>
+              <ScrollView style={phoneLayout ? { flex: 1 } : undefined} contentContainerStyle={styles.shapeGrid}>
                 {SHAPES.map((s) => (
                   <Pressable key={s.key} style={styles.shapeTile} onPress={() => addShape(s.key)}>
                     <Svg width={52} height={52} viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -5291,6 +5335,8 @@ const styles = StyleSheet.create({
     ...theme.shadow.lift,
   },
   drawerCompact: { width: 340 },
+  // Phone: the drawer covers the whole editor, closed with its ✕.
+  drawerFull: { left: 0, width: '100%', borderLeftWidth: 0, zIndex: 200 },
   drawerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -5915,6 +5961,27 @@ const styles = StyleSheet.create({
     borderColor: theme.palette.forest,
   },
   customSwatch: { alignItems: 'center', justifyContent: 'center' },
+  textFullCard: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: theme.color.surface,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    gap: 10,
+  },
+  textFullBody: { flex: 1, flexDirection: 'row', gap: 18 },
+  textFullInput: { flex: 1, maxHeight: undefined },
+  textFullSide: { width: 300, flexGrow: 0 },
+  fullDone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    height: 36,
+    paddingHorizontal: 14,
+    borderRadius: theme.radius.pill,
+    backgroundColor: theme.palette.forest,
+  },
+  fullDoneText: { fontFamily: theme.font.ui, fontSize: 14, fontWeight: '600', color: theme.palette.cream },
   textModalActions: {
     marginTop: 8,
   },
@@ -5953,6 +6020,16 @@ const styles = StyleSheet.create({
   },
 
   // Template picker
+  /** Phone: a panel that fills the editor (inside the safe area). */
+  fullCard: {
+    width: '100%',
+    maxWidth: '100%',
+    height: '100%',
+    maxHeight: '100%',
+    borderRadius: 0,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+  },
   templateCard: {
     width: 560,
     maxWidth: '92%',
