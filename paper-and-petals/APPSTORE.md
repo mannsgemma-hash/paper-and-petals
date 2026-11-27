@@ -232,9 +232,8 @@ Add Language → English (U.K.)**, then fill in:
 | **Support / Marketing URL** | same as English (Australia) |
 
 None of the keywords repeat the Australian ones: a word only counts once per
-store, so a repeat wastes characters. Keywords and subtitle need a new
-version to change (they go out with 1.1); App Information fields save
-immediately.
+store, so a repeat wastes characters. Name, subtitle and keywords only go
+live with a new version, so fill this in now and it ships with 1.1.
 
 ---
 
